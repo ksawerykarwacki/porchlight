@@ -41,6 +41,8 @@ let package = Package(
         .target(name: "PorchlightUI", dependencies: ["PorchlightCore", "PorchlightMac"]),
         // macOS menu-bar app.
         .executableTarget(name: "PorchlightApp", dependencies: ["PorchlightUI"]),
+        // Draws the app icon at build time; used by scripts/make-app.sh.
+        .executableTarget(name: "PorchlightIconTool", dependencies: ["PorchlightUI"]),
         .testTarget(
             name: "PorchlightCoreTests",
             dependencies: ["PorchlightCore"],

@@ -141,8 +141,7 @@ import Testing
             rect.fill()
             // Unlit ink is whatever the menu bar uses: white on dark, near-black on light.
             let unlit = dark ? NSColor.white : NSColor(calibratedWhite: 0.1, alpha: 1)
-            let tint = StatusIcon.tint(for: status)
-            StatusIcon.draw(in: rect.insetBy(dx: 18, dy: 18), ink: tint ?? unlit, lit: tint != nil, rays: StatusIcon.showsRays(for: status))
+            StatusIcon.draw(in: rect.insetBy(dx: 18, dy: 18), ink: unlit, light: StatusIcon.tint(for: status), rays: StatusIcon.showsRays(for: status))
             return true
         }
         let tiff = try #require(image.tiffRepresentation)
@@ -161,12 +160,24 @@ import Testing
         for y in stride(from: 0, to: bitmap.pixelsHigh, by: 2) {
             for x in stride(from: 0, to: bitmap.pixelsWide, by: 2) {
                 guard let c = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB),
-                      c.saturationComponent > 0.6, c.brightnessComponent > 0.7 else { continue }
+                      c.saturationComponent > 0.45, c.brightnessComponent > 0.7 else { continue }
                 let degrees = c.hueComponent * 360
                 if (25...60).contains(degrees) { warm += 1 } else if degrees < 20 || degrees > 345 { red += 1 }
             }
         }
         return (warm, red)
+    }
+
+    /// How many sampled pixels are the frame's ink: near white on a dark bar, near black on a light one.
+    func inkPixels(_ bitmap: NSBitmapImageRep, dark: Bool) throws -> Int {
+        var count = 0
+        for y in stride(from: 0, to: bitmap.pixelsHigh, by: 2) {
+            for x in stride(from: 0, to: bitmap.pixelsWide, by: 2) {
+                guard let c = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB), c.saturationComponent < 0.15 else { continue }
+                if dark ? c.brightnessComponent > 0.9 : c.brightnessComponent < 0.25 { count += 1 }
+            }
+        }
+        return count
     }
 
     @Test func theIconIsUnlitLitAmberOrLitRedWithRays() throws {
@@ -186,12 +197,17 @@ import Testing
             // Unlit has no colour; waiting is amber, not red; overdue is red, not amber.
             #expect(idle.warm == 0 && idle.red == 0)
             // (A few blended edge pixels can fall on the other side, hence the ratio.)
-            #expect(waiting.warm > 300 && waiting.red * 10 < waiting.warm)
-            #expect(overdue.red > 300 && overdue.warm * 10 < overdue.red)
+            #expect(waiting.warm > 150 && waiting.red * 10 < waiting.warm)
+            #expect(overdue.red > 150 && overdue.warm * 10 < overdue.red)
+            // Only the light is coloured: most of the lantern stays the menu bar's own colour.
+            let ink = try inkPixels(preview(.waiting(count: 1), dark: dark, named: "icon-waiting-\(suffix)"), dark: dark)
+            #expect(ink > 300)
         }
 
-        // The rendered label shows the count next to the icon, and nothing when idle.
+        // The rendered label shows the count next to the icon from two up, and nothing below.
         let idle = try render(StatusLabel(status: .idle).padding(4), named: "status-idle")
+        let one = try render(StatusLabel(status: .waiting(count: 1)).padding(4), named: "status-one")
+        #expect(one.pixelsWide == idle.pixelsWide)
         let waiting = try render(StatusLabel(status: .waiting(count: 3)).padding(4), named: "status-waiting")
         let overdue = try render(StatusLabel(status: .overdue(count: 12)).padding(4), named: "status-overdue")
         #expect(waiting.pixelsWide > idle.pixelsWide)
@@ -207,6 +223,55 @@ import Testing
         #expect(label() == "Terminal: Warp (auto)")
         actions.chosenTerminal = "ghostty"
         #expect(label() == "Terminal: Ghostty")
+    }
+
+    @Test func aRowUnderThePointerIsHighlightedAndLeavingClearsIt() throws {
+        let hover = HoverTracker()
+        hover.set("22222222", true)
+        #expect(hover.hovered == "22222222")
+        // Leaving a row that is no longer the hovered one must not clear the new one.
+        hover.set("55555555", true)
+        hover.set("22222222", false)
+        #expect(hover.hovered == "55555555")
+        hover.set("55555555", false)
+        #expect(hover.hovered == nil)
+
+        let plain = try render(InboxView(snapshot: try fixtureSnapshot(), now: now, scrolls: false), named: "inbox")
+        let hovered = try render(
+            InboxView(snapshot: try fixtureSnapshot(), now: now, hover: HoverTracker(hovered: "22222222"), scrolls: false),
+            named: "inbox-hover")
+        // Same layout, different pixels: the highlight and the open arrow.
+        #expect(hovered.pixelsHigh == plain.pixelsHigh)
+        #expect(hovered.tiffRepresentation != plain.tiffRepresentation)
+    }
+
+    @Test func theAppIconIsALitLanternOnADarkTile() throws {
+        let bitmap = try #require(StatusIcon.appIconBitmap(pixels: 256))
+        #expect(bitmap.pixelsWide == 256 && bitmap.pixelsHigh == 256)
+        if let directory = ProcessInfo.processInfo.environment["PORCHLIGHT_SNAPSHOT_DIR"] {
+            let url = URL(fileURLWithPath: directory)
+            try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+            try #require(bitmap.representation(using: .png, properties: [:])).write(to: url.appendingPathComponent("app-icon.png"))
+        }
+        // Transparent outside the tile, dark blue at its edge, amber where the lantern is.
+        #expect(bitmap.colorAt(x: 2, y: 2)?.alphaComponent == 0)
+        let edge = try #require(bitmap.colorAt(x: 128, y: 34)?.usingColorSpace(.deviceRGB))
+        #expect(edge.alphaComponent == 1 && edge.blueComponent > edge.redComponent)
+        #expect(colours(bitmap).warm > 250)
+    }
+
+    @Test func onlyTheSnoozedRowLosesItsLamp() throws {
+        let snapshot = try fixtureSnapshot()
+        let plain = try render(InboxView(snapshot: snapshot, now: now, scrolls: false), named: "inbox")
+        let snoozed = try render(
+            InboxView(snapshot: snapshot, now: now, snoozes: ["22222222": .until(now + 3600)], scrolls: false),
+            named: "inbox-snoozed")
+        // Three rows are lit without a snooze, two with one: a third of the lamp colour goes.
+        let before = colours(plain), after = colours(snoozed)
+        #expect(before.warm > 0 && before.red > 0)
+        #expect(after.red == before.red)
+        #expect(after.warm < before.warm)
+        #expect(after.warm > 0)
     }
 
     @Test func rowButtonsCallTheirActions() throws {

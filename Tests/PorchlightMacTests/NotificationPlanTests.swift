@@ -14,14 +14,15 @@ import Testing
     let noon = Date(timeIntervalSince1970: 1_791_460_800)
 
     func reminder(_ kind: Reminder.Kind, sound: Bool = false, reply: Bool = false) -> Reminder {
-        Reminder(kind: kind, title: "fix flaky test · alpha", body: "Which timeout?", withSound: sound, offersReply: reply)
+        Reminder(kind: kind, title: "fix flaky test", subtitle: "alpha", body: "Which timeout?", withSound: sound, offersReply: reply)
     }
 
     @Test func aSessionReminderGetsOpenAndSnoozeButtons() {
         let plan = NotificationPlan(reminder(.session(id: "a1b2c3d4"), sound: true))
         #expect(plan.identifier == "session-a1b2c3d4")
         #expect(plan.category == .session)
-        #expect(plan.title == "fix flaky test · alpha")
+        #expect(plan.title == "fix flaky test")
+        #expect(plan.subtitle == "alpha")
         #expect(plan.body == "Which timeout?")
         #expect(plan.playsSound)
         #expect(plan.sessionID == "a1b2c3d4")

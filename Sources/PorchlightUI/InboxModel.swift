@@ -27,12 +27,16 @@ public final class InboxModel {
     public private(set) var prefersAgentView = false
 
     public private(set) var snapshot = StoreSnapshot()
+    /// Which row or button the pointer is over.
+    public let hover = HoverTracker()
     /// The result of the last action, shown briefly at the bottom of the inbox.
     public private(set) var notice: String?
     private var noticeGeneration = 0
 
     public var waitingCount: Int { snapshot.waitingCount }
-    public var status: MenuBarStatus { MenuBarStatus(snapshot: snapshot, now: clock()) }
+    public var status: MenuBarStatus { MenuBarStatus(snapshot: snapshot, snoozes: snoozes, now: clock()) }
+    /// Sessions whose reminders are paused, as last read from the saved state.
+    public private(set) var snoozes: [String: Snooze] = [:]
 
     /// The terminal "whichever is running" picks right now, for the menu's label.
     public var automaticTerminal: TerminalApp? {
@@ -104,6 +108,7 @@ public final class InboxModel {
         for await update in await store.updates() {
             snapshot = update.snapshot
             await engine.process(update.snapshot)
+            snoozes = await engine.snoozes()
             notificationProblem = delivery?.problem
         }
     }
@@ -121,7 +126,10 @@ public final class InboxModel {
         case .copyReply(let sessionID): copyReply(sessionID: sessionID)
         case .snooze(let sessionID, let seconds):
             let until = clock().addingTimeInterval(seconds)
-            Task { await engine?.snooze(sessionID: sessionID, .until(until)) }
+            Task {
+                await engine?.snooze(sessionID: sessionID, .until(until))
+                if let engine { snoozes = await engine.snoozes() }
+            }
         case .showInbox:
             // The panel cannot be opened from here; bringing the app forward is the nearest thing.
             break

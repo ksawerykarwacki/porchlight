@@ -77,6 +77,14 @@ public enum Snooze: Codable, Sendable, Equatable {
         return abs(a.timeIntervalSince(b)) < 1
     }
 
+    /// Whether this snooze is in force for a session that has waited since `waitingSince`.
+    public func isActive(waitingSince: Date?, now: Date) -> Bool {
+        switch self {
+        case .until(let end): end > now
+        case .untilChange(let snoozedWait): Snooze.sameWait(snoozedWait, waitingSince)
+        }
+    }
+
     /// The next occurrence of an hour of the day strictly after `now`'s day: "tomorrow 09:00".
     public static func tomorrow(at hour: Int = 9, after now: Date, calendar: Calendar) -> Snooze {
         let startOfTomorrow = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: now)) ?? now.addingTimeInterval(86_400)
@@ -134,14 +142,17 @@ public struct Reminder: Sendable, Equatable, Identifiable {
 
     public let kind: Kind
     public let title: String
+    /// Where the session lives; empty for the digest.
+    public var subtitle = ""
     public let body: String
     public let withSound: Bool
     /// The session came with a reply Claude suggested, which the user can copy.
     public var offersReply = false
 
-    public init(kind: Kind, title: String, body: String, withSound: Bool, offersReply: Bool = false) {
+    public init(kind: Kind, title: String, subtitle: String = "", body: String, withSound: Bool, offersReply: Bool = false) {
         self.kind = kind
         self.title = title
+        self.subtitle = subtitle
         self.body = body
         self.withSound = withSound
         self.offersReply = offersReply
@@ -211,7 +222,12 @@ public struct ReminderPlanner: Sendable {
             reminders.append(reminder(for: session, waited: waited, now: now))
         }
 
-        if let digest = digest(waiting: waiting, state: &state, now: now, quiet: quiet) {
+        // A snoozed session is one the user has already said "not now" to: it stays out of the
+        // summary too.
+        let unsnoozed = waiting.filter { session in
+            !(state.snoozes[session.id]?.isActive(waitingSince: session.waitingSince, now: now) ?? false)
+        }
+        if let digest = digest(waiting: unsnoozed, state: &state, now: now, quiet: quiet) {
             reminders.append(digest)
         }
         return reminders
@@ -231,7 +247,8 @@ public struct ReminderPlanner: Sendable {
         }
         return Reminder(
             kind: .session(id: session.id),
-            title: "\(session.name) · \(row.place)",
+            title: session.name,
+            subtitle: row.place,
             body: body,
             withSound: waited >= settings.soundAfter,
             offersReply: session.suggestedReply != nil)

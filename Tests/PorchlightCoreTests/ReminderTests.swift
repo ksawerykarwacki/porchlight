@@ -93,11 +93,13 @@ let hour: TimeInterval = 3600
         var state = ReminderState()
         let reminders = planner.due(sessions: sessions, state: &state, now: now)
         let question = try #require(reminders.first { $0.id == "session-22222222" })
-        #expect(question.title == "rename the file · beta")
+        #expect(question.title == "rename the file")
+        #expect(question.subtitle == "beta")
         #expect(question.body == "Should hello.txt be renamed to greeting.txt or salute.txt?")
         let approval = try #require(reminders.first { $0.id == "session-55555555" })
         #expect(approval.body.hasPrefix("Approve Bash: echo hi > hello.txt"))
-        #expect(approval.title == "probe-worktree · probe · add-hello")
+        #expect(approval.title == "probe-worktree")
+        #expect(approval.subtitle == "probe / add-hello")
 
         var hidden = planner
         hidden.settings.hideDetails = true
@@ -213,6 +215,19 @@ let hour: TimeInterval = 3600
         #expect(digests[1] == ["2 sessions are waiting on you, the oldest for 2d"])
         #expect(digests[2] == [] && digests[3] == [] && digests[4] == [])
         #expect(digests[5] == ["2 sessions are waiting on you, the oldest for 3d"])
+    }
+
+    @Test func theDigestLeavesSnoozedSessionsOut() {
+        let sessions = [waiting("a", since: noon - 5 * hour), waiting("b", since: noon - 30 * minute)]
+        var state = ReminderState()
+        state.snooze("a", .until(noon + 5 * hour))
+        let digest = planner.due(sessions: sessions, state: &state, now: noon).first { $0.kind == .digest }
+        #expect(digest?.body == "1 session is waiting on you, the oldest for 30m")
+
+        var all = ReminderState()
+        all.snooze("a", .until(noon + 5 * hour))
+        all.snooze("b", .untilChange(waitingSince: noon - 30 * minute))
+        #expect(!planner.due(sessions: sessions, state: &all, now: noon).contains { $0.kind == .digest })
     }
 
     @Test func catchesUpOnTheDigestWhenStartedLateAndSkipsItWhenNothingWaits() {

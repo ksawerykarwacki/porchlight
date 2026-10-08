@@ -19,7 +19,10 @@ import Testing
         #expect(row.title == "rename the file")
         #expect(row.place == "beta")
         #expect(row.detail == "Should hello.txt be renamed to greeting.txt or salute.txt?")
-        #expect(row.options == ["greeting.txt (Recommended)", "salute.txt"])
+        #expect(row.options == ["greeting.txt", "salute.txt"])
+        #expect(row.recommendedOption == 0)
+        #expect(row.repo == "beta" && row.worktree == nil)
+        #expect(!row.isOverdue)
         #expect(row.suggestedReply == nil)
         #expect(row.age == "waiting 1m")
     }
@@ -29,7 +32,9 @@ import Testing
         #expect(row.kind == .approval)
         #expect(row.tool == "Bash")
         #expect(row.detail == #"echo hi > hello.txt && git add hello.txt && git commit -q -m "add hello""#)
-        #expect(row.place == "probe · add-hello")
+        #expect(row.place == "probe / add-hello")
+        #expect(row.repo == "probe" && row.worktree == "add-hello")
+        #expect(row.recommendedOption == nil)
         #expect(row.options.isEmpty)
     }
 
@@ -39,6 +44,7 @@ import Testing
         #expect(row.detail == "Which of the two timeouts should I raise?")
         #expect(row.suggestedReply == "Raise the network timeout to 30s.")
         #expect(row.age == "waiting 1d")
+        #expect(row.isOverdue)
     }
 
     @Test func sessionsThatAreNotBlockedShowNoQuestion() throws {
@@ -106,10 +112,27 @@ import Testing
         #expect(MenuBarStatus(snapshot: snapshot, now: now) == .overdue(count: 3))
         #expect(MenuBarStatus(snapshot: snapshot, overdueAfter: 86_400, now: now) == .waiting(count: 3))
 
+        // Snoozed sessions neither count nor light the lantern; an expired snooze counts again.
+        let snoozes: [String: Snooze] = ["c": .until(now + 3600), "a": .until(now - 1), "b": .untilChange(waitingSince: now - 7199)]
+        #expect(MenuBarStatus(snapshot: snapshot, snoozes: snoozes, now: now) == .waiting(count: 1))
+        #expect(MenuBarStatus(snapshot: snapshot, snoozes: ["a": .until(now + 1), "b": .until(now + 1), "c": .until(now + 1)], now: now) == .idle)
+        let snoozedRow = InboxRow(session: blocked("c", waited: 7200), snooze: .until(now + 3600), now: now)
+        #expect(snoozedRow.isSnoozed && snoozedRow.age == "snoozed, waiting 2h")
+        #expect(!InboxRow(session: blocked("c", waited: 7200), snooze: .until(now - 1), now: now).isSnoozed)
+        // A snooze kept for a session that has since started working means nothing.
+        let working = Session(summary: SessionSummary(id: "w", name: "w", cwd: "/x/w", state: .working))
+        #expect(!InboxRow(session: working, snooze: .until(now + 3600), now: now).isSnoozed)
+
         // A wait of unknown length is waiting, never overdue.
         snapshot.sessions = [blocked("d", waited: nil)]
         #expect(MenuBarStatus(snapshot: snapshot, now: now) == .waiting(count: 1))
         #expect(MenuBarStatus.idle.count == 0)
+        // The number appears from two up; one waiting session is just a lit lantern.
+        #expect(MenuBarStatus.idle.badge == nil)
+        #expect(MenuBarStatus.waiting(count: 1).badge == nil)
+        #expect(MenuBarStatus.overdue(count: 1).badge == nil)
+        #expect(MenuBarStatus.waiting(count: 2).badge == "2")
+        #expect(MenuBarStatus.overdue(count: 12).badge == "12")
         #expect(MenuBarStatus.overdue(count: 3).count == 3)
         #expect(MenuBarStatus.waiting(count: 1).summary == "1 session is waiting on you")
         #expect(MenuBarStatus.overdue(count: 2).summary == "2 sessions are waiting on you, at least one for a long time")

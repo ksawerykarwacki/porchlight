@@ -9,10 +9,17 @@ APP="dist/Porchlight.app"
 
 swift build -c release --product PorchlightApp
 swift build -c release --product porchlight
+swift build -c release --product PorchlightIconTool
 BIN="$(swift build -c release --show-bin-path)"
 
 rm -rf "$APP"
-mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Helpers"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Helpers" "$APP/Contents/Resources"
+
+# The icon is drawn by the app's own code, then packed by the system's iconutil.
+ICONSET="$(mktemp -d)/Porchlight.iconset"
+"$BIN/PorchlightIconTool" "$ICONSET"
+iconutil -c icns -o "$APP/Contents/Resources/Porchlight.icns" "$ICONSET"
+rm -rf "$(dirname "$ICONSET")"
 cp "$BIN/PorchlightApp" "$APP/Contents/MacOS/Porchlight"
 # Not next to the app binary: the default macOS file system is case-insensitive, so
 # "porchlight" would overwrite "Porchlight".
@@ -28,6 +35,8 @@ cat > "$APP/Contents/Info.plist" <<EOF
     <key>CFBundleName</key>
     <string>Porchlight</string>
     <key>CFBundleExecutable</key>
+    <string>Porchlight</string>
+    <key>CFBundleIconFile</key>
     <string>Porchlight</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>

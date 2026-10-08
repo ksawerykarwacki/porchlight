@@ -32,6 +32,7 @@ public struct NotificationPlan: Sendable, Equatable {
     public let identifier: String
     public let category: Category
     public let title: String
+    public let subtitle: String
     public let body: String
     public let playsSound: Bool
     public let sessionID: String?
@@ -39,6 +40,7 @@ public struct NotificationPlan: Sendable, Equatable {
     public init(_ reminder: Reminder) {
         identifier = reminder.id
         title = reminder.title
+        subtitle = reminder.subtitle
         body = reminder.body
         playsSound = reminder.withSound
         switch reminder.kind {
@@ -167,6 +169,7 @@ public final class UserNotificationDelivery: NSObject, ReminderDelivery, UNUserN
         let plan = NotificationPlan(reminder)
         let content = UNMutableNotificationContent()
         content.title = plan.title
+        content.subtitle = plan.subtitle
         content.body = plan.body
         content.categoryIdentifier = plan.category.rawValue
         content.threadIdentifier = plan.identifier
