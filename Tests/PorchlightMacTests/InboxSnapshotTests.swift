@@ -133,6 +133,82 @@ import Testing
         #expect(warned.pixelsHigh > plain.pixelsHigh + 30)
     }
 
+    /// Draws the icon large on a menu-bar-like background, for a look with PORCHLIGHT_SNAPSHOT_DIR.
+    func preview(_ status: MenuBarStatus, dark: Bool, named name: String) throws -> NSBitmapImageRep {
+        let side: CGFloat = 180
+        let image = NSImage(size: NSSize(width: side, height: side), flipped: false) { rect in
+            (dark ? NSColor(calibratedWhite: 0.16, alpha: 1) : NSColor(calibratedWhite: 0.93, alpha: 1)).setFill()
+            rect.fill()
+            // Unlit ink is whatever the menu bar uses: white on dark, near-black on light.
+            let unlit = dark ? NSColor.white : NSColor(calibratedWhite: 0.1, alpha: 1)
+            let tint = StatusIcon.tint(for: status)
+            StatusIcon.draw(in: rect.insetBy(dx: 18, dy: 18), ink: tint ?? unlit, lit: tint != nil, rays: StatusIcon.showsRays(for: status))
+            return true
+        }
+        let tiff = try #require(image.tiffRepresentation)
+        let bitmap = try #require(NSBitmapImageRep(data: tiff))
+        if let directory = ProcessInfo.processInfo.environment["PORCHLIGHT_SNAPSHOT_DIR"] {
+            let url = URL(fileURLWithPath: directory)
+            try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+            try #require(bitmap.representation(using: .png, properties: [:])).write(to: url.appendingPathComponent("\(name).png"))
+        }
+        return bitmap
+    }
+
+    /// How many sampled pixels are strongly coloured amber (hue near 40 degrees) or red (near 8).
+    func colours(_ bitmap: NSBitmapImageRep) -> (warm: Int, red: Int) {
+        var warm = 0, red = 0
+        for y in stride(from: 0, to: bitmap.pixelsHigh, by: 2) {
+            for x in stride(from: 0, to: bitmap.pixelsWide, by: 2) {
+                guard let c = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB),
+                      c.saturationComponent > 0.6, c.brightnessComponent > 0.7 else { continue }
+                let degrees = c.hueComponent * 360
+                if (25...60).contains(degrees) { warm += 1 } else if degrees < 20 || degrees > 345 { red += 1 }
+            }
+        }
+        return (warm, red)
+    }
+
+    @Test func theIconIsUnlitLitAmberOrLitRedWithRays() throws {
+        // Idle follows the menu bar's own colour; the other two carry a fixed colour.
+        #expect(StatusIcon.image(for: .idle).isTemplate)
+        #expect(!StatusIcon.image(for: .waiting(count: 1)).isTemplate)
+        #expect(!StatusIcon.image(for: .overdue(count: 1)).isTemplate)
+        #expect(StatusIcon.image(for: .idle).size == NSSize(width: 18, height: 18))
+        #expect(!StatusIcon.showsRays(for: .waiting(count: 1)))
+        #expect(StatusIcon.showsRays(for: .overdue(count: 1)))
+
+        for dark in [true, false] {
+            let suffix = dark ? "dark" : "light"
+            let idle = colours(try preview(.idle, dark: dark, named: "icon-idle-\(suffix)"))
+            let waiting = colours(try preview(.waiting(count: 1), dark: dark, named: "icon-waiting-\(suffix)"))
+            let overdue = colours(try preview(.overdue(count: 1), dark: dark, named: "icon-overdue-\(suffix)"))
+            // Unlit has no colour; waiting is amber, not red; overdue is red, not amber.
+            #expect(idle.warm == 0 && idle.red == 0)
+            // (A few blended edge pixels can fall on the other side, hence the ratio.)
+            #expect(waiting.warm > 300 && waiting.red * 10 < waiting.warm)
+            #expect(overdue.red > 300 && overdue.warm * 10 < overdue.red)
+        }
+
+        // The rendered label shows the count next to the icon, and nothing when idle.
+        let idle = try render(StatusLabel(status: .idle).padding(4), named: "status-idle")
+        let waiting = try render(StatusLabel(status: .waiting(count: 3)).padding(4), named: "status-waiting")
+        let overdue = try render(StatusLabel(status: .overdue(count: 12)).padding(4), named: "status-overdue")
+        #expect(waiting.pixelsWide > idle.pixelsWide)
+        #expect(overdue.pixelsWide > waiting.pixelsWide)
+    }
+
+    @Test func theTerminalMenuSaysWhatAutomaticMeans() {
+        var actions = InboxActions()
+        actions.terminals = [(id: "warp", name: "Warp"), (id: "ghostty", name: "Ghostty")]
+        func label() -> String { InboxView(snapshot: StoreSnapshot(), actions: actions).terminalLabel }
+        #expect(label() == "Terminal: Auto")
+        actions.automaticTerminalName = "Warp"
+        #expect(label() == "Terminal: Warp (auto)")
+        actions.chosenTerminal = "ghostty"
+        #expect(label() == "Terminal: Ghostty")
+    }
+
     @Test func rowButtonsCallTheirActions() throws {
         var opened: [String] = []
         var actions = InboxActions()

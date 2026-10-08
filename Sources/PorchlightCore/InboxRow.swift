@@ -104,3 +104,44 @@ extension StoreSnapshot {
         return "\(reason) Showing sessions from \(age == "just now" ? "a moment" : age) ago."
     }
 }
+
+/// What the menu-bar icon says at a glance.
+public enum MenuBarStatus: Sendable, Equatable {
+    /// Nothing is waiting.
+    case idle
+    /// Sessions are waiting, none for long.
+    case waiting(count: Int)
+    /// At least one session has waited past the threshold.
+    case overdue(count: Int)
+
+    /// The default threshold matches the reminder ladder's second step, where sound starts.
+    public static let defaultOverdueAfter: TimeInterval = 2 * 3600
+
+    public init(snapshot: StoreSnapshot, overdueAfter: TimeInterval = MenuBarStatus.defaultOverdueAfter, now: Date = Date()) {
+        let waiting = snapshot.sessions.filter(\.needsHuman)
+        guard !waiting.isEmpty else {
+            self = .idle
+            return
+        }
+        let longest = waiting.compactMap(\.waitingSince).map { now.timeIntervalSince($0) }.max() ?? 0
+        self = longest >= overdueAfter ? .overdue(count: waiting.count) : .waiting(count: waiting.count)
+    }
+
+    public var count: Int {
+        switch self {
+        case .idle: 0
+        case .waiting(let count), .overdue(let count): count
+        }
+    }
+
+    /// For screen readers and the tooltip, so colour is never the only signal.
+    public var summary: String {
+        switch self {
+        case .idle: "Nothing is waiting on you"
+        case .waiting(1): "1 session is waiting on you"
+        case .waiting(let count): "\(count) sessions are waiting on you"
+        case .overdue(1): "1 session is waiting on you, for a long time"
+        case .overdue(let count): "\(count) sessions are waiting on you, at least one for a long time"
+        }
+    }
+}

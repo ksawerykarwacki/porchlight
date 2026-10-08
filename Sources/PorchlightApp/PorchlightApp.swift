@@ -18,8 +18,7 @@ struct PorchlightApp: App {
         MenuBarExtra {
             InboxView(model: model, quit: { NSApplication.shared.terminate(nil) })
         } label: {
-            Label(model.waitingCount > 0 ? "\(model.waitingCount)" : "", systemImage: model.waitingCount > 0 ? "lightbulb.fill" : "lightbulb")
-                .labelStyle(.titleAndIcon)
+            StatusLabel(status: model.status)
         }
         .menuBarExtraStyle(.window)
     }

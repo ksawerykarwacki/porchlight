@@ -14,6 +14,8 @@ public struct InboxActions {
     /// The picked terminal's identifier, or nil for "whichever is running".
     public var chosenTerminal: String?
     public var chooseTerminal: (String?) -> Void = { _ in }
+    /// The name of the terminal "whichever is running" would use right now.
+    public var automaticTerminalName: String?
     public var prefersAgentView = false
     public var setPrefersAgentView: (Bool) -> Void = { _ in }
 
@@ -50,6 +52,7 @@ public struct InboxView: View {
         actions.terminals = model.installedTerminals.map { (id: $0.rawValue, name: $0.displayName) }
         actions.chosenTerminal = model.chosenTerminal?.rawValue
         actions.chooseTerminal = { id in model.chooseTerminal(id.flatMap { TerminalApp(rawValue: $0) }) }
+        actions.automaticTerminalName = model.automaticTerminal?.displayName
         actions.prefersAgentView = model.prefersAgentView
         actions.setPrefersAgentView = { model.setPrefersAgentView($0) }
         self.init(snapshot: model.snapshot, now: model.now, notice: model.notice, notificationProblem: model.notificationProblem, actions: actions)
@@ -125,7 +128,7 @@ public struct InboxView: View {
                 Button("Refresh", action: actions.refresh)
                 if !actions.terminals.isEmpty {
                     Menu(terminalLabel) {
-                        terminalChoice("Whichever is running", id: nil)
+                        terminalChoice(actions.automaticTerminalName.map { "Whichever is running (now \($0))" } ?? "Whichever is running", id: nil)
                         Divider()
                         ForEach(actions.terminals, id: \.id) { terminal in
                             terminalChoice(terminal.name, id: terminal.id)
@@ -157,8 +160,11 @@ public struct InboxView: View {
 
 extension InboxView {
     var terminalLabel: String {
-        let name = actions.terminals.first { $0.id == actions.chosenTerminal }?.name
-        return "Terminal: \(name ?? "Auto")"
+        if let name = actions.terminals.first(where: { $0.id == actions.chosenTerminal })?.name {
+            return "Terminal: \(name)"
+        }
+        // Say what "automatic" means right now, so the choice is not a guess.
+        return actions.automaticTerminalName.map { "Terminal: \($0) (auto)" } ?? "Terminal: Auto"
     }
 
     func terminalChoice(_ title: String, id: String?) -> some View {

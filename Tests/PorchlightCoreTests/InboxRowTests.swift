@@ -88,4 +88,30 @@ import Testing
         snapshot.fetchedAt = now - 5
         #expect(snapshot.staleNotice(now: now) == "The claude command did not answer in time. Showing sessions from a moment ago.")
     }
+
+    @Test func theMenuBarStatusTellsIdleWaitingAndOverdueApart() {
+        func blocked(_ id: String, waited: TimeInterval?) -> Session {
+            Session(summary: SessionSummary(id: id, name: id, cwd: "/x/\(id)", state: .blocked), observedBlockedSince: waited.map { now - $0 })
+        }
+        var snapshot = StoreSnapshot()
+        #expect(MenuBarStatus(snapshot: snapshot, now: now) == .idle)
+
+        snapshot.sessions = [Session(summary: SessionSummary(id: "w", name: "w", cwd: "/x/w", state: .working))]
+        #expect(MenuBarStatus(snapshot: snapshot, now: now) == .idle)
+
+        snapshot.sessions += [blocked("a", waited: 60), blocked("b", waited: 7199)]
+        #expect(MenuBarStatus(snapshot: snapshot, now: now) == .waiting(count: 2))
+
+        snapshot.sessions.append(blocked("c", waited: 7200))
+        #expect(MenuBarStatus(snapshot: snapshot, now: now) == .overdue(count: 3))
+        #expect(MenuBarStatus(snapshot: snapshot, overdueAfter: 86_400, now: now) == .waiting(count: 3))
+
+        // A wait of unknown length is waiting, never overdue.
+        snapshot.sessions = [blocked("d", waited: nil)]
+        #expect(MenuBarStatus(snapshot: snapshot, now: now) == .waiting(count: 1))
+        #expect(MenuBarStatus.idle.count == 0)
+        #expect(MenuBarStatus.overdue(count: 3).count == 3)
+        #expect(MenuBarStatus.waiting(count: 1).summary == "1 session is waiting on you")
+        #expect(MenuBarStatus.overdue(count: 2).summary == "2 sessions are waiting on you, at least one for a long time")
+    }
 }

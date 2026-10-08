@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Observation
 import PorchlightCore
@@ -31,6 +32,13 @@ public final class InboxModel {
     private var noticeGeneration = 0
 
     public var waitingCount: Int { snapshot.waitingCount }
+    public var status: MenuBarStatus { MenuBarStatus(snapshot: snapshot, now: clock()) }
+
+    /// The terminal "whichever is running" picks right now, for the menu's label.
+    public var automaticTerminal: TerminalApp? {
+        let running = NSWorkspace.shared.runningApplications.compactMap { $0.bundleURL?.lastPathComponent }
+        return TerminalApp.detect(running: running, installed: { installedTerminals.contains($0) })
+    }
     public var now: Date { clock() }
 
     public init(
