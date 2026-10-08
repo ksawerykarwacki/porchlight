@@ -1,0 +1,17 @@
+{
+  "backend": "daemon",
+  "children": [{ "id": "pr-1", "href": "https://example.invalid/pr/1", "kind": "pr" }],
+  "cliVersion": "2.1.294",
+  "createdAt": "2026-10-08T17:20:37.065Z",
+  "cwd": "/Users/u/code/probe",
+  "detail": "",
+  "name": "probe-worktree",
+  "nameSource": "user",
+  "needs": "approve Bash: echo hi > hello.txt && git add hello.txt && git commit -q -m \"add hello\"",
+  "output": null,
+  "state": "working",
+  "tempo": "blocked",
+  "updatedAt": "2026-10-08T17:20:42.106Z",
+  "worktreeBranch": "worktree-add-hello",
+  "worktreePath": "/Users/u/code/probe/.claude/worktrees/add-hello"
+}

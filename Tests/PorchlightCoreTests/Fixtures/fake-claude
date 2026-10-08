@@ -1,0 +1,42 @@
+#!/bin/bash
+# Stand-in for the `claude` CLI in tests. Records how it was called and replays fixtures.
+#
+#   FAKE_CLAUDE_LOG    file that receives the working directory and argv, NUL-separated
+#   FAKE_CLAUDE_MODE   untrusted | broken-json | fail | hang (default: normal)
+set -u
+here="$(cd "$(dirname "$0")" && pwd)"
+
+if [ -n "${FAKE_CLAUDE_LOG:-}" ]; then
+    printf '%s\0' "$PWD" "$@" >> "$FAKE_CLAUDE_LOG"
+fi
+
+mode="${FAKE_CLAUDE_MODE:-normal}"
+if [ "$mode" = "hang" ]; then
+    exec sleep 30
+fi
+
+case "${1:-}" in
+    --version)
+        echo "2.1.294 (Claude Code)"
+        ;;
+    agents)
+        case "$mode" in
+            fail) echo "daemon unavailable" >&2; exit 3 ;;
+            broken-json) echo "{not json" ;;
+            *) cat "$here/agents-all.json" ;;
+        esac
+        ;;
+    --bg)
+        if [ "$mode" = "untrusted" ]; then
+            echo "Workspace not trusted. Run \`claude\` in $PWD once and accept the trust prompt, then retry." >&2
+            exit 1
+        fi
+        # Observed on 2.1.294: coloured even though stdout is not a terminal.
+        printf 'backgrounded \xc2\xb7 \033[36m4cb41c2a\033[39m \xc2\xb7 probe\n'
+        printf '\033[2m  claude agents             list sessions\033[22m\n'
+        ;;
+    *)
+        echo "fake-claude: unsupported arguments: $*" >&2
+        exit 64
+        ;;
+esac

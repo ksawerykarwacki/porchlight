@@ -1,8 +1,8 @@
-# Lantern — a macOS companion for Claude Code background sessions
+# Porchlight — a macOS companion for Claude Code background sessions
 
-> **Working name.** "Lantern" is a placeholder (it lights up when a session is waiting on you). Check for name collisions before publishing.
+> **Name.** "Porchlight": the light left on for whoever is waiting. Chosen 2026-10-08 after the first working name, "Lantern", turned out to collide with a Homebrew package and several Mac apps. Checked against Homebrew, GitHub repository names and the US Mac App Store; trademarks and domains were not checked.
 >
-> **Status:** design draft, 2026-10-08. Written to be picked up by a fresh Claude Code session on a clean machine. Nothing in here may assume a particular company, repo layout, ticket system or terminal.
+> **Status:** design draft, 2026-10-08; decisions D1–D5 confirmed and M0 built the same day (see `README.md`). Written to be picked up by a fresh Claude Code session on a clean machine. Nothing in here may assume a particular company, repo layout, ticket system or terminal.
 
 ---
 
@@ -36,7 +36,7 @@ Claude Code can run many sessions in the background (`claude --bg`, managed in t
 
 - **G1** Never lose a waiting session: always-visible count, a scannable inbox, and reminders that escalate until handled or snoozed.
 - **G2** Start a background session in any repository from anywhere in macOS in a few keystrokes, with a good name.
-- **G3** Zero lock-in: sit on top of Claude Code's own background-session system. Agent view in the terminal keeps working side by side; uninstalling Lantern loses nothing.
+- **G3** Zero lock-in: sit on top of Claude Code's own background-session system. Agent view in the terminal keeps working side by side; uninstalling Porchlight loses nothing.
 - **G4** Project-agnostic and safe by default: works for any user, any repo layout, any terminal; read-only unless the user clicks.
 
 ## 3. Non-goals (v1)
@@ -59,9 +59,11 @@ Claude Code can run many sessions in the background (`claude --bg`, managed in t
 - **State** (from `claude agents --json`): `working`, `blocked` (waiting on the human), `done` (turn finished / exited). Treat unknown values as `unknown`, never crash.
 - **Status** (optional field): e.g. `busy`, `idle`, `waiting`. Present only for live processes.
 - **Worktree:** sessions that edit files move into a git worktree under `<repo>/.claude/worktrees/<name>`. Deleting a session can delete its worktree; the CLI refuses when that would lose unpushed commits.
-- **Agent view:** the terminal UI `claude agents`. Lantern complements it and must never conflict with it.
+- **Agent view:** the terminal UI `claude agents`. Porchlight complements it and must never conflict with it.
 
 ## 6. Features
+
+> **Focus (2026-10-08).** A GitHub search found several free menu-bar apps that already show which session is waiting (Appendix C). None re-notifies, snoozes or escalates, and none starts a Claude Code background session. Reminders (§6.2) and the launcher (§6.3) are therefore the product; the inbox (§6.1) stays minimal.
 
 ### 6.1 Inbox (menu bar) — v1 **[PROPOSED]**
 
@@ -69,14 +71,14 @@ Claude Code can run many sessions in the background (`claude --bg`, managed in t
 
 **FR-I2** Dropdown lists sessions grouped: **Needs you** (blocked), **Working**, **Recently done** (last N hours, configurable), each sorted by wait time (oldest first in Needs you).
 
-**FR-I3** Each row shows: name, repo (last path component of cwd, or worktree name), age since last activity, and when available the **question it's waiting on** and **Claude's suggested reply** (from internal job state, see Appendix B; omit gracefully if absent).
+**FR-I3** Each row shows: name, repo (derived by stripping `/.claude/worktrees/<name>` from the CLI's `cwd`, which is the worktree path once a session has moved into one), age since last activity, and when available the **question it's waiting on** and **Claude's suggested reply** (from internal job state, see Appendix B; omit gracefully if absent).
 
 **FR-I4** Row actions:
 - **Open** → opens the user's terminal and runs `claude attach <id>`.
-- **Copy suggested reply** (if present) — then Open.
+- **Copy suggested reply** (if present) — then Open. Often absent: a session blocked on a multiple-choice question has structured options instead (Appendix B, `block`), and a session blocked on a permission prompt has neither. Show the options or the command awaiting approval in those cases.
 - **Snooze** 1h / until tomorrow 09:00 / until state changes.
 - **Stop** (`claude stop <id>`), **Remove** (`claude rm <id>`) — confirm first; surface the CLI's refusal text verbatim if it refuses.
-- **Show logs** → `claude logs <id>` in a scrollable popover.
+- **Show logs** → `claude logs <id>` in a scrollable popover. The output is raw terminal data full of cursor and colour escape sequences, so it needs a terminal renderer or stripping, not a plain text view.
 
 **FR-I5** Footer: "Open agent view" (terminal + `claude agents`), "New session…" (launcher), Settings, Quit.
 
@@ -88,7 +90,7 @@ Acceptance: with 3 blocked sessions, badge shows 3; answering one in the termina
 
 **FR-N1** macOS notification when a session enters `blocked`, titled with the session name, body = the question if known, else "needs your input". Grouped per session (re-notify replaces, doesn't stack).
 
-**FR-N2** Escalation ladder, configurable. Default: at 0 min (only if Lantern detects it before Claude's own notification would be visible — **[OPEN]** whether to duplicate), 15 min, 2 h, then every 4 h; from 2 h add sound; optional "time-sensitive" interruption level from 4 h.
+**FR-N2** Escalation ladder, configurable. Default: at 0 min (only if Porchlight detects it before Claude's own notification would be visible — **[OPEN]** whether to duplicate), 15 min, 2 h, then every 4 h; from 2 h add sound; optional "time-sensitive" interruption level from 4 h.
 
 **FR-N3** Notification actions: **Open**, **Snooze 1h**, **Copy suggested reply**.
 
@@ -106,9 +108,9 @@ Acceptance: with 3 blocked sessions, badge shows 3; answering one in the termina
 
 **FR-L2** Step 1 — pick a directory by fuzzy search over the **Repo index** (§6.5). Ranking: pinned, then frecency (recent dispatches + directories of existing sessions), then alphabetical. Also allow "Browse…" for any folder, and paste of a path.
 
-**FR-L3** Step 2 — prompt text (multi-line; ⌘↩ to dispatch). Optional fields, collapsed by default: name, model, effort, agent, permission mode (only flags the installed CLI supports — detect from `claude --help`).
+**FR-L3** Step 2 — prompt text (multi-line; ⌘↩ to dispatch). Optional fields, collapsed by default: name, model, effort, agent, permission mode, worktree (`-w`) (only flags the installed CLI supports — detect from `claude --help`). Note that `acceptEdits` does not cover shell commands such as `git commit`; such a session still stops on a permission prompt.
 
-**FR-L4** Dispatch = run `claude --bg [-n <name>] [--model …] [--effort …] [--agent …] "<prompt>"` with the working directory set to the chosen folder (never via shell string interpolation; pass argv directly). Capture the printed short id; show a toast "Started <name> (<id>)" with **Open** action.
+**FR-L4** Dispatch = run `claude --bg [-n <name>] [--model …] [--effort …] [--agent …] "<prompt>"` with the working directory set to the chosen folder (never via shell string interpolation; pass argv directly). Capture the printed short id (strip ANSI colour codes first: the CLI colours it even when stdout is not a terminal); show a toast "Started <name> (<id>)" with **Open** action.
 
 **FR-L5** Option "Dispatch and open" opens the terminal on `claude attach <id>` immediately.
 
@@ -124,7 +126,7 @@ Acceptance: from any app, hotkey → type 3 letters of a repo → Enter → type
 
 **FR-NM3** **[OPEN]** LLM-generated slug via `claude -p --model <small> "…"` — better names, but adds latency and spends usage. Default off if built.
 
-**FR-NM4** **[v1.1]** Optional installer for a Claude Code hook (`UserPromptSubmit`/`SessionStart` returning `hookSpecificOutput.sessionTitle`) so sessions started *outside* Lantern also get template names. Must be opt-in, show the exact settings diff, and be removable.
+**FR-NM4** **[v1.1]** Optional installer for a Claude Code hook (`UserPromptSubmit`/`SessionStart` returning `hookSpecificOutput.sessionTitle`) so sessions started *outside* Porchlight also get template names. Must be opt-in, show the exact settings diff, and be removable.
 
 ### 6.5 Repo index — v1
 
@@ -164,7 +166,7 @@ Acceptance: from any app, hotkey → type 3 letters of a repo → Enter → type
 ### 8.1 Components
 
 ```
-┌──────────────────────────── Lantern.app ────────────────────────────┐
+┌──────────────────────────── Porchlight.app ────────────────────────────┐
 │  UI: MenuBarExtra (Inbox) · Palette window (Launcher) · Settings     │
 │        ▲                         │                                   │
 │        │ observes                │ intents                           │
@@ -188,6 +190,14 @@ Acceptance: from any app, hotkey → type 3 letters of a repo → Enter → type
           │ exec                         │ read-only
      claude CLI ── daemon ── sessions    ~/.claude/jobs/*/state.json
 ```
+
+**Frontend/backend split [DECIDED 2026-10-08].** Three SwiftPM targets:
+
+- `PorchlightCore` — everything that is not UI. Imports Foundation only (enforced by a test), with platform services behind interfaces, so a Linux frontend can reuse it.
+- `porchlight` — a command-line tool over the core that speaks JSON (`porchlight status --json`, later `dispatch`, `snooze`, `watch`). This is the contract any other frontend builds on, in any language.
+- `PorchlightApp` — the macOS app. Links the core directly, with no process boundary.
+
+There is deliberately no daemon or socket API. Snoozes and history live in files the core owns, so the app and the tool see the same state. If macOS stops being the only serious target, the core can be rewritten (for example in Rust) behind the tool's JSON interface.
 
 Each unit has one job and a narrow interface:
 
@@ -213,12 +223,12 @@ Session          // enriched
   question?        // internal: needs
   detail?          // internal: detail
   suggestedReply?  // internal
-  updatedAt?       // internal; else last-seen-state-change time tracked by Lantern
+  updatedAt?       // internal; else last-seen-state-change time tracked by Porchlight
   worktreePath?, worktreeBranch?, links[]?   // internal
   derived: waitingSince, ladderStep, snoozedUntil, retryable
 ```
 
-`waitingSince`: prefer internal `updatedAt`; otherwise the first time Lantern observed `state == blocked` (persisted, so restarts don't reset the clock).
+`waitingSince`: prefer internal `updatedAt`; otherwise the first time Porchlight observed `state == blocked` (persisted, so restarts don't reset the clock).
 
 ### 8.3 Refresh strategy
 
@@ -229,6 +239,8 @@ Session          // enriched
 ### 8.4 Terminal launcher adapters **[SPIKE per terminal]**
 
 Goal: open a new tab/window in the user's terminal running `claude attach <id>` (or `claude agents`) in a given cwd.
+- Ghostty first (the development machine has Ghostty, Warp and WezTerm; no iTerm2).
+- WezTerm: `wezterm cli spawn` — verify.
 - Terminal.app, iTerm2: AppleScript.
 - Ghostty: `open -na Ghostty --args …` or its CLI/AppleScript if available.
 - Warp: URL scheme / launch configurations — verify what can run a command.
@@ -243,7 +255,14 @@ Each adapter declares capabilities (new tab, new window, run command, cwd) and t
 | Tauri (Rust + web UI) | Cross-platform later; web devs can contribute | Menu-bar + notification-action polish is weaker; bigger surface |
 | Raycast extension (TS/React) | Fastest to build, palette + menu-bar command for free | Requires Raycast; not a standalone app; distribution through Raycast store |
 
-Recommendation: native Swift. Keep CLI decoding and ladder logic in a pure Swift package (`LanternCore`) with no UI imports, so it is unit-testable and portable.
+Recommendation: native Swift. Keep CLI decoding and ladder logic in a pure Swift package (`PorchlightCore`) with no UI imports, so it is unit-testable and portable.
+
+**Build [DECIDED 2026-10-08]: SwiftPM only, no Xcode project.** `scripts/make-app.sh` assembles and ad-hoc signs `Porchlight.app` from `swift build`. Consequences found while building M0 with only the Command Line Tools installed:
+
+- SwiftUI's `@State` cannot be used: on the macOS 27 SDK it is a macro whose compiler plugin ships only with Xcode. `@Observable` works. UI state therefore lives in `@Observable` model objects, which also compiles under Xcode and in CI.
+- No asset catalog and no XCTest-based UI snapshot tests. Tests use Swift Testing.
+- The app binary and the `porchlight` tool cannot sit in the same folder of the bundle: the default file system is case-insensitive. The tool goes in `Contents/Helpers/`.
+- Notarization (M5) needs an Apple Developer account; the machine has no signing identity.
 
 Suggested libraries (verify licenses/maintenance): `KeyboardShortcuts` (global hotkey, sindresorhus), `Sparkle` (updates), `LaunchAtLogin` (or `SMAppService` directly).
 
@@ -257,6 +276,8 @@ Suggested libraries (verify licenses/maintenance): `KeyboardShortcuts` (global h
 | Unknown fields / states | Ignore unknown fields; map unknown state to `unknown` and show it neutrally. |
 | Internal job-state schema mismatch | Disable JobStateSource, show "limited details" note; core features still work. |
 | Dispatch fails | Show CLI stderr verbatim in a toast with "Copy command". |
+| Dispatch refused: workspace not trusted | `claude --bg` exits 1 with "Workspace not trusted. Run `claude` in <path> once and accept the trust prompt, then retry." Trust is per folder and not inherited from the parent, so this happens for any repo never opened in Claude Code. Offer "Open in terminal to trust" (runs `claude` there); never try to bypass the prompt. |
+| Job directory without `state.json`, or with no CLI row | Ignore it. The CLI list is the source of truth; the file watcher is only a trigger. |
 | `rm` refused | Show the CLI's refusal text verbatim; offer Open (to resolve in terminal). Never pass `--discard-unpushed` automatically; if offered at all, behind a second explicit confirmation showing the commits. |
 | Terminal adapter fails | Fallback to clipboard + activate terminal. |
 | Notifications denied | Inbox still works; banner explains how to enable. |
@@ -267,7 +288,7 @@ Suggested libraries (verify licenses/maintenance): `KeyboardShortcuts` (global h
 - **S2 Retry for transient errors.** Determine whether `claude respawn <id>` resumes the interrupted turn or only restarts the process; otherwise "Retry" = Open + prefill.
 - **S3 Terminal adapters** (§8.4), one per terminal.
 - **S4 Stability of internal job state** (Appendix B): how often it changed across recent CLI versions; decide whether JobStateSource ships enabled by default.
-- **S5** Does `claude agents --json` expose the waiting question officially in the installed version (a `waitingFor` field was observed intermittently)? If yes, prefer it over internal state.
+- **S5 [ANSWERED 2026-10-08, v2.1.294]** `waitingFor` is official but is only a category (`permission prompt`, `input needed`), never the question text, and it is absent on sessions blocked before the field existed. The question text still comes only from internal job state, which strengthens D6.
 
 ## 12. Security & privacy
 
@@ -280,7 +301,7 @@ Suggested libraries (verify licenses/maintenance): `KeyboardShortcuts` (global h
 
 ## 13. Testing
 
-- **Unit (LanternCore):** decoding fixtures (current schema, missing fields, unknown states, extra fields), ladder/quiet-hours/digest logic with an injected clock, frecency ranking, name templating, transient-error matching.
+- **Unit (PorchlightCore):** decoding fixtures (current schema, missing fields, unknown states, extra fields), ladder/quiet-hours/digest logic with an injected clock, frecency ranking, name templating, transient-error matching.
 - **Contract tests:** a fake `claude` executable (script) that returns fixture JSON and records argv — used in integration tests for Dispatcher/stop/rm/attach flows, including refusal outputs.
 - **Live smoke test (opt-in, local):** against a real CLI: dispatch a trivial session in a temp git repo, see it in the snapshot, stop, rm.
 - **UI:** snapshot tests for inbox rows (states, long names, missing enrichment); manual checklist for notifications and hotkey.
@@ -291,19 +312,19 @@ Suggested libraries (verify licenses/maintenance): `KeyboardShortcuts` (global h
 | # | Decision | Recommendation |
 |---|---|---|
 | D1 | Audience | **[DECIDED]** Open source, for any Claude Code user. Built on a clean machine to avoid bias. |
-| D2 | v1 scope | **[PROPOSED]** Inbox + Nagger + Launcher + Naming-at-dispatch + Repo index + Onboarding. Triage and reply later. |
-| D3 | Tech stack | **[PROPOSED]** Native Swift/SwiftUI, macOS 14+. |
-| D4 | License | **[OPEN]** MIT vs Apache-2.0 (Apache gives a patent grant). |
-| D5 | Name | **[OPEN]** "Lantern" placeholder; check collisions. |
+| D2 | v1 scope | **[DECIDED 2026-10-08]** Inbox + Nagger + Launcher + Naming-at-dispatch + Repo index + Onboarding. Triage and reply later. |
+| D3 | Tech stack | **[DECIDED 2026-10-08]** Native Swift/SwiftUI, macOS 14+, built with SwiftPM only (§9), split into core library + JSON command-line tool + app (§8.1). Tauri and a Rust core were considered for cross-platform reach and declined: macOS is the main target. |
+| D4 | License | **[DECIDED 2026-10-08]** Apache-2.0. |
+| D5 | Name | **[DECIDED 2026-10-08]** Porchlight (was "Lantern"). Bundle id `io.github.ksawerykarwacki.porchlight`. |
 | D6 | Use internal job state by default | **[PROPOSED]** Yes, behind a schema check + toggle (the question text and suggested reply are the most valuable fields). |
 | D7 | Duplicate Claude's own first notification | **[OPEN]** Probably no (start ladder at 15 min), to avoid double alerts; make configurable. |
 | D8 | LLM-generated names | **[OPEN]** Off by default if built. |
-| D9 | Minimum Claude Code version | **[PROPOSED]** The version that introduced `claude agents --json --all` with `state`; confirm in changelog. |
+| D9 | Minimum Claude Code version | **[PROPOSED]** Provisionally 2.1.294, the only version verified. TODO: find in the changelog the version that introduced `claude agents --json --all` with `state` and lower the minimum to it. |
 | D10 | Distribution | **[PROPOSED]** GitHub releases (notarized DMG) + Homebrew cask + Sparkle. |
 
 ## 15. Milestones (for the implementation plan)
 
-1. **M0 Skeleton:** Swift package `LanternCore` + app target; CLIRunner with PATH resolution; fake-`claude` test harness.
+1. **M0 Skeleton:** Swift package `PorchlightCore` + app target; CLIRunner with PATH resolution; fake-`claude` test harness.
 2. **M1 Read-only inbox:** AgentsCLISource, SessionStore, menu bar with badge and grouped list, Open via one terminal adapter + clipboard fallback.
 3. **M2 Nagger:** notifications with actions, ladder, snooze, quiet hours, digest.
 4. **M3 Launcher:** RepoIndex, palette, dispatch with flags, naming template, frecency.
@@ -314,13 +335,13 @@ Each milestone ends usable; M1 alone already addresses P1 partially.
 
 ---
 
-## Appendix A — Claude Code CLI contract (observed on v2.1.294, 2026-10-08 — re-verify)
+## Appendix A — Claude Code CLI contract (observed on v2.1.294, re-verified on the same version 2026-10-08)
 
 Commands:
 
 | Command | Behaviour observed / documented |
 |---|---|
-| `claude --bg [-n <name>] [--model m] [--effort e] [--agent a] "<prompt>"` | Starts a background session in the **current working directory** (no directory flag; set cwd on the child process). Prints the short id. `-n/--name` sets the display name. |
+| `claude --bg [-n <name>] [--model m] [--effort e] [--agent a] "<prompt>"` | Starts a background session in the **current working directory** (no directory flag; set cwd on the child process). Prints `backgrounded · <id> · <name>` followed by hint lines, with ANSI colour codes even when stdout is not a terminal. `-n/--name` sets the display name. Also accepts `--permission-mode` and `-w/--worktree`. Exits 1 with a "Workspace not trusted" message in a folder whose trust prompt was never accepted. |
 | `claude agents` | Terminal UI (agent view). |
 | `claude agents --json` | Active sessions (interactive and background) as a JSON array; no TTY needed. |
 | `claude agents --json --all` | Also includes completed background sessions. |
@@ -350,7 +371,9 @@ Commands:
 }
 ```
 - Always seen: `id, cwd, kind, startedAt (epoch ms), sessionId, name, state`.
-- Sometimes present: `pid`, `status` (`busy`, `idle`, `waiting`), `waitingFor`.
+- Sometimes present: `pid`, `status` (`busy`, `idle`, `waiting`), `waitingFor` (`permission prompt`, `input needed`).
+- `state` and `status` can disagree: a `blocked` session was observed with `status: busy`. Key off `state` only.
+- `cwd` is the worktree path (`<repo>/.claude/worktrees/<name>`) once a session has moved into a worktree.
 - `state` values seen: `working`, `blocked`, `done`.
 
 Agent view facts relevant to UX (from docs — re-read docs to verify): `@<repo>` in the dispatch box suggests git repos one level below the launch dir, registered worktrees, and any dir that already has a session. `Ctrl+S` groups by directory and dispatches into the selected group's dir. Idle unattached sessions have their process stopped after ~1 h (row and conversation stay); pinning (`Ctrl+T`) keeps them running.
@@ -361,25 +384,37 @@ Cross-session messaging (from docs): per-session Unix socket (`CLAUDE_CODE_MESSA
 
 Docs: https://code.claude.com/docs/en/agent-view · /cross-session-messaging · /hooks · /sessions · /settings-reference
 
-## Appendix B — Internal job state (unofficial, observed v2.1.294 — may change without notice)
+## Appendix B — Internal job state (unofficial, observed v2.1.283 and v2.1.294 — may change without notice)
 
 Path: `~/.claude/jobs/<id>/state.json`. Fields observed:
 
-| Field | Type | Use in Lantern |
+| Field | Type | Use in Porchlight |
 |---|---|---|
-| `state` | string | cross-check with CLI |
-| `needs` | string | **the question the session is waiting on** |
+| `state` | string | **lags the CLI**: observed as `working` while the session was blocked. Do not use for display. |
+| `tempo` | string | `blocked` when the session waits; use this, not `state`, to cross-check the CLI |
+| `block.questions[]` | `{question, options[]: {label, description}}` | structured form of a multiple-choice question; the recommended option is marked only by "(Recommended)" in its label |
+| `needs` | string | **what the session is waiting on.** Prefix convention: `answer: <question> (<option> · <option>)` for questions, `approve <Tool>: <command>` for permission prompts; older sessions have free text. Fall back to showing the raw string. |
 | `detail` | string | one-line status |
-| `suggestedReply` | string | **Claude's proposed answer** |
+| `suggestedReply` | string | **Claude's proposed answer.** Often absent, including while blocked. |
 | `output.result` | string | last turn summary |
 | `updatedAt`, `createdAt`, `firstTerminalAt` | ISO-8601 string | waiting age |
 | `name`, `nameSource` (`auto`/user) | string | naming |
 | `intent` | string | original prompt — may contain pasted secrets; **never log** |
-| `cwd`, `originCwd`, `worktreePath`, `worktreeBranch` | string | repo display, triage |
+| `cwd`, `originCwd`, `worktreePath`, `worktreeBranch` | string | repo display, triage. `cwd` here is the repository root even when the CLI reports the worktree. |
 | `children` | array of `{id, href, kind}` (`kind: "pr"`) | linked PRs (triage, v1.2) |
-| `tokens` | int | optional display |
+| `tokens` | int | unreliable (stayed at 54 through a whole run); do not display |
 | `backend` | `"daemon"` | — |
 | others: `tempo, inFlight, linkScanOffset, linkScanPath, template, respawnFlags, providerEnv, sessionId, resumeSessionId, daemonShort, cliVersion` | — | ignore; `providerEnv` may contain environment values — **never display or log** |
+
+Further observations:
+
+- A session keeps the schema of the CLI version that started it (`cliVersion`), so several shapes coexist: `bgIsolation`, `fan` and `interactiveLineage` appear on 2.1.283 files only; `originCwd` and `lastTerminalAt` on 2.1.294 files.
+- `children`, `output` and `firstTerminalAt` are `null` rather than absent; `detail` can be an empty string.
+- `nameSource` is `user` when the session was started with `-n`; `respawnFlags` records the dispatch flags.
+- `needs` keeps its last value after the session moves on, so only read it while the CLI says `blocked`.
+- `~/.claude/jobs/<id>/timeline.jsonl` exists but held only the initial `working` line through two stops; it is not a state-change log.
+- A job directory can exist with no `state.json` and no CLI row.
+- Not yet observed: non-empty `children` (linked PRs), and what `claude rm` prints when it refuses.
 
 Rules: read-only; tolerate missing file/fields; validate a minimal schema (`state` + `name` strings) before enabling enrichment; never log full contents.
 
@@ -390,7 +425,8 @@ Rules: read-only; tolerate missing file/fields; validate a minimal schema (`stat
 - **Agent Bar** (paid) — its own Claude Code GUI; bypasses agent view.
 - **claude-agent-watcher, so-agentbar** — monitoring only.
 - **cmux, Herdr, ccmanager, claude-squad, agent-deck** — terminal multiplexers/orchestrators managing sessions in their own panes; overlap with agent view rather than complement it.
-- Gap Lantern fills: out-of-terminal inbox **with escalation**, plus dispatch-from-anywhere, built on the official background-session system.
+- **Found 2026-10-08 by GitHub search (READMEs read, none installed):** claude-status-bar, Lunavect, CoderBar, vibebuddy (Mac, iPhone and Watch), cc-notifier, ClaudeNotifier, agentoast (tmux), Agent Signal Bar, AgentPet, MioIsland, Agentbox. All are hook-based: they install hooks into Claude Code settings rather than reading `claude agents --json`. CoderBar and vibebuddy let the user approve and answer without the terminal. None mentions re-notifying, snoozing, escalation or quiet hours, and none dispatches `claude --bg` (Agentbox spawns its own headless sessions). Whether they show background sessions at all is untested.
+- Gap Porchlight fills: out-of-terminal inbox **with escalation**, plus dispatch-from-anywhere, built on the official background-session system.
 
 ## Appendix D — Design evidence (anonymised, one heavy user, 30 days)
 

@@ -1,0 +1,32 @@
+{
+  "backend": "daemon",
+  "block": {
+    "questions": [
+      {
+        "question": "Should hello.txt be renamed to greeting.txt or salute.txt?",
+        "options": [
+          { "label": "greeting.txt (Recommended)", "description": "The plainer, more common word." },
+          { "label": "salute.txt", "description": "Less conventional." },
+          "not an option object"
+        ]
+      }
+    ]
+  },
+  "children": null,
+  "cliVersion": "2.1.294",
+  "createdAt": "2026-10-08T17:20:37.065Z",
+  "cwd": "/Users/u/code/beta",
+  "detail": "",
+  "firstTerminalAt": null,
+  "intent": "REDACTED-PROMPT-MUST-NEVER-BE-READ",
+  "name": "rename the file",
+  "nameSource": "user",
+  "needs": "answer: Should hello.txt be renamed to greeting.txt or salute.txt? (greeting.txt (Recommended) · salute.txt)",
+  "originCwd": "/Users/u/code/beta",
+  "output": null,
+  "providerEnv": {},
+  "state": "working",
+  "tempo": "blocked",
+  "tokens": 54,
+  "updatedAt": "2026-10-08T17:22:14.197Z"
+}

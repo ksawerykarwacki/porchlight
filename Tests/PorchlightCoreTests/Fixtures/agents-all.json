@@ -1,0 +1,69 @@
+[
+  {
+    "pid": 70001,
+    "id": "11111111",
+    "cwd": "/Users/u/code/alpha",
+    "kind": "background",
+    "startedAt": 1790450842181,
+    "sessionId": "11111111-0000-4000-8000-000000000000",
+    "name": "fix flaky test",
+    "status": "busy",
+    "state": "blocked"
+  },
+  {
+    "pid": 70002,
+    "id": "22222222",
+    "cwd": "/Users/u/code/beta",
+    "kind": "background",
+    "startedAt": 1791479605772,
+    "sessionId": "22222222-0000-4000-8000-000000000000",
+    "name": "rename the file",
+    "status": "waiting",
+    "waitingFor": "input needed",
+    "state": "blocked"
+  },
+  {
+    "pid": 70003,
+    "id": "33333333",
+    "cwd": "/Users/u/code/gamma",
+    "kind": "background",
+    "startedAt": 1791479629658,
+    "sessionId": "33333333-0000-4000-8000-000000000000",
+    "name": "build the thing",
+    "status": "busy",
+    "state": "working"
+  },
+  {
+    "id": "44444444",
+    "cwd": "/Users/u/code/gamma",
+    "kind": "background",
+    "startedAt": 1791479868173,
+    "sessionId": "44444444-0000-4000-8000-000000000000",
+    "name": "summarise the logs",
+    "status": "idle",
+    "state": "done"
+  },
+  {
+    "pid": 70005,
+    "id": "55555555",
+    "cwd": "/Users/u/code/probe/.claude/worktrees/add-hello",
+    "kind": "background",
+    "startedAt": 1791480037459,
+    "sessionId": "55555555-0000-4000-8000-000000000000",
+    "name": "probe-worktree",
+    "status": "waiting",
+    "waitingFor": "permission prompt",
+    "state": "blocked"
+  },
+  {
+    "id": "66666666",
+    "cwd": "/Users/u/code/delta",
+    "kind": "interactive",
+    "startedAt": "not a number",
+    "name": "from the future",
+    "state": "hibernating",
+    "somethingNew": { "nested": true }
+  },
+  "garbage row",
+  { "name": "row without an id", "state": "working" }
+]
