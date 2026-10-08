@@ -91,11 +91,27 @@ public struct Settings: Sendable, Equatable, Codable {
     /// When true and agent view is already open in a terminal, opening a session switches to that
     /// terminal instead of attaching in a new tab.
     public var preferAgentView: Bool?
+    /// When and how to remind. Nil uses the defaults.
+    public var reminders: ReminderSettings?
 
-    public init(terminal: String? = nil, claudePath: String? = nil, preferAgentView: Bool? = nil) {
+    public init(terminal: String? = nil, claudePath: String? = nil, preferAgentView: Bool? = nil, reminders: ReminderSettings? = nil) {
         self.terminal = terminal
         self.claudePath = claudePath
         self.preferAgentView = preferAgentView
+        self.reminders = reminders
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case terminal, claudePath, preferAgentView, reminders
+    }
+
+    /// Each value is read on its own, so one odd entry does not discard the rest.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        terminal = try? c.decodeIfPresent(String.self, forKey: .terminal)
+        claudePath = try? c.decodeIfPresent(String.self, forKey: .claudePath)
+        preferAgentView = try? c.decodeIfPresent(Bool.self, forKey: .preferAgentView)
+        reminders = try? c.decodeIfPresent(ReminderSettings.self, forKey: .reminders)
     }
 
     public static func fileURL(in stateDirectory: URL = PorchlightPaths.stateDirectory()) -> URL {

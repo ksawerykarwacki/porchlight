@@ -27,6 +27,10 @@ public final class InboxModel {
     public private(set) var prefersAgentView = false
 
     public private(set) var snapshot = StoreSnapshot()
+    /// When and how to remind, as last saved.
+    public private(set) var reminderSettings = ReminderSettings()
+    /// Whether the panel shows the reminder settings instead of the sessions.
+    public var showsSettings = false
     /// Which row or button the pointer is over.
     public let hover = HoverTracker()
     /// The result of the last action, shown briefly at the bottom of the inbox.
@@ -34,7 +38,10 @@ public final class InboxModel {
     private var noticeGeneration = 0
 
     public var waitingCount: Int { snapshot.waitingCount }
-    public var status: MenuBarStatus { MenuBarStatus(snapshot: snapshot, snoozes: snoozes, now: clock()) }
+    /// "Waited long" means as long as the second, louder reminder step.
+    public var status: MenuBarStatus {
+        MenuBarStatus(snapshot: snapshot, snoozes: snoozes, overdueAfter: reminderSettings.secondStep, now: clock())
+    }
     /// Sessions whose reminders are paused, as last read from the saved state.
     public private(set) var snoozes: [String: Snooze] = [:]
 
@@ -69,10 +76,30 @@ public final class InboxModel {
         let relay = ActionRelay()
         let delivery = UserNotificationDelivery { action in relay.send(action) }
         self.delivery = delivery
-        self.engine = ReminderEngine(delivery: delivery, stateURL: remindersURL, now: clock)
+        self.reminderSettings = settings.reminders ?? ReminderSettings()
+        self.engine = ReminderEngine(
+            delivery: delivery, stateURL: remindersURL,
+            // Read from the file each time, so a change here or by hand applies at the next refresh.
+            settings: { Settings.load(from: settingsURL).reminders ?? ReminderSettings() },
+            now: clock)
         self.snoozes = ReminderState.load(from: remindersURL).snoozes
         relay.handler = { [weak self] action in
             Task { @MainActor in self?.handle(action) }
+        }
+    }
+
+    /// Saves new reminder settings. They apply from the next refresh.
+    public func updateReminders(_ change: (inout ReminderSettings) -> Void) {
+        var updated = reminderSettings
+        change(&updated)
+        guard updated != reminderSettings else { return }
+        reminderSettings = updated
+        var settings = Settings.load(from: settingsURL)
+        settings.reminders = updated
+        do {
+            try settings.save(to: settingsURL)
+        } catch {
+            show("Could not save the settings")
         }
     }
 

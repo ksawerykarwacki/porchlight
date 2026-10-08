@@ -12,8 +12,8 @@ reads their state and never replaces agent view; uninstalling it loses nothing.
 |---|---|
 | M0 Skeleton: core library, command-line tool, app bundle, test harness | done |
 | M1 Read-only inbox with "open in terminal" | done |
-| M2 Reminders: escalation, snooze, quiet hours, digest | in progress: reminders are delivered as notifications; snooze controls in the inbox and settings are not built yet |
-| M3 Launcher: start a background session in any repo from a hotkey | planned |
+| M2 Reminders: escalation, snooze, quiet hours, digest | done |
+| M3 Launcher: start a background session in any repo from a hotkey | next |
 | M4 Stop and remove with confirmations | planned |
 | M5 Onboarding, settings, signing, release | planned |
 
@@ -45,13 +45,21 @@ open dist/Porchlight.app
 
 ## Reminders
 
-A session that keeps waiting gets a notification after 15 minutes, again after 2 hours, then every
-4 hours, with sound from 2 hours on. Each notification has Open and Snooze buttons, and Copy
-suggested reply when the session came with one. A daily summary arrives at 09:00. macOS asks for
-permission the first time a reminder is due, not at launch.
+A session that keeps waiting gets a notification after 15 minutes, again with sound after 2 hours,
+then every 4 hours. Each notification has Open and Snooze buttons, and Copy suggested reply when
+the session came with one. A daily summary arrives at 09:00.
 
-`porchlight snooze <id> 1h` (or `30m`, `tomorrow`, `change`, `off`) pauses reminders for one
-session. Set `PORCHLIGHT_NO_NOTIFICATIONS=1` to run the app without notifications.
+- **Snooze** from a notification, from the Snooze menu on an inbox row, or with
+  `porchlight snooze <id> 1h` (also `30m`, `tomorrow`, `change`, `off`). A snoozed session stays in
+  the inbox but does not light the menu-bar lantern or count towards its number.
+- **Change the times** on the Reminders page of the panel: the two steps, the repeat, the daily
+  summary, quiet hours, and whether the question text appears in notifications. They are kept in
+  `settings.json`; `porchlight settings` prints the ones in force.
+- **The menu-bar lantern** is unlit when nothing waits, amber when a session waits, and red with
+  rays once one has waited as long as the second step. The number appears from two sessions up.
+
+If notifications are turned off for Porchlight in System Settings, the panel says so.
+Set `PORCHLIGHT_NO_NOTIFICATIONS=1` to run the app without them.
 
 ## Terminals
 

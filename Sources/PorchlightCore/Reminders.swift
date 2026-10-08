@@ -51,6 +51,58 @@ public struct ReminderSettings: Codable, Sendable, Equatable {
         self.hideDetails = hideDetails
     }
 
+    private enum CodingKeys: String, CodingKey {
+        case ladder, repeatEvery, soundAfter, quietHours, digestMinute, hideDetails
+    }
+
+    /// Missing or mistyped values fall back to the defaults one by one, so a hand-edited or older
+    /// file never loses the settings that are fine.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let defaults = ReminderSettings()
+        let ladder = (try? c.decode([TimeInterval].self, forKey: .ladder)) ?? defaults.ladder
+        // An explicit null means "off"; a missing or odd value means "default".
+        func optional<T: Decodable>(_ key: CodingKeys, default fallback: T?) -> T? {
+            guard c.contains(key) else { return fallback }
+            if (try? c.decodeNil(forKey: key)) == true { return nil }
+            return (try? c.decode(T.self, forKey: key)) ?? fallback
+        }
+        let repeatEvery: TimeInterval? = optional(.repeatEvery, default: defaults.repeatEvery)
+        let digestMinute: Int? = optional(.digestMinute, default: defaults.digestMinute)
+        self.init(
+            ladder: ladder,
+            repeatEvery: repeatEvery,
+            soundAfter: (try? c.decode(TimeInterval.self, forKey: .soundAfter)) ?? defaults.soundAfter,
+            quietHours: try? c.decodeIfPresent(QuietHours.self, forKey: .quietHours),
+            digestMinute: digestMinute.flatMap { (0..<1440).contains($0) ? $0 : defaults.digestMinute },
+            hideDetails: (try? c.decode(Bool.self, forKey: .hideDetails)) ?? defaults.hideDetails)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(ladder, forKey: .ladder)
+        // Written even when nil, so "off" is not mistaken for "missing" on the way back in.
+        try c.encode(repeatEvery, forKey: .repeatEvery)
+        try c.encode(soundAfter, forKey: .soundAfter)
+        try c.encodeIfPresent(quietHours, forKey: .quietHours)
+        try c.encode(digestMinute, forKey: .digestMinute)
+        try c.encode(hideDetails, forKey: .hideDetails)
+    }
+
+    /// When the first reminder comes.
+    public var firstStep: TimeInterval { ladder.first ?? 0 }
+    /// When the second, louder reminder comes.
+    public var secondStep: TimeInterval { ladder.count > 1 ? ladder[1] : firstStep }
+
+    /// Sets the two steps the settings screen offers. The second always comes after the first,
+    /// and sound starts with it.
+    public mutating func setSteps(first: TimeInterval, second: TimeInterval) {
+        let first = max(0, first)
+        let second = second > first ? second : max(first * 2, first + 3600)
+        ladder = [first, second]
+        soundAfter = second
+    }
+
     /// How many reminder moments have passed for a session that has waited `waited` seconds.
     public func stepsDue(afterWaiting waited: TimeInterval) -> Int {
         guard waited >= 0 else { return 0 }
@@ -59,6 +111,28 @@ public struct ReminderSettings: Codable, Sendable, Equatable {
             count += Int((waited - (ladder.last ?? 0)) / repeatEvery)
         }
         return count
+    }
+}
+
+/// The choices the settings screen offers, with their wording.
+public enum ReminderOptions {
+    public static let firstSteps: [TimeInterval] = [5 * 60, 15 * 60, 30 * 60, 3600]
+    public static let secondSteps: [TimeInterval] = [3600, 2 * 3600, 4 * 3600, 8 * 3600]
+    public static let repeats: [TimeInterval?] = [nil, 2 * 3600, 4 * 3600, 8 * 3600, 24 * 3600]
+    public static let digestHours: [Int?] = [nil, 7, 8, 9, 10, 12]
+
+    public static func duration(_ seconds: TimeInterval) -> String {
+        let minutes = Int((seconds / 60).rounded())
+        if minutes < 60 { return minutes == 1 ? "1 minute" : "\(minutes) minutes" }
+        if minutes % 60 == 0 {
+            let hours = minutes / 60
+            return hours == 1 ? "1 hour" : "\(hours) hours"
+        }
+        return "\(minutes / 60) h \(minutes % 60) min"
+    }
+
+    public static func hour(_ hour: Int) -> String {
+        String(format: "%02d:00", hour)
     }
 }
 

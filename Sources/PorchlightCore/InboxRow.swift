@@ -104,10 +104,12 @@ public struct InboxRow: Sendable, Equatable, Identifiable {
 
 extension InboxGroups {
     /// The groups as titled sections of rows, leaving out empty ones.
-    public func sections(now: Date = Date(), snoozes: [String: Snooze] = [:]) -> [(title: String, rows: [InboxRow])] {
+    public func sections(
+        now: Date = Date(), snoozes: [String: Snooze] = [:], overdueAfter: TimeInterval = MenuBarStatus.defaultOverdueAfter
+    ) -> [(title: String, rows: [InboxRow])] {
         [("Needs you", needsYou), ("Working", working), ("Recently done", recentlyDone), ("Other", other)]
             .filter { !$0.1.isEmpty }
-            .map { (title: $0.0, rows: $0.1.map { InboxRow(session: $0, snooze: snoozes[$0.id], now: now) }) }
+            .map { (title: $0.0, rows: $0.1.map { InboxRow(session: $0, snooze: snoozes[$0.id], overdueAfter: overdueAfter, now: now) }) }
     }
 }
 

@@ -19,6 +19,11 @@ public struct InboxActions {
     public var automaticTerminalName: String?
     public var prefersAgentView = false
     public var setPrefersAgentView: (Bool) -> Void = { _ in }
+    /// Whether the panel shows the reminder settings instead of the sessions.
+    public var showsSettings = false
+    public var setShowsSettings: (Bool) -> Void = { _ in }
+    public var reminders = ReminderSettings()
+    public var updateReminders: ((inout ReminderSettings) -> Void) -> Void = { _ in }
 
     public init() {}
 }
@@ -91,6 +96,10 @@ public struct InboxView: View {
         actions.automaticTerminalName = model.automaticTerminal?.displayName
         actions.prefersAgentView = model.prefersAgentView
         actions.setPrefersAgentView = { model.setPrefersAgentView($0) }
+        actions.showsSettings = model.showsSettings
+        actions.setShowsSettings = { model.showsSettings = $0 }
+        actions.reminders = model.reminderSettings
+        actions.updateReminders = { model.updateReminders($0) }
         self.init(
             snapshot: model.snapshot, now: model.now, notice: model.notice, notificationProblem: model.notificationProblem,
             snoozes: model.snoozes, actions: actions, hover: model.hover)
@@ -108,7 +117,9 @@ public struct InboxView: View {
                 Divider()
             }
 
-            if scrolls {
+            if actions.showsSettings {
+                ReminderSettingsView(settings: actions.reminders, update: actions.updateReminders, drawsMenus: scrolls)
+            } else if scrolls {
                 ScrollView { sessionList }
                     .frame(maxHeight: 480)
                     // The menu-bar window sizes its content to the minimum it will accept, and a
@@ -126,7 +137,8 @@ public struct InboxView: View {
     }
 
     @ViewBuilder private var sessionList: some View {
-        let sections = InboxGroups(sessions: snapshot.sessions, now: now).sections(now: now, snoozes: snoozes)
+        let sections = InboxGroups(sessions: snapshot.sessions, now: now)
+            .sections(now: now, snoozes: snoozes, overdueAfter: actions.reminders.secondStep)
         VStack(alignment: .leading, spacing: 0) {
             if sections.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
@@ -181,6 +193,9 @@ public struct InboxView: View {
             HStack(spacing: 2) {
                 QuietButton(title: "Agent view", symbol: "rectangle.stack", id: "footer.agents", hover: hover, action: actions.openAgentView)
                 QuietButton(title: "Refresh", symbol: "arrow.clockwise", id: "footer.refresh", hover: hover, action: actions.refresh)
+                QuietButton(
+                    title: actions.showsSettings ? "Sessions" : "Reminders", symbol: actions.showsSettings ? "list.bullet" : "bell",
+                    id: "footer.settings", hover: hover, action: { actions.setShowsSettings(!actions.showsSettings) })
                 if !actions.terminals.isEmpty {
                     Menu(terminalLabel) {
                         terminalChoice(actions.automaticTerminalName.map { "Whichever is running (now \($0))" } ?? "Whichever is running", id: nil)
@@ -465,5 +480,102 @@ struct QuietButton: View {
         .buttonStyle(.plain)
         .onHover { hover.set(id, $0) }
         .animation(.easeOut(duration: 0.12), value: hover.hovered == id)
+    }
+}
+
+/// When and how Porchlight reminds: the panel's second page.
+struct ReminderSettingsView: View {
+    let settings: ReminderSettings
+    let update: ((inout ReminderSettings) -> Void) -> Void
+    /// Off for offscreen rendering, which draws system pickers as placeholder blocks.
+    var drawsMenus = true
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Reminders")
+                .font(.system(size: 13, weight: .semibold))
+                .padding(.bottom, 2)
+            Text("For a session that keeps waiting on you.")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .padding(.bottom, 12)
+
+            row("First reminder after") {
+                choice(ReminderOptions.firstSteps, selected: settings.firstStep, label: ReminderOptions.duration) { value in
+                    update { $0.setSteps(first: value, second: $0.secondStep) }
+                }
+            }
+            row("Again, with sound, after") {
+                choice(ReminderOptions.secondSteps.filter { $0 > settings.firstStep }, selected: settings.secondStep, label: ReminderOptions.duration) { value in
+                    update { $0.setSteps(first: $0.firstStep, second: value) }
+                }
+            }
+            row("Then repeat every") {
+                choice(ReminderOptions.repeats, selected: settings.repeatEvery, label: { $0.map(ReminderOptions.duration) ?? "Never" }) { value in
+                    update { $0.repeatEvery = value }
+                }
+            }
+
+            Divider().padding(.vertical, 10)
+
+            row("Daily summary at") {
+                choice(ReminderOptions.digestHours, selected: settings.digestMinute.map { $0 / 60 }, label: { $0.map(ReminderOptions.hour) ?? "Off" }) { value in
+                    update { $0.digestMinute = value.map { $0 * 60 } }
+                }
+            }
+            row("Quiet hours") {
+                HStack(spacing: 6) {
+                    choice([false, true], selected: settings.quietHours != nil, label: { $0 ? "On" : "Off" }) { on in
+                        update { $0.quietHours = on ? QuietHours(startMinute: 22 * 60, endMinute: 7 * 60) : nil }
+                    }
+                    if let quiet = settings.quietHours {
+                        choice(Array(0..<24), selected: quiet.startMinute / 60, label: ReminderOptions.hour) { hour in
+                            update { $0.quietHours?.startMinute = hour * 60 }
+                        }
+                        Text("to").foregroundStyle(.secondary)
+                        choice(Array(0..<24), selected: quiet.endMinute / 60, label: ReminderOptions.hour) { hour in
+                            update { $0.quietHours?.endMinute = hour * 60 }
+                        }
+                    }
+                }
+            }
+            row("Question text in notifications") {
+                choice([false, true], selected: settings.hideDetails, label: { $0 ? "Hidden" : "Shown" }) { value in
+                    update { $0.hideDetails = value }
+                }
+            }
+        }
+        .font(.system(size: 12.5))
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func row(_ title: String, @ViewBuilder control: () -> some View) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(title)
+            Spacer(minLength: 12)
+            control()
+        }
+        .padding(.vertical, 4)
+    }
+
+    /// A pop-up of choices. Offscreen it is drawn as its current value, since a system picker
+    /// cannot be rendered there.
+    @ViewBuilder
+    private func choice<Value: Hashable>(_ values: [Value], selected: Value, label: @escaping (Value) -> String, set: @escaping (Value) -> Void) -> some View {
+        if drawsMenus {
+            Picker("", selection: Binding(get: { selected }, set: { set($0) })) {
+                // A value saved by hand that is not one of the choices still shows, as itself.
+                ForEach(values.contains(selected) ? values : [selected] + values, id: \.self) { value in
+                    Text(label(value)).tag(value)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .fixedSize()
+        } else {
+            Text(label(selected))
+                .foregroundStyle(.secondary)
+        }
     }
 }

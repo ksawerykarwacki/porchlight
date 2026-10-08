@@ -17,6 +17,7 @@ let usage = """
       porchlight snooze <id> 1h|4h|tomorrow|change|off
                                               Pause reminders for a session: for a while, until
                                               tomorrow 09:00, until it asks something new, or not
+      porchlight settings                     Print the settings in force, as JSON
       porchlight tab                          Run agent view in this tab and let the app switch it
                                               to a session when you click one
       porchlight doctor                       Check that the claude CLI can be found and used
@@ -248,6 +249,26 @@ func snooze(arguments: [String]) async {
     }
 }
 
+/// Prints the settings as the app will use them, defaults filled in.
+func settings() {
+    struct Report: Encodable {
+        let file: String
+        let terminal: String?
+        let claudePath: String?
+        let preferAgentView: Bool
+        let reminders: ReminderSettings
+    }
+    let url = Settings.fileURL()
+    let loaded = Settings.load(from: url)
+    let report = Report(
+        file: url.path, terminal: loaded.terminal, claudePath: loaded.claudePath,
+        preferAgentView: loaded.preferAgentView ?? false, reminders: loaded.reminders ?? ReminderSettings())
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+    guard let data = try? encoder.encode(report) else { fail("could not encode the settings") }
+    print(String(decoding: data, as: UTF8.self))
+}
+
 func describe(_ problem: StoreProblem) -> String {
     switch problem {
     case .claudeNotFound(let candidates):
@@ -282,6 +303,8 @@ let arguments = Array(CommandLine.arguments.dropFirst())
 switch arguments.first {
 case "status":
     await status(arguments: Array(arguments.dropFirst()))
+case "settings":
+    settings()
 case "snooze":
     await snooze(arguments: Array(arguments.dropFirst()))
 case "tab":

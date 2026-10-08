@@ -19,6 +19,8 @@ public enum ReminderAction: Sendable, Equatable {
 /// Runs the planner on every refresh, delivers what is due and keeps the saved state in step.
 public actor ReminderEngine {
     private let planner: ReminderPlanner
+    /// Read before every run, so a changed setting applies without a restart.
+    private let settings: (@Sendable () -> ReminderSettings)?
     private let delivery: any ReminderDelivery
     private let stateURL: URL
     private let now: @Sendable () -> Date
@@ -29,8 +31,10 @@ public actor ReminderEngine {
         planner: ReminderPlanner = ReminderPlanner(),
         delivery: any ReminderDelivery,
         stateURL: URL = ReminderState.fileURL(),
+        settings: (@Sendable () -> ReminderSettings)? = nil,
         now: @escaping @Sendable () -> Date = { Date() }
     ) {
+        self.settings = settings
         self.planner = planner
         self.delivery = delivery
         self.stateURL = stateURL
@@ -45,6 +49,8 @@ public actor ReminderEngine {
         // The file is read each time, so a snooze set from the command line takes effect.
         var state = ReminderState.load(from: stateURL)
         let before = state
+        var planner = planner
+        if let settings { planner.settings = settings() }
         let due = planner.due(sessions: snapshot.sessions, state: &state, now: now())
         if state != before { try? state.save(to: stateURL) }
 

@@ -119,6 +119,13 @@ Acceptance: with 3 blocked sessions, badge shows 3; answering one in the termina
 - The reason delivery is not working is kept in `notification-status.txt` in the state folder.
 - Delivery is on only inside an app bundle and off when `PORCHLIGHT_NO_NOTIFICATIONS` is set, so tests and bare executables never post or prompt.
 
+**Built in M2 layers 3 to 6 (2026-10-08).**
+
+- Menu-bar icon: a drawn wall lantern in the menu bar's own colour with only its light coloured; unlit, amber, or red with rays (FR-I1). The count shows from two up. Snoozed sessions are left out of the icon, the count and the daily summary.
+- Inbox: hover states, a lamp per row, options as chips, a Snooze menu per waiting row (an hour, until tomorrow morning, until it asks something new, stop).
+- Settings page in the panel for the two ladder steps, the repeat, the daily summary, quiet hours and whether the question text appears in notifications. Stored under `reminders` in `settings.json`, read tolerantly (each odd value falls back to its default on its own; an explicit null means off), and re-read on every refresh so a change applies without a restart.
+- Still not built from §6.2: macOS Focus (FR-N4), the "time-sensitive" level (FR-N2), transient-error detection (FR-N6), phone push (FR-N7).
+
 **FR-N7** Optional push to phone via a user-configured webhook (ntfy/Pushover/Slack-compatible URL template) at a configurable ladder step. Off by default. **[PROPOSED for v1.1]**
 
 ### 6.3 Launcher (global hotkey palette) — v1 **[PROPOSED]**
