@@ -107,6 +107,20 @@ public struct InboxView: View {
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 2) {
+                TabButton(title: "Sessions", selected: !actions.showsSettings, id: "tab.sessions", hover: hover) {
+                    actions.setShowsSettings(false)
+                }
+                TabButton(title: "Settings", selected: actions.showsSettings, id: "tab.settings", hover: hover) {
+                    actions.setShowsSettings(true)
+                }
+                Spacer()
+            }
+            .padding(.horizontal, 8)
+            .padding(.top, 8)
+            .padding(.bottom, 6)
+            Divider()
+
             if let stale = snapshot.staleNotice(now: now) {
                 Label(stale, systemImage: "exclamationmark.triangle.fill")
                     .font(.system(size: 12))
@@ -118,7 +132,7 @@ public struct InboxView: View {
             }
 
             if actions.showsSettings {
-                ReminderSettingsView(settings: actions.reminders, update: actions.updateReminders, drawsMenus: scrolls)
+                SettingsPage(actions: actions, drawsMenus: scrolls)
             } else if scrolls {
                 ScrollView { sessionList }
                     .frame(maxHeight: 480)
@@ -193,33 +207,6 @@ public struct InboxView: View {
             HStack(spacing: 2) {
                 QuietButton(title: "Agent view", symbol: "rectangle.stack", id: "footer.agents", hover: hover, action: actions.openAgentView)
                 QuietButton(title: "Refresh", symbol: "arrow.clockwise", id: "footer.refresh", hover: hover, action: actions.refresh)
-                QuietButton(
-                    title: actions.showsSettings ? "Sessions" : "Reminders", symbol: actions.showsSettings ? "list.bullet" : "bell",
-                    id: "footer.settings", hover: hover, action: { actions.setShowsSettings(!actions.showsSettings) })
-                if !actions.terminals.isEmpty {
-                    Menu(terminalLabel) {
-                        terminalChoice(actions.automaticTerminalName.map { "Whichever is running (now \($0))" } ?? "Whichever is running", id: nil)
-                        Divider()
-                        ForEach(actions.terminals, id: \.id) { terminal in
-                            terminalChoice(terminal.name, id: terminal.id)
-                        }
-                        Divider()
-                        Button {
-                            actions.setPrefersAgentView(!actions.prefersAgentView)
-                        } label: {
-                            if actions.prefersAgentView {
-                                Label("Use agent view when it is open", systemImage: "checkmark")
-                            } else {
-                                Text("Use agent view when it is open")
-                            }
-                        }
-                    }
-                    .menuStyle(.borderlessButton)
-                    .font(.system(size: 12))
-                    .fixedSize()
-                    .padding(.leading, 6)
-                    .help("Which terminal sessions open in")
-                }
                 Spacer()
                 QuietButton(title: "Quit", symbol: nil, id: "footer.quit", hover: hover, action: actions.quit)
             }
@@ -229,25 +216,42 @@ public struct InboxView: View {
     }
 }
 
-extension InboxView {
-    var terminalLabel: String {
-        if let name = actions.terminals.first(where: { $0.id == actions.chosenTerminal })?.name {
-            return "Terminal: \(name)"
-        }
-        // Say what "automatic" means right now, so the choice is not a guess.
-        return actions.automaticTerminalName.map { "Terminal: \($0) (auto)" } ?? "Terminal: Auto"
+extension InboxActions {
+    /// What "whichever is running" means right now, so the choice is not a guess.
+    var automaticTerminalTitle: String {
+        automaticTerminalName.map { "Whichever is running (now \($0))" } ?? "Whichever is running"
     }
 
-    func terminalChoice(_ title: String, id: String?) -> some View {
-        Button {
-            actions.chooseTerminal(id)
-        } label: {
-            if actions.chosenTerminal == id {
-                Label(title, systemImage: "checkmark")
-            } else {
-                Text(title)
-            }
+    func terminalTitle(_ id: String?) -> String {
+        guard let id else { return automaticTerminalTitle }
+        return terminals.first { $0.id == id }?.name ?? id
+    }
+}
+
+/// One of the panel's two tabs.
+struct TabButton: View {
+    let title: String
+    let selected: Bool
+    let id: String
+    let hover: HoverTracker
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 12.5, weight: selected ? .semibold : .regular))
+                .foregroundStyle(selected || hover.hovered == id ? .primary : .secondary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(Color.primary.opacity(selected ? 0.10 : (hover.hovered == id ? 0.06 : 0))))
+                .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
         }
+        .buttonStyle(.plain)
+        .onHover { hover.set(id, $0) }
+        .animation(.easeOut(duration: 0.12), value: hover.hovered == id)
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
 
@@ -483,12 +487,14 @@ struct QuietButton: View {
     }
 }
 
-/// When and how Porchlight reminds: the panel's second page.
-struct ReminderSettingsView: View {
-    let settings: ReminderSettings
-    let update: ((inout ReminderSettings) -> Void) -> Void
+/// The panel's Settings tab: when Porchlight reminds, and where sessions open.
+struct SettingsPage: View {
+    let actions: InboxActions
     /// Off for offscreen rendering, which draws system pickers as placeholder blocks.
     var drawsMenus = true
+
+    private var settings: ReminderSettings { actions.reminders }
+    private var update: ((inout ReminderSettings) -> Void) -> Void { actions.updateReminders }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -542,6 +548,29 @@ struct ReminderSettingsView: View {
             row("Question text in notifications") {
                 choice([false, true], selected: settings.hideDetails, label: { $0 ? "Hidden" : "Shown" }) { value in
                     update { $0.hideDetails = value }
+                }
+            }
+
+            if !actions.terminals.isEmpty {
+                Divider().padding(.vertical, 10)
+
+                Text("Opening sessions")
+                    .font(.system(size: 13, weight: .semibold))
+                    .padding(.bottom, 2)
+                Text("Where a session goes when you click it.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .padding(.bottom, 8)
+
+                row("Terminal") {
+                    choice([nil] + actions.terminals.map { Optional($0.id) }, selected: actions.chosenTerminal, label: actions.terminalTitle) { id in
+                        actions.chooseTerminal(id)
+                    }
+                }
+                row("When agent view is already open") {
+                    choice([false, true], selected: actions.prefersAgentView, label: { $0 ? "Switch to it" : "Open a new tab" }) { value in
+                        actions.setPrefersAgentView(value)
+                    }
                 }
             }
         }

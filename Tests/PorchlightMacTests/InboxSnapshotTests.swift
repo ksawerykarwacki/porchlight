@@ -60,7 +60,7 @@ import Testing
         snapshot.fetchedAt = now
         let bitmap = try render(InboxView(snapshot: snapshot, now: now, scrolls: false), named: "inbox-empty")
         #expect(bitmap.pixelsWide == 800)
-        #expect(bitmap.pixelsHigh < 300)
+        #expect(bitmap.pixelsHigh < 400)
     }
 
     /// The height the menu-bar window gives the panel, scroll area included: the smallest size the
@@ -92,7 +92,7 @@ import Testing
         #expect(three > two + 20)
         // A long list stops growing and scrolls instead of running off the screen.
         #expect(many > three)
-        #expect(many < 560)
+        #expect(many < 620)
         #expect(livePanelHeight(blocked(120)) == many)
         // The fixture has six detailed rows: taller than the cap, so it sits at the cap too.
         #expect(livePanelHeight(try fixtureSnapshot()) == many)
@@ -214,15 +214,29 @@ import Testing
         #expect(overdue.pixelsWide > waiting.pixelsWide)
     }
 
-    @Test func theTerminalMenuSaysWhatAutomaticMeans() {
+    @Test func theTerminalChoiceSaysWhatAutomaticMeans() {
         var actions = InboxActions()
         actions.terminals = [(id: "warp", name: "Warp"), (id: "ghostty", name: "Ghostty")]
-        func label() -> String { InboxView(snapshot: StoreSnapshot(), actions: actions).terminalLabel }
-        #expect(label() == "Terminal: Auto")
+        #expect(actions.terminalTitle(nil) == "Whichever is running")
         actions.automaticTerminalName = "Warp"
-        #expect(label() == "Terminal: Warp (auto)")
-        actions.chosenTerminal = "ghostty"
-        #expect(label() == "Terminal: Ghostty")
+        #expect(actions.terminalTitle(nil) == "Whichever is running (now Warp)")
+        #expect(actions.terminalTitle("ghostty") == "Ghostty")
+        // A terminal saved by hand that is not installed still shows, as itself.
+        #expect(actions.terminalTitle("kitty") == "kitty")
+    }
+
+    @Test func theFooterKeepsOnlySessionActionsAndTheTabsCarryTheRest() throws {
+        var actions = InboxActions()
+        actions.terminals = [(id: "warp", name: "Warp")]
+        let sessions = try render(InboxView(snapshot: StoreSnapshot(), actions: actions, scrolls: false), named: "tabs-sessions")
+        actions.showsSettings = true
+        let settings = try render(InboxView(snapshot: StoreSnapshot(), actions: actions, scrolls: false), named: "tabs-settings")
+        // The settings tab is the taller page, and it includes the terminal section.
+        #expect(settings.pixelsHigh > sessions.pixelsHigh + 300)
+        var withoutTerminals = actions
+        withoutTerminals.terminals = []
+        let shorter = try render(InboxView(snapshot: StoreSnapshot(), actions: withoutTerminals, scrolls: false), named: "tabs-settings-no-terminal")
+        #expect(settings.pixelsHigh > shorter.pixelsHigh + 100)
     }
 
     @Test func aRowUnderThePointerIsHighlightedAndLeavingClearsIt() throws {

@@ -52,7 +52,7 @@ the session came with one. A daily summary arrives at 09:00.
 - **Snooze** from a notification, from the Snooze menu on an inbox row, or with
   `porchlight snooze <id> 1h` (also `30m`, `tomorrow`, `change`, `off`). A snoozed session stays in
   the inbox but does not light the menu-bar lantern or count towards its number.
-- **Change the times** on the Reminders page of the panel: the two steps, the repeat, the daily
+- **Change the times** in the panel's Settings tab: the two steps, the repeat, the daily
   summary, quiet hours, and whether the question text appears in notifications. They are kept in
   `settings.json`; `porchlight settings` prints the ones in force.
 - **The menu-bar lantern** is unlit when nothing waits, amber when a session waits, and red with
@@ -63,8 +63,8 @@ Set `PORCHLIGHT_NO_NOTIFICATIONS=1` to run the app without them.
 
 ## Terminals
 
-Clicking a session runs `claude attach <id>` in your terminal. Pick the terminal from the
-"Terminal:" menu at the bottom of the inbox, or with `porchlight terminal ghostty` (`auto` goes back
+Clicking a session runs `claude attach <id>` in your terminal. Pick the terminal in the panel's
+Settings tab, or with `porchlight terminal ghostty` (`auto` goes back
 to whichever is running). The choice is kept in
 `~/Library/Application Support/Porchlight/settings.json`. Porchlight puts the command on the clipboard if it cannot drive the terminal. If the session is
 already attached in a terminal, that terminal is brought to the front instead of opening a second
@@ -79,8 +79,8 @@ is opened. It works by starting and stopping the documented `claude agents` and
 `claude attach <id>` commands in that tab; an agent view that is already running cannot be steered
 from outside.
 
-If you keep a plain agent view (`claude agents`) open instead, turn on "Use agent view when it is open" in the same
-menu: clicking a session then brings that terminal forward instead of opening a tab. You pick the
+If you keep a plain agent view (`claude agents`) open instead, set "When agent view is already
+open" to "Switch to it" in the Settings tab: clicking a session then brings that terminal forward instead of opening a tab. You pick the
 session in agent view yourself, because nothing outside it can select a row there.
 
 | Terminal | How | Notes |
