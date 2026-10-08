@@ -51,7 +51,16 @@ to whichever is running). The choice is kept in
 already attached in a terminal, that terminal is brought to the front instead of opening a second
 tab (none of these terminals lets another program select one particular tab).
 
-If you keep agent view (`claude agents`) open, turn on "Use agent view when it is open" in the same
+### One tab that follows your clicks
+
+Run `porchlight tab` in a terminal tab instead of `claude agents`. It shows agent view as usual.
+When you click a session in Porchlight, that same tab switches to the session; leaving the session
+(`←` or `Ctrl+Z`) returns to agent view, and quitting agent view ends `porchlight tab`. Nothing new
+is opened. It works by starting and stopping the documented `claude agents` and
+`claude attach <id>` commands in that tab; an agent view that is already running cannot be steered
+from outside.
+
+If you keep a plain agent view (`claude agents`) open instead, turn on "Use agent view when it is open" in the same
 menu: clicking a session then brings that terminal forward instead of opening a tab. You pick the
 session in agent view yourself, because nothing outside it can select a row there.
 
@@ -69,6 +78,23 @@ read-only for the question a session is waiting on. It never reads the fields th
 prompt or environment values. The only file it writes outside its own folder is the Warp tab config
 above, and only when you open a session in Warp.
 
+## How Porchlight relates to Claude Code
+
+Porchlight is an independent project. It is not affiliated with, endorsed by, or sponsored by
+Anthropic. "Claude" and "Claude Code" are Anthropic's trademarks, used here only to say what
+Porchlight works with.
+
+- It runs the `claude` program you installed yourself, unmodified. It does not include or
+  redistribute Claude Code.
+- It never reads, stores or passes on Claude sign-in details. You sign in to Claude Code yourself.
+- It reads session state through `claude agents --json`, the interface Claude Code documents for
+  that. It also reads `~/.claude/jobs/<id>/state.json` for the question a session is waiting on;
+  Claude Code's docs call those files "not a stable interface", so Porchlight treats them as
+  optional and works without them.
+- It is built from Claude Code's public documentation and commands.
+
+Your use of Claude Code itself stays subject to Anthropic's terms.
+
 ## License
 
-Apache-2.0. Not affiliated with or endorsed by Anthropic.
+Apache-2.0 for Porchlight's own code.

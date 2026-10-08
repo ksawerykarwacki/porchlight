@@ -121,6 +121,7 @@ public final class InboxModel {
             switch await launcher.open(command) {
             case .opened(let terminal): show("Opened in \(terminal)")
             case .alreadyOpen(let terminal): show("Already open in \(terminal)")
+            case .switchedInTab(let terminal): show("Showing \(command.title) in your Porchlight tab" + (terminal.map { " in \($0)" } ?? ""))
             case .agentViewFocused(let terminal):
                 show(command.opensAgentView ? "Agent view is already open in \(terminal)" : "Agent view is open in \(terminal); pick \(command.title) there")
             case .copiedToClipboard(let reason): show("\(reason.prefix(1).uppercased() + reason.dropFirst()). Command copied; paste it in a terminal.")

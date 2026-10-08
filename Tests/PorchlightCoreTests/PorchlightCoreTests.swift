@@ -258,6 +258,25 @@ struct FakeClaude {
 }
 
 @Suite struct ArchitectureTests {
+    /// Porchlight must never handle Claude sign-in: Anthropic's terms do not allow third-party
+    /// tools to read, store or pass on Claude credentials. This fails if any source file starts
+    /// naming the places they live.
+    @Test func noSourceTouchesClaudeCredentials() throws {
+        let sources = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Sources")
+        let forbidden = [".credentials", "oauth", "keychain", "anthropic_api_key", "session_token", "sessionkey", "/usr/bin/security"]
+        let files = try #require(FileManager.default.enumerator(at: sources, includingPropertiesForKeys: nil))
+            .compactMap { $0 as? URL }.filter { $0.pathExtension == "swift" }
+        #expect(files.count > 10)
+        for file in files {
+            let text = try String(contentsOf: file, encoding: .utf8).lowercased()
+            for word in forbidden {
+                #expect(!text.contains(word), "\(file.lastPathComponent) mentions \(word)")
+            }
+        }
+    }
+
     /// The core must stay usable by non-Apple frontends: Foundation only.
     @Test func coreImportsNoUIOrAppleOnlyFrameworks() throws {
         let core = URL(fileURLWithPath: #filePath)

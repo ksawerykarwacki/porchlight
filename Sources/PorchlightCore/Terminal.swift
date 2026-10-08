@@ -68,6 +68,8 @@ public enum LaunchOutcome: Sendable, Equatable {
     case opened(terminal: String)
     /// The session was already attached in a terminal, which was brought to the front instead.
     case alreadyOpen(terminal: String)
+    /// A `porchlight tab` was running and now shows the session, in the tab it already had.
+    case switchedInTab(terminal: String?)
     /// Agent view was already open in a terminal, which was brought to the front. The user picks
     /// the session there: nothing outside agent view can select a row in it.
     case agentViewFocused(terminal: String)

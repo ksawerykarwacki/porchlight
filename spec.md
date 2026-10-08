@@ -250,6 +250,22 @@ Goal: open a new tab/window in the user's terminal running `claude attach <id>` 
 | iTerm2 | Not built: not installed on the development machine, and no adapter ships unseen. | — |
 | Fallback | The command on the clipboard (`pbcopy`), with a message saying so. | Test |
 
+**Opening where the user already is (M1, 2026-10-08).** In order:
+
+1. The session is already attached in a terminal: bring that terminal forward.
+2. A `porchlight tab` is running: it swaps its own tab to the session (below).
+3. The "use agent view when it is open" setting is on and agent view is open: bring that terminal forward; the user picks the session there.
+4. Otherwise attach in a new tab or window.
+
+None of Warp, Ghostty or WezTerm lets another program select a particular tab, so "bring forward" means the application. For Warp this is stated in its URI scheme docs (the scheme does not "target or control an already-open tab or pane"); Warp issue #8929 asks for a `warp://action/focus/tab` link, which is worth wiring in if it ships. The command-palette workaround described there needs Accessibility permission and types into whatever is in front, so it is not used. Practical tip: keeping the `porchlight tab` tab in its own Warp window means bringing Warp forward shows it. Terminal.app and iTerm2 could select a tab through AppleScript; not built.
+
+**`porchlight tab`.** A running agent view cannot be steered from outside: the docs list no command, link, socket or file that selects a row in it, a mod runs inside one session and has nothing that switches sessions, and the `claude-cli://open` deep link only opens a new window. `porchlight tab` is the way round that: the user runs it in a tab instead of `claude agents`; it starts agent view as a child, and on a request from the app (a small file in Porchlight's state folder) stops the child and starts `claude attach <id>` in the same tab. Leaving the session returns to agent view; quitting agent view ends the host. Findings from the spike with the real CLI on a pseudo-terminal:
+
+- Agent view stopped with SIGTERM exits cleanly within a second and restores the terminal.
+- `claude attach` stopped with any signal ends at once without tidying up (raw mode, alternate screen), so the host restores the terminal settings and resets the screen itself.
+- `Ctrl+Z` in an attached session exits with code 0, which is the host's cue to return to agent view.
+- Children must share the host's session and process group: started through Foundation's `Process`, agent view drew nothing and exited. The host uses `posix_spawn` with default signal handling.
+
 Each adapter declares capabilities (new tab, new window, run command, cwd) and the UI adapts.
 
 ## 9. Tech stack **[PROPOSED]**
@@ -304,6 +320,18 @@ Suggested libraries (verify licenses/maintenance): `KeyboardShortcuts` (global h
 - All CLI calls use argv arrays, never shell strings; prompts are passed as a single argument.
 - Not sandboxed (needs to exec the CLI and read `~/.claude`), so: Developer ID signing, hardened runtime, notarization. Document why in the README.
 - Notification privacy setting (hide question text).
+
+### 12.1 Staying within Claude Code's terms **[RULES, 2026-10-08]**
+
+Read on 2026-10-08: Claude Code's licence line ("Use is subject to Anthropic's Commercial Terms of Service"), the Commercial and Consumer Terms, and the Claude Code "Legal and compliance" page. This is the project's reading, not legal advice.
+
+1. **Run Claude Code as published.** Use the `claude` the user installed. Never bundle, redistribute, patch or wrap its binary in a way that changes it.
+2. **Never touch credentials.** No reading, storing or forwarding of tokens, keys or sign-in state; each user signs in to Claude Code themselves. A test (`noSourceTouchesClaudeCredentials`) guards this.
+3. **Use documented interfaces.** Session state comes from `claude agents --json`, which the docs name as the supported way to read it from outside; that is also what makes scripted access permitted. Actions use the documented commands (`attach`, `logs`, `stop`, `rm`, `--bg`, `agents`).
+4. **No reverse engineering.** Do not inspect, decompile or search the Claude Code binary. (During research on 2026-10-08 the binary was searched for text strings once; nothing from that is used, and it must not be repeated.) Work from the public docs and from observed behaviour of documented commands.
+5. **Internal job files are optional.** `~/.claude/jobs/<id>/state.json` is the user's own local data and the docs only call it "not a stable interface", but it is the least official thing Porchlight relies on. Keep it behind the schema check and keep every feature working without it (D6).
+6. **Naming.** Do not use "Claude", "Claude Code" or "Anthropic" in the product, feature or company name or in a logo. Plain-text statements that Porchlight works with Claude Code are fine. Keep the "not affiliated" notice.
+7. **No intermediating usage.** Porchlight never pays for, resells or proxies Claude usage.
 
 ## 13. Testing
 

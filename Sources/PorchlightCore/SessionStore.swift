@@ -222,6 +222,10 @@ public actor SessionStore {
 public enum PorchlightPaths {
     /// Where Porchlight keeps its own state: `~/Library/Application Support/Porchlight` on macOS.
     public static func stateDirectory() -> URL {
+        // For tests and for running a second, separate copy.
+        if let override = ProcessInfo.processInfo.environment["PORCHLIGHT_STATE_DIR"], !override.isEmpty {
+            return URL(fileURLWithPath: override, isDirectory: true)
+        }
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".porchlight")
         return base.appendingPathComponent("Porchlight", isDirectory: true)

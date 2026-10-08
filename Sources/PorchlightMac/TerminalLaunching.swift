@@ -125,6 +125,8 @@ public struct MacTerminalLauncher: TerminalLauncher {
     public var preferred: TerminalApp?
     /// Switch to an agent view that is already open rather than attach in a new tab.
     public var preferAgentView = false
+    /// Where a running `porchlight tab` listens for sessions to show.
+    public var tabChannel = TabChannel()
     public var runner = CLIRunner()
     public var home = NSHomeDirectory()
     public var scratch = PorchlightPaths.stateDirectory().appendingPathComponent("run").path
@@ -157,6 +159,15 @@ public struct MacTerminalLauncher: TerminalLauncher {
             if let existing = installed(processes?.terminalAttached(to: sessionID)) {
                 _ = try? await runner.run(URL(fileURLWithPath: "/usr/bin/open"), ["-a", existing.path])
                 return .alreadyOpen(terminal: existing.app.displayName)
+            }
+            // A `porchlight tab` is the one place a click can land exactly: it swaps that tab
+            // to the session, so nothing new is opened.
+            if let host = tabChannel.liveHost(), await tabChannel.requestAndWait(sessionID: sessionID) {
+                let terminal = installed(processes?.terminal(owning: host.pid))
+                if let terminal {
+                    _ = try? await runner.run(URL(fileURLWithPath: "/usr/bin/open"), ["-a", terminal.path])
+                }
+                return .switchedInTab(terminal: terminal?.app.displayName)
             }
             if preferAgentView, let existing = installed(processes?.terminalRunningAgentView()) {
                 _ = try? await runner.run(URL(fileURLWithPath: "/usr/bin/open"), ["-a", existing.path])

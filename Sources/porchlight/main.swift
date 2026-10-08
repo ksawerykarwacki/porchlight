@@ -14,6 +14,8 @@ let usage = """
       porchlight open <id> [--terminal NAME]  Attach to a session in your terminal (macOS)
       porchlight open --agents                Open agent view in your terminal (macOS)
       porchlight terminal [NAME|auto]         Show or set the terminal sessions open in (macOS)
+      porchlight tab                          Run agent view in this tab and let the app switch it
+                                              to a session when you click one
       porchlight doctor                       Check that the claude CLI can be found and used
       porchlight help
 
@@ -140,6 +142,7 @@ func open(arguments: [String]) async {
     switch await launcher.open(command) {
     case .opened(let terminal): print("opened in \(terminal)")
     case .alreadyOpen(let terminal): print("already open in \(terminal); brought it to the front")
+    case .switchedInTab(let terminal): print("switched your porchlight tab to it" + (terminal.map { " in \($0)" } ?? ""))
     case .agentViewFocused(let terminal):
         print("agent view is already open in \(terminal); brought it to the front" + (command.opensAgentView ? "" : ", pick the session there"))
     case .copiedToClipboard(let reason): print("\(reason); the command is on your clipboard:\n  \(command.shellLine)")
@@ -180,6 +183,27 @@ func terminal(arguments: [String]) {
     #endif
 }
 
+/// Hosts agent view in this terminal tab and swaps it to whichever session the app asks for.
+func tab() -> Never {
+    let settings = Settings.load()
+    let locator = ClaudeLocator(override: ProcessInfo.processInfo.environment["PORCHLIGHT_CLAUDE"] ?? settings.claudePath)
+    guard let claude = locator.locate() else {
+        fail(describe(.claudeNotFound(candidates: locator.candidates())))
+    }
+    guard isatty(STDIN_FILENO) == 1, isatty(STDOUT_FILENO) == 1 else {
+        fail("porchlight tab needs a terminal: run it in the tab you want to keep agent view in")
+    }
+    let channel = TabChannel()
+    if let other = channel.liveHost(), other.pid != ProcessInfo.processInfo.processIdentifier {
+        fail("another porchlight tab is already running (pid \(other.pid)); close that one first")
+    }
+    do {
+        exit(try TabHost(channel: channel, commands: .claude(claude.path)).run())
+    } catch {
+        fail("could not start: \(error)")
+    }
+}
+
 func describe(_ problem: StoreProblem) -> String {
     switch problem {
     case .claudeNotFound(let candidates):
@@ -214,6 +238,8 @@ let arguments = Array(CommandLine.arguments.dropFirst())
 switch arguments.first {
 case "status":
     await status(arguments: Array(arguments.dropFirst()))
+case "tab":
+    tab()
 case "terminal":
     terminal(arguments: Array(arguments.dropFirst()))
 case "open":
