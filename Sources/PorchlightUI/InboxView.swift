@@ -131,15 +131,23 @@ public struct InboxView: View {
                 Divider()
             }
 
-            if actions.showsSettings {
-                SettingsPage(actions: actions, drawsMenus: scrolls)
-            } else if scrolls {
-                ScrollView { sessionList }
-                    .frame(maxHeight: 480)
-                    // The menu-bar window sizes its content to the minimum it will accept, and a
-                    // scroll view accepts almost nothing. Fixing it at its ideal height (the
-                    // list's height, up to the limit above) is what keeps the rows visible.
-                    .fixedSize(horizontal: false, vertical: true)
+            if scrolls {
+                // Both tabs are laid out and only one is shown, so the panel is as tall as the
+                // taller of the two and switching tabs never resizes its window. A window that
+                // gets shorter keeps its bottom edge, which would drop it away from the menu bar.
+                ZStack(alignment: .top) {
+                    SettingsPage(actions: actions)
+                        .shown(actions.showsSettings)
+                    ScrollView { sessionList }
+                        .frame(maxHeight: 480)
+                        // The menu-bar window sizes its content to the minimum it will accept, and
+                        // a scroll view accepts almost nothing. Fixing it at its ideal height (the
+                        // list's height, up to the limit above) is what keeps the rows visible.
+                        .fixedSize(horizontal: false, vertical: true)
+                        .shown(!actions.showsSettings)
+                }
+            } else if actions.showsSettings {
+                SettingsPage(actions: actions, drawsMenus: false)
             } else {
                 sessionList
             }
@@ -229,6 +237,15 @@ extension InboxActions {
 }
 
 /// One of the panel's two tabs.
+private extension View {
+    /// Keeps the view's place in the layout while hiding it from the eye, the pointer and VoiceOver.
+    func shown(_ visible: Bool) -> some View {
+        opacity(visible ? 1 : 0)
+            .allowsHitTesting(visible)
+            .accessibilityHidden(!visible)
+    }
+}
+
 struct TabButton: View {
     let title: String
     let selected: Bool

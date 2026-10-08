@@ -66,8 +66,10 @@ import Testing
     /// The height the menu-bar window gives the panel, scroll area included: the smallest size the
     /// view accepts. The offscreen renders above draw the list without its scroll area, and the
     /// view's ideal size looked fine too, so neither saw the scroll area collapse to nothing.
-    func livePanelHeight(_ snapshot: StoreSnapshot) -> CGFloat {
-        NSHostingController(rootView: InboxView(snapshot: snapshot, now: now)).sizeThatFits(in: .zero).height
+    func livePanelHeight(_ snapshot: StoreSnapshot, settings: Bool = false) -> CGFloat {
+        var actions = InboxActions()
+        actions.showsSettings = settings
+        return NSHostingController(rootView: InboxView(snapshot: snapshot, now: now, actions: actions)).sizeThatFits(in: .zero).height
     }
 
     func blocked(_ count: Int) -> StoreSnapshot {
@@ -83,19 +85,28 @@ import Testing
 
     @Test func theLivePanelGrowsWithItsRowsUntilItHasToScroll() throws {
         let empty = livePanelHeight(blocked(0))
-        let two = livePanelHeight(blocked(2))
-        let three = livePanelHeight(blocked(3))
+        let six = livePanelHeight(blocked(6))
+        let eight = livePanelHeight(blocked(8))
         let many = livePanelHeight(blocked(60))
 
-        // Rows take real space: each one adds height while the list still fits.
-        #expect(two > empty + 40)
-        #expect(three > two + 20)
+        // Rows take real space: each one adds height once the list is the taller tab.
+        #expect(six > empty + 20)
+        #expect(eight > six + 40)
         // A long list stops growing and scrolls instead of running off the screen.
-        #expect(many > three)
+        #expect(many > eight)
         #expect(many < 620)
         #expect(livePanelHeight(blocked(120)) == many)
         // The fixture has six detailed rows: taller than the cap, so it sits at the cap too.
         #expect(livePanelHeight(try fixtureSnapshot()) == many)
+    }
+
+    @Test func switchingTabsNeverChangesThePanelsHeight() throws {
+        for count in [0, 1, 2, 6, 60] {
+            #expect(livePanelHeight(blocked(count)) == livePanelHeight(blocked(count), settings: true), "\(count) sessions")
+        }
+        // A short list leaves the panel at the height of the settings; it is never cut off.
+        #expect(livePanelHeight(blocked(0)) == livePanelHeight(blocked(1)))
+        #expect(livePanelHeight(blocked(0)) > 200)
     }
 
     @Test func theTerminalChoiceIsSavedAndUsedForTheNextOpen() async throws {
@@ -307,6 +318,37 @@ import Testing
         #expect(grown.maxY == top && grown.minY == 300)
         // A sub-pixel difference is left alone.
         #expect(!PanelPinning.needsPinning(CGRect(x: 0, y: 400.3, width: 400, height: 600), top: top))
+    }
+
+    /// A real window, resized the way AppKit resizes the panel: same origin, new height.
+    @Test func aRealWindowKeepsItsTopEdgeWhenItsContentChangesHeight() {
+        let window = NSWindow(contentRect: NSRect(x: 200, y: 300, width: 400, height: 600), styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        let observer = PanelWindowObserver.ObserverView()
+        window.contentView?.addSubview(observer)
+
+        // The system places the panel: a move the observer did not make.
+        window.setFrameOrigin(NSPoint(x: 220, y: 320))
+        let top = window.frame.maxY
+        #expect(observer.top == top)
+
+        // The content gets shorter; AppKit keeps the bottom-left corner.
+        window.setFrame(NSRect(x: 220, y: 320, width: 400, height: 350), display: false)
+        #expect(window.frame.maxY == top)
+        #expect(window.frame.height == 350)
+
+        // And taller again.
+        window.setFrame(NSRect(origin: window.frame.origin, size: NSSize(width: 400, height: 700)), display: false)
+        #expect(window.frame.maxY == top)
+        #expect(window.frame.height == 700)
+
+        // The system moves the panel (another display, say): that becomes the new top.
+        window.setFrameOrigin(NSPoint(x: 220, y: 100))
+        let moved = window.frame.maxY
+        #expect(moved != top)
+        window.setFrame(NSRect(origin: window.frame.origin, size: NSSize(width: 400, height: 300)), display: false)
+        #expect(window.frame.maxY == moved)
+        window.close()
     }
 
     @Test func closingThePanelReturnsToTheSessionsTab() throws {
