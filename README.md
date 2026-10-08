@@ -12,7 +12,7 @@ reads their state and never replaces agent view; uninstalling it loses nothing.
 |---|---|
 | M0 Skeleton: core library, command-line tool, app bundle, test harness | done |
 | M1 Read-only inbox with "open in terminal" | done |
-| M2 Reminders: escalation, snooze, quiet hours, digest | next |
+| M2 Reminders: escalation, snooze, quiet hours, digest | in progress: the logic is done, notifications are not delivered yet |
 | M3 Launcher: start a background session in any repo from a hotkey | planned |
 | M4 Stop and remove with confirmations | planned |
 | M5 Onboarding, settings, signing, release | planned |
@@ -38,6 +38,7 @@ swift run porchlight doctor     # check that the real claude CLI can be found an
 swift run porchlight status     # list sessions; add --json for the machine-readable form
 swift run porchlight watch      # one JSON line now, and one after every change
 swift run porchlight open <id>  # attach to a session in your terminal
+swift run porchlight snooze <id> 1h   # pause reminders: 30m, 4h, tomorrow, change, or off
 ./scripts/make-app.sh           # build dist/Porchlight.app (ad-hoc signed, local use only)
 open dist/Porchlight.app
 ```

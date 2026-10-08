@@ -100,6 +100,16 @@ Acceptance: with 3 blocked sessions, badge shows 3; answering one in the termina
 
 **FR-N6** Transient-error detection: if the waiting text matches known transient failures (rate limit, usage limit, "went to sleep", API unavailable — patterns in settings, not hardcoded), label the row **Retry-able** and offer a one-click action. **[SPIKE]** which CLI action correctly retries (candidates: `claude respawn <id>`, or attach and resend) — see §11.
 
+**Built in M2 layer 1 (2026-10-08): the logic, without delivery.** `ReminderPlanner` in the core takes the sessions, the saved state and a clock, and returns the reminders that are due:
+
+- Ladder default: 15 min, 2 h, then every 4 h; sound from 2 h. Steps are counted from when the session started waiting on its current question, so a new question starts a new ladder.
+- One reminder per step. After an absence (app not running, laptop asleep) all missed steps collapse into a single reminder.
+- Snooze: for a duration or until tomorrow 09:00 (silent, then one reminder when it ends), or until the session waits on something new. Snoozes are dropped when the session stops waiting.
+- Quiet hours: nothing is sent and nothing is recorded as sent, so the missed reminder goes out once when they end.
+- Digest: once a day at or after its time, also when the app starts late; the day counts as used even if nothing was waiting.
+- State (`reminders.json`) is saved so a restart repeats nothing. `porchlight snooze <id> …` sets a snooze and `status --json` reports it.
+- Not built yet: delivering the notifications (FR-N1, FR-N3), respecting macOS Focus (FR-N4), the "time-sensitive" level, and transient-error detection (FR-N6).
+
 **FR-N7** Optional push to phone via a user-configured webhook (ntfy/Pushover/Slack-compatible URL template) at a configurable ladder step. Off by default. **[PROPOSED for v1.1]**
 
 ### 6.3 Launcher (global hotkey palette) — v1 **[PROPOSED]**
@@ -351,7 +361,7 @@ Read on 2026-10-08: Claude Code's licence line ("Use is subject to Anthropic's C
 | D4 | License | **[DECIDED 2026-10-08]** Apache-2.0. |
 | D5 | Name | **[DECIDED 2026-10-08]** Porchlight (was "Lantern"). Bundle id `io.github.ksawerykarwacki.porchlight`. |
 | D6 | Use internal job state by default | **[PROPOSED]** Yes, behind a schema check + toggle (the question text and suggested reply are the most valuable fields). |
-| D7 | Duplicate Claude's own first notification | **[OPEN]** Probably no (start ladder at 15 min), to avoid double alerts; make configurable. |
+| D7 | Duplicate Claude's own first notification | **[PROPOSED, built as the default 2026-10-08]** No: the ladder starts at 15 min. Adding `0` to the ladder setting turns the immediate reminder on. |
 | D8 | LLM-generated names | **[OPEN]** Off by default if built. |
 | D9 | Minimum Claude Code version | **[PROPOSED]** Provisionally 2.1.294, the only version verified. TODO: find in the changelog the version that introduced `claude agents --json --all` with `state` and lower the minimum to it. |
 | D10 | Distribution | **[PROPOSED]** GitHub releases (notarized DMG) + Homebrew cask + Sparkle. |

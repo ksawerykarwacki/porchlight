@@ -14,6 +14,9 @@ let usage = """
       porchlight open <id> [--terminal NAME]  Attach to a session in your terminal (macOS)
       porchlight open --agents                Open agent view in your terminal (macOS)
       porchlight terminal [NAME|auto]         Show or set the terminal sessions open in (macOS)
+      porchlight snooze <id> 1h|4h|tomorrow|change|off
+                                              Pause reminders for a session: for a while, until
+                                              tomorrow 09:00, until it asks something new, or not
       porchlight tab                          Run agent view in this tab and let the app switch it
                                               to a session when you click one
       porchlight doctor                       Check that the claude CLI can be found and used
@@ -50,7 +53,7 @@ func status(arguments: [String]) async {
 
     if arguments.contains("--json") {
         do {
-            print(try StatusReport(sessions: sessions, skippedRows: snapshot.skippedRows).json())
+            print(try StatusReport(sessions: sessions, skippedRows: snapshot.skippedRows, snoozes: ReminderState.load().snoozes).json())
         } catch {
             fail("could not encode status: \(error)")
         }
@@ -204,6 +207,47 @@ func tab() -> Never {
     }
 }
 
+/// Pauses or resumes reminders for one session.
+func snooze(arguments: [String]) async {
+    guard arguments.count == 2 else { fail("usage: porchlight snooze <id> 1h|4h|tomorrow|change|off", code: 2) }
+    let store = SessionStore.live()
+    await store.refresh()
+    let snapshot = await store.snapshot
+    if let problem = snapshot.problem { fail(describe(problem)) }
+    guard let session = snapshot.sessions.first(where: { $0.id == arguments[0] }) else {
+        fail("no session with id \(arguments[0])")
+    }
+    guard session.needsHuman else { fail("\(session.name) is not waiting on you, so there is nothing to snooze") }
+
+    var state = ReminderState.load()
+    let now = Date()
+    let choice = arguments[1].lowercased()
+    if choice == "off" {
+        state.clearSnooze(session.id)
+    } else if choice == "tomorrow" {
+        state.snooze(session.id, .tomorrow(after: now, calendar: .current))
+    } else if choice == "change" {
+        guard let since = session.waitingSince else { fail("cannot tell when \(session.name) started waiting") }
+        state.snooze(session.id, .untilChange(waitingSince: since))
+    } else if choice.hasSuffix("h"), let hours = Double(choice.dropLast()), hours > 0, hours <= 24 * 30 {
+        state.snooze(session.id, .until(now.addingTimeInterval(hours * 3600)))
+    } else if choice.hasSuffix("m"), let minutes = Double(choice.dropLast()), minutes > 0, minutes <= 60 * 24 {
+        state.snooze(session.id, .until(now.addingTimeInterval(minutes * 60)))
+    } else {
+        fail("snooze takes a duration such as 30m or 1h, or tomorrow, change, or off", code: 2)
+    }
+    do {
+        try state.save()
+    } catch {
+        fail("could not save: \(error)")
+    }
+    switch state.snoozes[session.id] {
+    case .until(let end): print("\(session.name): reminders paused until \(end.formatted(date: .abbreviated, time: .shortened))")
+    case .untilChange: print("\(session.name): reminders paused until it asks something new")
+    case nil: print("\(session.name): reminders on")
+    }
+}
+
 func describe(_ problem: StoreProblem) -> String {
     switch problem {
     case .claudeNotFound(let candidates):
@@ -238,6 +282,8 @@ let arguments = Array(CommandLine.arguments.dropFirst())
 switch arguments.first {
 case "status":
     await status(arguments: Array(arguments.dropFirst()))
+case "snooze":
+    await snooze(arguments: Array(arguments.dropFirst()))
 case "tab":
     tab()
 case "terminal":

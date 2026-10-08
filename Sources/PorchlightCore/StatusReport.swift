@@ -10,6 +10,12 @@ public struct StatusReport: Sendable, Encodable {
             public let tool: String?
         }
 
+        public struct SnoozeReport: Sendable, Encodable {
+            /// "until" (a time) or "untilChange" (until the session waits on something new).
+            public let kind: String
+            public let until: Date?
+        }
+
         public struct OptionReport: Sendable, Encodable {
             public let label: String
             public let description: String?
@@ -27,6 +33,8 @@ public struct StatusReport: Sendable, Encodable {
         public let options: [OptionReport]
         public let suggestedReply: String?
         public let waitingSince: Date?
+        /// Present while reminders for this session are snoozed.
+        public let snooze: SnoozeReport?
         public let enriched: Bool
     }
 
@@ -36,11 +44,11 @@ public struct StatusReport: Sendable, Encodable {
     public let skippedRows: Int
     public let sessions: [Row]
 
-    public init(sessions: [Session], skippedRows: Int = 0, generatedAt: Date = Date()) {
+    public init(sessions: [Session], skippedRows: Int = 0, snoozes: [String: Snooze] = [:], generatedAt: Date = Date()) {
         self.generatedAt = generatedAt
         self.skippedRows = skippedRows
         self.waiting = sessions.filter(\.needsHuman).count
-        self.sessions = sessions.map(Row.init(session:))
+        self.sessions = sessions.map { Row(session: $0, snooze: snoozes[$0.id], now: generatedAt) }
     }
 
     public func json() throws -> String {
@@ -52,7 +60,15 @@ public struct StatusReport: Sendable, Encodable {
 }
 
 extension StatusReport.Row {
-    init(session: Session) {
+    init(session: Session, snooze: Snooze? = nil, now: Date = Date()) {
+        switch snooze {
+        case .until(let end) where end > now && session.needsHuman:
+            self.snooze = SnoozeReport(kind: "until", until: end)
+        case .untilChange(let since) where Snooze.sameWait(session.waitingSince, since):
+            self.snooze = SnoozeReport(kind: "untilChange", until: nil)
+        default:
+            self.snooze = nil
+        }
         let location = session.location
         id = session.id
         name = session.name
