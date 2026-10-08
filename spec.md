@@ -232,19 +232,24 @@ Session          // enriched
 
 ### 8.3 Refresh strategy
 
-- Poll `claude agents --json --all` every 10 s (configurable), backoff to 60 s when nothing is blocked/working and the Mac is idle.
+- Poll `claude agents --json --all` every 10 s (configurable), backoff to 60 s when nothing is blocked/working. (Built without the "Mac is idle" condition.)
 - Additionally watch `~/.claude/jobs/` with FSEvents (if present) and refresh within 1 s of a change (debounced). FSEvents is a trigger only; the CLI remains the source of truth.
-- Never run two CLI snapshots concurrently; drop overlapping ticks.
+- Never run two CLI snapshots concurrently. A read requested during another is not dropped outright: the running read repeats once when it finishes, so a change that lands mid-read is not missed until the next poll.
 
 ### 8.4 Terminal launcher adapters **[SPIKE per terminal]**
 
 Goal: open a new tab/window in the user's terminal running `claude attach <id>` (or `claude agents`) in a given cwd.
-- Ghostty first (the development machine has Ghostty, Warp and WezTerm; no iTerm2).
-- WezTerm: `wezterm cli spawn` — verify.
-- Terminal.app, iTerm2: AppleScript.
-- Ghostty: `open -na Ghostty --args …` or its CLI/AppleScript if available.
-- Warp: URL scheme / launch configurations — verify what can run a command.
-- Fallback: copy the command to clipboard and bring the terminal to front, with a toast.
+**Built in M1 (2026-10-08).** The terminal is the one the user names in settings, else one that is running, else the first installed. Every command is wrapped in the user's login shell (`$SHELL -l -i -c 'exec …'`) so it gets their PATH.
+
+| Terminal | Mechanism | Checked |
+|---|---|---|
+| Warp | Its URI scheme cannot carry a command (`warp://action/new_tab?path=` takes only a folder). A tab config can: Porchlight rewrites one file, `~/.warp/tab_configs/porchlight.toml`, then opens `warp://tab_config/porchlight`. Opens a tab. | Live: ran a command in the given directory; `claude attach` seen running under Warp. |
+| WezTerm | `open -na WezTerm.app --args start --cwd <dir> -- <command>` | Live |
+| Terminal.app | An executable `.command` file opened with `open -a Terminal`. No AppleScript, so no Automation prompt. | Live |
+| Ghostty | `open -na Ghostty.app --args --working-directory=<dir> -e <command>` | **Not checked.** Ghostty 1.2.3 shows "Allow Ghostty to execute …?" on every such launch, a deliberate safeguard with no setting to disable it. The user confirms once per open. |
+| iTerm2 | Not built: not installed on the development machine, and no adapter ships unseen. | — |
+| Fallback | The command on the clipboard (`pbcopy`), with a message saying so. | Test |
+
 Each adapter declares capabilities (new tab, new window, run command, cwd) and the UI adapts.
 
 ## 9. Tech stack **[PROPOSED]**
@@ -295,6 +300,7 @@ Suggested libraries (verify licenses/maintenance): `KeyboardShortcuts` (global h
 - Local only. No network calls except: update check (Sparkle, user can disable) and the optional user-configured webhook.
 - No telemetry.
 - Reads `~/.claude/jobs` read-only. Never writes Claude Code's files or settings, except the opt-in hook installer (v1.1), which shows a diff and backs up first.
+- Writes one file outside its own folder: `~/.warp/tab_configs/porchlight.toml`, only when a session is opened in Warp (§8.4).
 - All CLI calls use argv arrays, never shell strings; prompts are passed as a single argument.
 - Not sandboxed (needs to exec the CLI and read `~/.claude`), so: Developer ID signing, hardened runtime, notarization. Document why in the README.
 - Notification privacy setting (hide question text).

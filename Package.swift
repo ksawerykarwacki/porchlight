@@ -37,14 +37,16 @@ let package = Package(
                 .target(name: "PorchlightMac", condition: .when(platforms: [.macOS])),
             ]
         ),
+        // The inbox's views and model, separate from the app so they can be rendered in tests.
+        .target(name: "PorchlightUI", dependencies: ["PorchlightCore", "PorchlightMac"]),
         // macOS menu-bar app.
-        .executableTarget(name: "PorchlightApp", dependencies: ["PorchlightCore", "PorchlightMac"]),
+        .executableTarget(name: "PorchlightApp", dependencies: ["PorchlightUI"]),
         .testTarget(
             name: "PorchlightCoreTests",
             dependencies: ["PorchlightCore"],
             exclude: ["Fixtures"],
             swiftSettings: testSettings
         ),
-        .testTarget(name: "PorchlightMacTests", dependencies: ["PorchlightMac"], swiftSettings: testSettings),
+        .testTarget(name: "PorchlightMacTests", dependencies: ["PorchlightMac", "PorchlightUI"], swiftSettings: testSettings),
     ]
 )

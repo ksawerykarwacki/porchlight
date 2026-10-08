@@ -13,6 +13,7 @@ let usage = """
       porchlight watch [--once]               Print one JSON line now and one after every change
       porchlight open <id> [--terminal NAME]  Attach to a session in your terminal (macOS)
       porchlight open --agents                Open agent view in your terminal (macOS)
+      porchlight terminal [NAME|auto]         Show or set the terminal sessions open in (macOS)
       porchlight doctor                       Check that the claude CLI can be found and used
       porchlight help
 
@@ -149,6 +150,36 @@ func open(arguments: [String]) async {
     #endif
 }
 
+/// Shows or sets which terminal `open` and the app use.
+func terminal(arguments: [String]) {
+    #if canImport(PorchlightMac)
+    var settings = Settings.load()
+    let names = TerminalApp.allCases.map(\.rawValue)
+    guard let choice = arguments.first?.lowercased() else {
+        print("terminal: \(settings.terminal ?? "auto (whichever is running)")")
+        let installed = TerminalApp.allCases.filter { $0.installedPath() != nil }.map(\.rawValue)
+        print("installed: \(installed.joined(separator: ", "))")
+        return
+    }
+    if choice == "auto" {
+        settings.terminal = nil
+    } else if let app = TerminalApp(rawValue: choice) {
+        guard app.installedPath() != nil else { fail("\(app.displayName) is not installed") }
+        settings.terminal = app.rawValue
+    } else {
+        fail("terminal takes one of: auto, " + names.joined(separator: ", "), code: 2)
+    }
+    do {
+        try settings.save()
+    } catch {
+        fail("could not save settings: \(error)")
+    }
+    print("terminal: \(settings.terminal ?? "auto (whichever is running)")")
+    #else
+    fail("terminal is only available on macOS")
+    #endif
+}
+
 func describe(_ problem: StoreProblem) -> String {
     switch problem {
     case .claudeNotFound(let candidates):
@@ -183,6 +214,8 @@ let arguments = Array(CommandLine.arguments.dropFirst())
 switch arguments.first {
 case "status":
     await status(arguments: Array(arguments.dropFirst()))
+case "terminal":
+    terminal(arguments: Array(arguments.dropFirst()))
 case "open":
     await open(arguments: Array(arguments.dropFirst()))
 case "watch":
