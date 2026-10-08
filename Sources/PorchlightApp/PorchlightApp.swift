@@ -17,6 +17,9 @@ struct PorchlightApp: App {
     var body: some Scene {
         MenuBarExtra {
             InboxView(model: model, quit: { NSApplication.shared.terminate(nil) })
+                // Keeps the panel attached to the menu bar when its height changes, and brings
+                // it back to the sessions the next time it opens.
+                .background(PanelWindowObserver { model.showsSettings = false })
         } label: {
             StatusLabel(status: model.status)
         }

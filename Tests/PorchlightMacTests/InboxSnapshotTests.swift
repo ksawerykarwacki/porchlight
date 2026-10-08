@@ -288,6 +288,37 @@ import Testing
         #expect(after.warm > 0)
     }
 
+    @Test func aPanelThatChangesHeightKeepsItsTopEdge() {
+        // Open under the menu bar: 600 tall, top edge at y = 1000.
+        let top: CGFloat = 1000
+        let open = CGRect(x: 300, y: 400, width: 400, height: 600)
+        #expect(!PanelPinning.needsPinning(open, top: top))
+
+        // AppKit shrinks it from the bottom-left corner: the top drops by 250.
+        let shrunk = CGRect(x: 300, y: 400, width: 400, height: 350)
+        #expect(PanelPinning.needsPinning(shrunk, top: top))
+        let pinned = PanelPinning.pinned(shrunk, top: top)
+        #expect(pinned == CGRect(x: 300, y: 650, width: 400, height: 350))
+        #expect(pinned.maxY == top)
+        #expect(!PanelPinning.needsPinning(pinned, top: top))
+
+        // Growing again moves the bottom down, not the top up.
+        let grown = PanelPinning.pinned(CGRect(x: 300, y: 650, width: 400, height: 700), top: top)
+        #expect(grown.maxY == top && grown.minY == 300)
+        // A sub-pixel difference is left alone.
+        #expect(!PanelPinning.needsPinning(CGRect(x: 0, y: 400.3, width: 400, height: 600), top: top))
+    }
+
+    @Test func closingThePanelReturnsToTheSessionsTab() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("porchlight-panel-\(UUID().uuidString)")
+        let model = InboxModel(settingsURL: Settings.fileURL(in: directory), remindersURL: ReminderState.fileURL(in: directory))
+        model.showsSettings = true
+        // What the app wires to the window observer.
+        let observer = PanelWindowObserver { model.showsSettings = false }
+        observer.onClose()
+        #expect(!model.showsSettings)
+    }
+
     @Test func rowButtonsCallTheirActions() throws {
         var opened: [String] = []
         var actions = InboxActions()
