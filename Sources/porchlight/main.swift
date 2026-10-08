@@ -1,12 +1,18 @@
 import Foundation
 import PorchlightCore
 
+#if canImport(PorchlightMac)
+import PorchlightMac
+#endif
+
 let usage = """
     porchlight — see which Claude Code background sessions are waiting on you
 
     Usage:
       porchlight status [--json] [--active]   List sessions (--active leaves out finished ones)
       porchlight watch [--once]               Print one JSON line now and one after every change
+      porchlight open <id> [--terminal NAME]  Attach to a session in your terminal (macOS)
+      porchlight open --agents                Open agent view in your terminal (macOS)
       porchlight doctor                       Check that the claude CLI can be found and used
       porchlight help
 
@@ -93,6 +99,56 @@ func watch(arguments: [String]) async {
 
 nonisolated(unsafe) var lastStale = false
 
+/// Runs `claude attach <id>` (or agent view) in the user's terminal.
+func open(arguments: [String]) async {
+    #if canImport(PorchlightMac)
+    let settings = Settings.load()
+    let locator = ClaudeLocator(override: ProcessInfo.processInfo.environment["PORCHLIGHT_CLAUDE"] ?? settings.claudePath)
+    guard let claude = locator.locate() else {
+        fail(describe(.claudeNotFound(candidates: locator.candidates())))
+    }
+
+    var launcher = MacTerminalLauncher(settings: settings)
+    if let flag = arguments.firstIndex(of: "--terminal") {
+        guard arguments.indices.contains(flag + 1), let app = TerminalApp(rawValue: arguments[flag + 1].lowercased()) else {
+            fail("--terminal takes one of: " + TerminalApp.allCases.map(\.rawValue).joined(separator: ", "), code: 2)
+        }
+        launcher.preferred = app
+    }
+
+    let command: TerminalCommand
+    if arguments.contains("--agents") {
+        command = .agentView(claude: claude.path, cwd: FileManager.default.currentDirectoryPath)
+    } else {
+        guard let id = arguments.first, !id.hasPrefix("--") else { fail("open needs a session id, or --agents", code: 2) }
+        let store = SessionStore.live(locator: locator)
+        await store.refresh()
+        let snapshot = await store.snapshot
+        if let problem = snapshot.problem { fail(describe(problem)) }
+        // Like `claude attach`, accept the id or part of the name, but only when it is unambiguous.
+        var matches = snapshot.sessions.filter { $0.id == id }
+        if matches.isEmpty {
+            matches = snapshot.sessions.filter { $0.name.localizedCaseInsensitiveContains(id) }
+        }
+        guard matches.count == 1, let session = matches.first else {
+            fail(matches.isEmpty ? "no session matches \(id)" : "\(matches.count) sessions match \(id); use the id")
+        }
+        command = .attach(to: session, claude: claude.path)
+    }
+
+    switch await launcher.open(command) {
+    case .opened(let terminal): print("opened in \(terminal)")
+    case .alreadyOpen(let terminal): print("already open in \(terminal); brought it to the front")
+    case .agentViewFocused(let terminal):
+        print("agent view is already open in \(terminal); brought it to the front" + (command.opensAgentView ? "" : ", pick the session there"))
+    case .copiedToClipboard(let reason): print("\(reason); the command is on your clipboard:\n  \(command.shellLine)")
+    case .failed(let reason): fail(reason)
+    }
+    #else
+    fail("open is only available on macOS")
+    #endif
+}
+
 func describe(_ problem: StoreProblem) -> String {
     switch problem {
     case .claudeNotFound(let candidates):
@@ -127,6 +183,8 @@ let arguments = Array(CommandLine.arguments.dropFirst())
 switch arguments.first {
 case "status":
     await status(arguments: Array(arguments.dropFirst()))
+case "open":
+    await open(arguments: Array(arguments.dropFirst()))
 case "watch":
     await watch(arguments: Array(arguments.dropFirst()))
 case "doctor":

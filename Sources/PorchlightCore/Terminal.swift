@@ -1,0 +1,116 @@
+import Foundation
+
+/// Quoting for the one place a shell line is unavoidable: text typed into, or copied for, a terminal.
+/// Processes Porchlight starts itself always get an argv array instead.
+public enum ShellQuote {
+    public static func quote(_ argument: String) -> String {
+        let safe = argument.unicodeScalars.allSatisfy { scalar in
+            scalar.isASCII && (CharacterSet.alphanumerics.contains(scalar) || "-_./:=@%+,".unicodeScalars.contains(scalar))
+        }
+        if safe && !argument.isEmpty { return argument }
+        return "'" + argument.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+
+    public static func line(_ arguments: [String]) -> String {
+        arguments.map(quote).joined(separator: " ")
+    }
+}
+
+/// A command to run in the user's terminal.
+public struct TerminalCommand: Sendable, Equatable {
+    public var arguments: [String]
+    public var cwd: String?
+    /// Shown as the tab or window title where the terminal supports it.
+    public var title: String
+    /// Set when the command attaches to a session, so an attach that is already open can be found.
+    public var sessionID: String?
+    /// True when the command opens agent view, so one that is already open can be reused.
+    public var opensAgentView: Bool
+
+    public init(arguments: [String], cwd: String? = nil, title: String, sessionID: String? = nil, opensAgentView: Bool = false) {
+        self.arguments = arguments
+        self.cwd = cwd
+        self.title = title
+        self.sessionID = sessionID
+        self.opensAgentView = opensAgentView
+    }
+
+    /// What a person would type to run this from any directory.
+    public var shellLine: String {
+        let command = ShellQuote.line(arguments)
+        guard let cwd else { return command }
+        return "cd \(ShellQuote.quote(cwd)) && \(command)"
+    }
+
+    public static func attach(to session: Session, claude: String) -> TerminalCommand {
+        TerminalCommand(
+            arguments: [claude, "attach", session.id], cwd: session.location.repoRoot, title: session.name, sessionID: session.id)
+    }
+
+    /// - Parameter cwd: where to start agent view. Claude Code asks whether to trust a folder it
+    ///   has not been started in before, so pass one the user already works in, not the home folder.
+    public static func agentView(claude: String, cwd: String? = nil) -> TerminalCommand {
+        TerminalCommand(arguments: [claude, "agents"], cwd: cwd, title: "Claude agents", opensAgentView: true)
+    }
+
+    /// A folder Claude Code has certainly been started in: where the most recently active
+    /// session lives.
+    public static func trustedDirectory(among sessions: [Session]) -> String? {
+        sessions
+            .filter { !$0.location.repoRoot.isEmpty }
+            .max { ($0.lastActivity ?? .distantPast) < ($1.lastActivity ?? .distantPast) }?
+            .location.repoRoot
+    }
+}
+
+public enum LaunchOutcome: Sendable, Equatable {
+    /// The command is running in a terminal.
+    case opened(terminal: String)
+    /// The session was already attached in a terminal, which was brought to the front instead.
+    case alreadyOpen(terminal: String)
+    /// Agent view was already open in a terminal, which was brought to the front. The user picks
+    /// the session there: nothing outside agent view can select a row in it.
+    case agentViewFocused(terminal: String)
+    /// The terminal could not be driven; the command is on the clipboard for the user to paste.
+    case copiedToClipboard(reason: String)
+    case failed(String)
+}
+
+public protocol TerminalLauncher: Sendable {
+    func open(_ command: TerminalCommand) async -> LaunchOutcome
+}
+
+/// User settings. Unknown keys are ignored and a missing or broken file means defaults.
+public struct Settings: Sendable, Equatable, Codable {
+    /// Which terminal "Open" uses, by name ("warp", "ghostty", "wezterm", "terminal"). Nil picks one.
+    public var terminal: String?
+    /// Path to the claude executable, overriding the search.
+    public var claudePath: String?
+    /// When true and agent view is already open in a terminal, opening a session switches to that
+    /// terminal instead of attaching in a new tab.
+    public var preferAgentView: Bool?
+
+    public init(terminal: String? = nil, claudePath: String? = nil, preferAgentView: Bool? = nil) {
+        self.terminal = terminal
+        self.claudePath = claudePath
+        self.preferAgentView = preferAgentView
+    }
+
+    public static func fileURL(in stateDirectory: URL = PorchlightPaths.stateDirectory()) -> URL {
+        stateDirectory.appendingPathComponent("settings.json")
+    }
+
+    public static func load(from url: URL = Settings.fileURL()) -> Settings {
+        guard let data = try? Data(contentsOf: url), let settings = try? JSONDecoder().decode(Settings.self, from: data) else {
+            return Settings()
+        }
+        return settings
+    }
+
+    public func save(to url: URL = Settings.fileURL()) throws {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try encoder.encode(self).write(to: url, options: .atomic)
+    }
+}

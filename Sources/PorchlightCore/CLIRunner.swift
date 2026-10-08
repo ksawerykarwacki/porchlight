@@ -28,12 +28,13 @@ public struct CLIRunner: Sendable {
         _ arguments: [String],
         cwd: URL? = nil,
         environment: [String: String]? = nil,
+        input: String? = nil,
         timeout: TimeInterval = 15
     ) async throws -> CLIResult {
         try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 continuation.resume(with: Result {
-                    try Self.runBlocking(executable, arguments, cwd: cwd, environment: environment, timeout: timeout)
+                    try Self.runBlocking(executable, arguments, cwd: cwd, environment: environment, input: input, timeout: timeout)
                 })
             }
         }
@@ -44,6 +45,7 @@ public struct CLIRunner: Sendable {
         _ arguments: [String],
         cwd: URL?,
         environment: [String: String]?,
+        input: String?,
         timeout: TimeInterval
     ) throws -> CLIResult {
         // Output goes to temp files, not pipes: `claude --bg` can leave a daemon holding the
@@ -68,7 +70,13 @@ public struct CLIRunner: Sendable {
         process.arguments = arguments
         process.currentDirectoryURL = cwd
         if let environment { process.environment = environment }
-        process.standardInput = FileHandle.nullDevice
+        if let input {
+            let inURL = scratch.appendingPathComponent("stdin")
+            try Data(input.utf8).write(to: inURL)
+            process.standardInput = try FileHandle(forReadingFrom: inURL)
+        } else {
+            process.standardInput = FileHandle.nullDevice
+        }
         process.standardOutput = outHandle
         process.standardError = errHandle
 

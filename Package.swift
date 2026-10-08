@@ -29,7 +29,14 @@ let package = Package(
         // macOS implementations of the core's platform interfaces.
         .target(name: "PorchlightMac", dependencies: ["PorchlightCore"]),
         // JSON-speaking command-line tool over the core: the contract for other frontends.
-        .executableTarget(name: "porchlight", dependencies: ["PorchlightCore"]),
+        .executableTarget(
+            name: "porchlight",
+            dependencies: [
+                "PorchlightCore",
+                // Only for `porchlight open`; everything else in the tool is portable.
+                .target(name: "PorchlightMac", condition: .when(platforms: [.macOS])),
+            ]
+        ),
         // macOS menu-bar app.
         .executableTarget(name: "PorchlightApp", dependencies: ["PorchlightCore", "PorchlightMac"]),
         .testTarget(
