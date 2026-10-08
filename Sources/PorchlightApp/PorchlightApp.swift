@@ -18,14 +18,16 @@ struct PorchlightApp: App {
     }
 }
 
-/// M0 skeleton: polls the CLI and lists sessions. The real inbox (grouping, actions) is M1.
+/// Mirrors the session store onto the main actor for the views.
 @MainActor
 @Observable
 final class InboxModel {
-    private(set) var sessions: [Session] = []
-    private(set) var problem: String?
+    private let store = SessionStore.live()
+    private(set) var snapshot = StoreSnapshot()
 
-    var waitingCount: Int { sessions.filter(\.needsHuman).count }
+    var sessions: [Session] { snapshot.sessions }
+    var waitingCount: Int { snapshot.waitingCount }
+    var problem: String? { snapshot.isStale ? "could not refresh sessions" : nil }
 
     init() {
         Task { await self.poll() }
@@ -39,18 +41,8 @@ final class InboxModel {
     }
 
     func refresh() async {
-        guard let claude = ClaudeLocator().locate() else {
-            problem = "claude not found"
-            return
-        }
-        do {
-            let snapshot = try await AgentsCLISource(executable: claude).snapshot()
-            sessions = JobStateSource().enrich(snapshot.sessions)
-            problem = nil
-        } catch {
-            // Keep the last good snapshot; just say it is stale.
-            problem = "could not refresh sessions"
-        }
+        await store.refresh()
+        snapshot = await store.snapshot
     }
 }
 

@@ -28,10 +28,13 @@ public struct RepoLocation: Sendable, Equatable {
 public struct Session: Sendable, Equatable, Identifiable {
     public let summary: SessionSummary
     public let job: JobState?
+    /// When the store first saw this session blocked. Filled in by `SessionStore`.
+    public var observedBlockedSince: Date?
 
-    public init(summary: SessionSummary, job: JobState? = nil) {
+    public init(summary: SessionSummary, job: JobState? = nil, observedBlockedSince: Date? = nil) {
         self.summary = summary
         self.job = job
+        self.observedBlockedSince = observedBlockedSince
     }
 
     public var id: String { summary.id }
@@ -45,7 +48,65 @@ public struct Session: Sendable, Equatable, Identifiable {
     public var questions: [JobState.Question] { needsHuman ? (job?.questions ?? []) : [] }
     public var suggestedReply: String? { needsHuman ? job?.suggestedReply : nil }
 
-    /// When the session started waiting, if known. Without enrichment the store has to track the
-    /// first time it observed `blocked` itself.
-    public var waitingSince: Date? { needsHuman ? job?.updatedAt : nil }
+    /// When the session started waiting: the job file's last update if there is one, otherwise the
+    /// first time the store observed it blocked.
+    public var waitingSince: Date? { needsHuman ? (job?.updatedAt ?? observedBlockedSince) : nil }
+
+    /// The most recent moment anything is known to have happened in the session.
+    public var lastActivity: Date? { job?.updatedAt ?? summary.startedAt }
+}
+
+/// The inbox's three groups, in display order.
+public struct InboxGroups: Sendable, Equatable {
+    /// Blocked sessions, longest wait first; sessions with an unknown wait go last.
+    public let needsYou: [Session]
+    /// Working sessions, longest running first.
+    public let working: [Session]
+    /// Finished sessions whose last activity falls inside the window, most recent first.
+    public let recentlyDone: [Session]
+    /// Sessions in a state this version does not know. Shown neutrally, never dropped.
+    public let other: [Session]
+
+    public static let defaultRecentWindow: TimeInterval = 24 * 3600
+
+    public init(sessions: [Session], now: Date = Date(), recentWindow: TimeInterval = InboxGroups.defaultRecentWindow) {
+        func oldestFirst(_ key: @escaping (Session) -> Date?) -> (Session, Session) -> Bool {
+            { left, right in
+                switch (key(left), key(right)) {
+                case let (l?, r?) where l != r: l < r
+                case (_?, nil): true
+                case (nil, _?): false
+                default: left.name.localizedStandardCompare(right.name) == .orderedAscending
+                }
+            }
+        }
+        needsYou = sessions.filter { $0.summary.state == .blocked }.sorted(by: oldestFirst(\.waitingSince))
+        working = sessions.filter { $0.summary.state == .working }.sorted(by: oldestFirst { $0.summary.startedAt })
+        recentlyDone = sessions
+            .filter { session in
+                guard session.summary.state == .done else { return false }
+                guard let last = session.lastActivity else { return true }
+                return now.timeIntervalSince(last) <= recentWindow
+            }
+            .sorted(by: oldestFirst(\.lastActivity))
+            .reversed()
+        other = sessions.filter { if case .unknown = $0.summary.state { true } else { false } }
+            .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+
+    public var isEmpty: Bool { needsYou.isEmpty && working.isEmpty && recentlyDone.isEmpty && other.isEmpty }
+}
+
+/// Compact ages for rows: "just now", "12m", "3h", "5d".
+public enum Age {
+    public static func short(since date: Date?, now: Date = Date()) -> String? {
+        guard let date else { return nil }
+        let seconds = max(0, Int(now.timeIntervalSince(date)))
+        switch seconds {
+        case ..<60: return "just now"
+        case ..<3600: return "\(seconds / 60)m"
+        case ..<86400: return "\(seconds / 3600)h"
+        default: return "\(seconds / 86400)d"
+        }
+    }
 }

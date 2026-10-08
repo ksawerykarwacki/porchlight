@@ -26,52 +26,54 @@ func locateClaude() -> URL {
     return url
 }
 
-func age(since date: Date?) -> String {
-    guard let date else { return "" }
-    let seconds = Int(Date().timeIntervalSince(date))
-    switch seconds {
-    case ..<60: return "just now"
-    case ..<3600: return "\(seconds / 60)m"
-    case ..<86400: return "\(seconds / 3600)h"
-    default: return "\(seconds / 86400)d"
-    }
-}
-
 func status(arguments: [String]) async {
-    let claude = locateClaude()
-    let snapshot: AgentsSnapshot
-    do {
-        snapshot = try await AgentsCLISource(executable: claude).snapshot(includeCompleted: !arguments.contains("--active"))
-    } catch AgentsCLIError.failed(let code, let stderr) {
-        fail("claude agents failed (exit \(code)): \(stderr)")
-    } catch {
-        fail("could not read sessions: \(error)")
+    let store = SessionStore.live()
+    await store.refresh()
+    let snapshot = await store.snapshot
+    if let problem = snapshot.problem {
+        fail(describe(problem))
     }
-    let sessions = JobStateSource().enrich(snapshot.sessions)
+    var sessions = snapshot.sessions
+    if arguments.contains("--active") {
+        sessions.removeAll { $0.summary.state == .done }
+    }
 
     if arguments.contains("--json") {
         do {
-            print(try StatusReport(sessions: sessions, skippedRows: snapshot.skipped).json())
+            print(try StatusReport(sessions: sessions, skippedRows: snapshot.skippedRows).json())
         } catch {
             fail("could not encode status: \(error)")
         }
         return
     }
 
-    let waiting = sessions.filter(\.needsHuman)
-    print("\(waiting.count) waiting on you, \(sessions.count) sessions in total")
-    for session in sessions.sorted(by: { ($0.needsHuman ? 0 : 1, $0.name) < ($1.needsHuman ? 0 : 1, $1.name) }) {
-        let location = session.location
-        let place = location.worktreeName.map { "\(location.repoName) (\($0))" } ?? location.repoName
-        let waited = age(since: session.waitingSince)
-        print("  \(session.id)  \(session.summary.state.rawValue.padding(toLength: 8, withPad: " ", startingAt: 0))"
-            + "  \(session.name)  [\(place)]" + (waited.isEmpty ? "" : "  waiting \(waited)"))
-        switch session.needs {
-        case .question(let text): print("      asks: \(text)")
-        case .approval(let tool, let detail): print("      wants approval for \(tool): \(detail)")
-        case .other(let text): print("      needs: \(text)")
-        case nil: break
+    let groups = InboxGroups(sessions: sessions)
+    print("\(groups.needsYou.count) waiting on you, \(sessions.count) sessions in total")
+    for (title, group) in [("Needs you", groups.needsYou), ("Working", groups.working), ("Recently done", groups.recentlyDone), ("Other", groups.other)] where !group.isEmpty {
+        print("\n\(title)")
+        for session in group {
+            let location = session.location
+            let place = location.worktreeName.map { "\(location.repoName) (\($0))" } ?? location.repoName
+            let waited = Age.short(since: session.waitingSince).map { "  waiting \($0)" } ?? ""
+            print("  \(session.id)  \(session.name)  [\(place)]\(waited)")
+            switch session.needs {
+            case .question(let text): print("      asks: \(text)")
+            case .approval(let tool, let detail): print("      wants approval for \(tool): \(detail)")
+            case .other(let text): print("      needs: \(text)")
+            case nil: break
+            }
         }
+    }
+}
+
+func describe(_ problem: StoreProblem) -> String {
+    switch problem {
+    case .claudeNotFound(let candidates):
+        "claude not found. Looked in:\n" + candidates.map { "  \($0)" }.joined(separator: "\n")
+    case .cliFailed(let exitCode, let stderr): "claude agents failed (exit \(exitCode)): \(stderr)"
+    case .invalidOutput: "claude agents printed something that is not a JSON list"
+    case .timedOut: "claude agents did not answer in time"
+    case .other(let text): "could not read sessions: \(text)"
     }
 }
 
