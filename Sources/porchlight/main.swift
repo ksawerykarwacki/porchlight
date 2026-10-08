@@ -6,6 +6,7 @@ let usage = """
 
     Usage:
       porchlight status [--json] [--active]   List sessions (--active leaves out finished ones)
+      porchlight watch [--once]               Print one JSON line now and one after every change
       porchlight doctor                       Check that the claude CLI can be found and used
       porchlight help
 
@@ -66,6 +67,32 @@ func status(arguments: [String]) async {
     }
 }
 
+/// Prints the current status as one JSON line, then one more line whenever something changes.
+func watch(arguments: [String]) async {
+    let store = SessionStore.live()
+    let updates = await store.updates()
+    let once = arguments.contains("--once")
+    let loop = Task { await RefreshLoop().run(store: store, triggers: once ? [] : [PollingChangeWatcher()]) }
+    defer { loop.cancel() }
+
+    var isFirst = true
+    for await update in updates {
+        // After the first line, only speak when something changed or freshness flipped.
+        guard isFirst || !update.events.isEmpty || update.snapshot.isStale != lastStale else { continue }
+        lastStale = update.snapshot.isStale
+        do {
+            print(try WatchLine(update: update, isFirst: isFirst).json())
+            fflush(stdout)
+        } catch {
+            fail("could not encode status: \(error)")
+        }
+        isFirst = false
+        if once { return }
+    }
+}
+
+nonisolated(unsafe) var lastStale = false
+
 func describe(_ problem: StoreProblem) -> String {
     switch problem {
     case .claudeNotFound(let candidates):
@@ -100,6 +127,8 @@ let arguments = Array(CommandLine.arguments.dropFirst())
 switch arguments.first {
 case "status":
     await status(arguments: Array(arguments.dropFirst()))
+case "watch":
+    await watch(arguments: Array(arguments.dropFirst()))
 case "doctor":
     await doctor()
 case nil, "help", "--help", "-h":

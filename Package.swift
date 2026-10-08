@@ -19,21 +19,25 @@ let package = Package(
     platforms: [.macOS(.v14)],
     products: [
         .library(name: "PorchlightCore", targets: ["PorchlightCore"]),
+        .library(name: "PorchlightMac", targets: ["PorchlightMac"]),
         .executable(name: "porchlight", targets: ["porchlight"]),
         .executable(name: "PorchlightApp", targets: ["PorchlightApp"]),
     ],
     targets: [
         // Everything that is not UI. Foundation only, so other frontends can reuse it.
         .target(name: "PorchlightCore"),
+        // macOS implementations of the core's platform interfaces.
+        .target(name: "PorchlightMac", dependencies: ["PorchlightCore"]),
         // JSON-speaking command-line tool over the core: the contract for other frontends.
         .executableTarget(name: "porchlight", dependencies: ["PorchlightCore"]),
         // macOS menu-bar app.
-        .executableTarget(name: "PorchlightApp", dependencies: ["PorchlightCore"]),
+        .executableTarget(name: "PorchlightApp", dependencies: ["PorchlightCore", "PorchlightMac"]),
         .testTarget(
             name: "PorchlightCoreTests",
             dependencies: ["PorchlightCore"],
             exclude: ["Fixtures"],
             swiftSettings: testSettings
         ),
+        .testTarget(name: "PorchlightMacTests", dependencies: ["PorchlightMac"], swiftSettings: testSettings),
     ]
 )

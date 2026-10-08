@@ -1,4 +1,5 @@
 import PorchlightCore
+import PorchlightMac
 import SwiftUI
 
 @main
@@ -30,19 +31,18 @@ final class InboxModel {
     var problem: String? { snapshot.isStale ? "could not refresh sessions" : nil }
 
     init() {
-        Task { await self.poll() }
+        Task { await self.observe() }
+        Task { [store] in await RefreshLoop().run(store: store, triggers: [FSEventsChangeWatcher()]) }
     }
 
-    private func poll() async {
-        while !Task.isCancelled {
-            await refresh()
-            try? await Task.sleep(for: .seconds(10))
+    private func observe() async {
+        for await update in await store.updates() {
+            snapshot = update.snapshot
         }
     }
 
     func refresh() async {
         await store.refresh()
-        snapshot = await store.snapshot
     }
 }
 
