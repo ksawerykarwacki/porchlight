@@ -13,6 +13,11 @@ public final class InboxModel {
     private let locator: ClaudeLocator
     private let clock: @Sendable () -> Date
     private let settingsURL: URL
+    private var engine: ReminderEngine?
+    private var delivery: UserNotificationDelivery?
+    private var log: ActivityLog?
+    /// Why reminders are not reaching the screen, or nil when they can.
+    public private(set) var notificationProblem: String?
 
     /// The terminal the user picked, or nil for "whichever is running".
     public private(set) var chosenTerminal: TerminalApp?
@@ -44,6 +49,13 @@ public final class InboxModel {
         self.installedTerminals = TerminalApp.allCases.filter { $0.installedPath() != nil }
         self.chosenTerminal = settings.terminal.flatMap { TerminalApp(rawValue: $0.lowercased()) }
         self.prefersAgentView = settings.preferAgentView ?? false
+        // Only the real app keeps a log; tests and bare executables leave the user's folder alone.
+        self.log = Bundle.main.bundleURL.pathExtension == "app" ? ActivityLog() : nil
+        // Created now, not when polling starts: macOS hands a clicked notification to the
+        // delegate that exists when the app finishes launching, and drops it otherwise.
+        self.delivery = UserNotificationDelivery { [weak self] action in
+            Task { @MainActor in self?.handle(action) }
+        }
     }
 
     public func setPrefersAgentView(_ value: Bool) {
@@ -79,8 +91,32 @@ public final class InboxModel {
     }
 
     private func observe() async {
+        let engine = makeEngine()
+        self.engine = engine
         for await update in await store.updates() {
             snapshot = update.snapshot
+            await engine.process(update.snapshot)
+            notificationProblem = delivery?.problem
+        }
+    }
+
+    private func makeEngine() -> ReminderEngine {
+        let delivery = self.delivery ?? UserNotificationDelivery { _ in }
+        return ReminderEngine(delivery: delivery)
+    }
+
+    /// Carries out a button pressed on a notification.
+    func handle(_ action: ReminderAction) {
+        log?.record("notification action: \(action)")
+        switch action {
+        case .open(let sessionID): open(sessionID: sessionID)
+        case .copyReply(let sessionID): copyReply(sessionID: sessionID)
+        case .snooze(let sessionID, let seconds):
+            let until = clock().addingTimeInterval(seconds)
+            Task { await engine?.snooze(sessionID: sessionID, .until(until)) }
+        case .showInbox:
+            // The panel cannot be opened from here; bringing the app forward is the nearest thing.
+            break
         }
     }
 
@@ -89,8 +125,23 @@ public final class InboxModel {
     }
 
     public func open(sessionID: String) {
-        guard let session = snapshot.sessions.first(where: { $0.id == sessionID }) else { return }
-        launch { claude in .attach(to: session, claude: claude) }
+        if let session = snapshot.sessions.first(where: { $0.id == sessionID }) {
+            launch { claude in .attach(to: session, claude: claude) }
+            return
+        }
+        // Not known yet: the app may have just been started by the click itself. Read the
+        // sessions once and try again rather than doing nothing.
+        Task {
+            await store.refresh()
+            let fresh = await store.snapshot
+            snapshot = fresh
+            guard let session = fresh.sessions.first(where: { $0.id == sessionID }) else {
+                log?.record("open \(sessionID): no such session")
+                show("That session is no longer there")
+                return
+            }
+            launch { claude in .attach(to: session, claude: claude) }
+        }
     }
 
     public func openAgentView() {
@@ -110,6 +161,7 @@ public final class InboxModel {
 
     private func launch(_ makeCommand: @escaping @Sendable (String) -> TerminalCommand) {
         guard let claude = locator.locate() else {
+            log?.record("open: the claude command was not found")
             show("The claude command was not found")
             return
         }
@@ -118,7 +170,9 @@ public final class InboxModel {
         let launcher: any TerminalLauncher = injectedLauncher ?? configured
         Task {
             let command = makeCommand(claude.path)
-            switch await launcher.open(command) {
+            let outcome = await launcher.open(command)
+            log?.record("open \(command.sessionID ?? "agent view"): \(outcome)")
+            switch outcome {
             case .opened(let terminal): show("Opened in \(terminal)")
             case .alreadyOpen(let terminal): show("Already open in \(terminal)")
             case .switchedInTab(let terminal): show("Showing \(command.title) in your Porchlight tab" + (terminal.map { " in \($0)" } ?? ""))

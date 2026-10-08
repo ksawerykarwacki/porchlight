@@ -25,14 +25,17 @@ public struct InboxView: View {
     let snapshot: StoreSnapshot
     let now: Date
     let notice: String?
+    /// Shown above the buttons while reminders cannot be delivered.
+    let notificationProblem: String?
     let actions: InboxActions
     /// Off for offscreen rendering, which cannot draw a scroll view.
     let scrolls: Bool
 
-    public init(snapshot: StoreSnapshot, now: Date = Date(), notice: String? = nil, actions: InboxActions = InboxActions(), scrolls: Bool = true) {
+    public init(snapshot: StoreSnapshot, now: Date = Date(), notice: String? = nil, notificationProblem: String? = nil, actions: InboxActions = InboxActions(), scrolls: Bool = true) {
         self.snapshot = snapshot
         self.now = now
         self.notice = notice
+        self.notificationProblem = notificationProblem
         self.actions = actions
         self.scrolls = scrolls
     }
@@ -49,7 +52,7 @@ public struct InboxView: View {
         actions.chooseTerminal = { id in model.chooseTerminal(id.flatMap { TerminalApp(rawValue: $0) }) }
         actions.prefersAgentView = model.prefersAgentView
         actions.setPrefersAgentView = { model.setPrefersAgentView($0) }
-        self.init(snapshot: model.snapshot, now: model.now, notice: model.notice, actions: actions)
+        self.init(snapshot: model.snapshot, now: model.now, notice: model.notice, notificationProblem: model.notificationProblem, actions: actions)
     }
 
     public var body: some View {
@@ -106,6 +109,12 @@ public struct InboxView: View {
 
     private var footer: some View {
         VStack(alignment: .leading, spacing: 8) {
+            if let notificationProblem {
+                Label(notificationProblem, systemImage: "bell.slash")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             if let notice {
                 Text(notice)
                     .font(.callout)

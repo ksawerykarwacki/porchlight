@@ -124,6 +124,15 @@ import Testing
         #expect(InboxModel(settingsURL: url).prefersAgentView)
     }
 
+    @Test func saysSoWhenNotificationsAreOff() throws {
+        let plain = try render(InboxView(snapshot: try fixtureSnapshot(), now: now, scrolls: false), named: "inbox")
+        let warned = try render(
+            InboxView(snapshot: try fixtureSnapshot(), now: now,
+                      notificationProblem: "Notifications are turned off for Porchlight in System Settings > Notifications.", scrolls: false),
+            named: "inbox-notifications-off")
+        #expect(warned.pixelsHigh > plain.pixelsHigh + 30)
+    }
+
     @Test func rowButtonsCallTheirActions() throws {
         var opened: [String] = []
         var actions = InboxActions()

@@ -136,6 +136,16 @@ public struct Reminder: Sendable, Equatable, Identifiable {
     public let title: String
     public let body: String
     public let withSound: Bool
+    /// The session came with a reply Claude suggested, which the user can copy.
+    public var offersReply = false
+
+    public init(kind: Kind, title: String, body: String, withSound: Bool, offersReply: Bool = false) {
+        self.kind = kind
+        self.title = title
+        self.body = body
+        self.withSound = withSound
+        self.offersReply = offersReply
+    }
 
     /// Stable per session, so a newer reminder replaces the older one instead of stacking.
     public var id: String {
@@ -223,7 +233,8 @@ public struct ReminderPlanner: Sendable {
             kind: .session(id: session.id),
             title: "\(session.name) · \(row.place)",
             body: body,
-            withSound: waited >= settings.soundAfter)
+            withSound: waited >= settings.soundAfter,
+            offersReply: session.suggestedReply != nil)
     }
 
     private func digest(waiting: [Session], state: inout ReminderState, now: Date, quiet: Bool) -> Reminder? {

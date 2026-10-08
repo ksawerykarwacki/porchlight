@@ -12,7 +12,7 @@ reads their state and never replaces agent view; uninstalling it loses nothing.
 |---|---|
 | M0 Skeleton: core library, command-line tool, app bundle, test harness | done |
 | M1 Read-only inbox with "open in terminal" | done |
-| M2 Reminders: escalation, snooze, quiet hours, digest | in progress: the logic is done, notifications are not delivered yet |
+| M2 Reminders: escalation, snooze, quiet hours, digest | in progress: reminders are delivered as notifications; snooze controls in the inbox and settings are not built yet |
 | M3 Launcher: start a background session in any repo from a hotkey | planned |
 | M4 Stop and remove with confirmations | planned |
 | M5 Onboarding, settings, signing, release | planned |
@@ -42,6 +42,16 @@ swift run porchlight snooze <id> 1h   # pause reminders: 30m, 4h, tomorrow, chan
 ./scripts/make-app.sh           # build dist/Porchlight.app (ad-hoc signed, local use only)
 open dist/Porchlight.app
 ```
+
+## Reminders
+
+A session that keeps waiting gets a notification after 15 minutes, again after 2 hours, then every
+4 hours, with sound from 2 hours on. Each notification has Open and Snooze buttons, and Copy
+suggested reply when the session came with one. A daily summary arrives at 09:00. macOS asks for
+permission the first time a reminder is due, not at launch.
+
+`porchlight snooze <id> 1h` (or `30m`, `tomorrow`, `change`, `off`) pauses reminders for one
+session. Set `PORCHLIGHT_NO_NOTIFICATIONS=1` to run the app without notifications.
 
 ## Terminals
 

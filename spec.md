@@ -108,7 +108,16 @@ Acceptance: with 3 blocked sessions, badge shows 3; answering one in the termina
 - Quiet hours: nothing is sent and nothing is recorded as sent, so the missed reminder goes out once when they end.
 - Digest: once a day at or after its time, also when the app starts late; the day counts as used even if nothing was waiting.
 - State (`reminders.json`) is saved so a restart repeats nothing. `porchlight snooze <id> …` sets a snooze and `status --json` reports it.
-- Not built yet: delivering the notifications (FR-N1, FR-N3), respecting macOS Focus (FR-N4), the "time-sensitive" level, and transient-error detection (FR-N6).
+- Not built yet: respecting macOS Focus (FR-N4), the "time-sensitive" level, transient-error detection (FR-N6), snooze controls in the inbox, and settings for the ladder and quiet hours.
+
+**Built in M2 layer 2 (2026-10-08): delivery.** `ReminderEngine` (core) runs the planner on every store update, delivers what is due, saves the state, and withdraws a session's reminder when it stops waiting or is snoozed. It re-reads the state file each time, so a snooze set with `porchlight snooze` takes effect in the running app. `UserNotificationDelivery` (macOS) posts notifications:
+
+- One notification per session, replaced by the next one for that session rather than stacked (FR-N1).
+- Buttons: Open, Snooze 1 hour, Snooze until tomorrow, and Copy suggested reply when there is one; clicking the notification itself opens the session (FR-N3).
+- Permission is requested the first time a reminder is due. If it is denied the inbox keeps working and says, above its buttons, that notifications are off.
+- First real run (macOS 27, ad-hoc signed bundle, 2026-10-08): no prompt was noticed and nothing was shown; the authorization status read "denied". After the user turned notifications on for Porchlight in System Settings, the daily summary and one reminder per waiting session appeared with the right titles and text. Why the status was "denied" is not established; macOS presents the permission request as a banner that goes away by itself, so it may simply have been missed. Onboarding (M5) should therefore check the status and point to the setting rather than rely on the prompt.
+- The reason delivery is not working is kept in `notification-status.txt` in the state folder.
+- Delivery is on only inside an app bundle and off when `PORCHLIGHT_NO_NOTIFICATIONS` is set, so tests and bare executables never post or prompt.
 
 **FR-N7** Optional push to phone via a user-configured webhook (ntfy/Pushover/Slack-compatible URL template) at a configurable ladder step. Off by default. **[PROPOSED for v1.1]**
 
