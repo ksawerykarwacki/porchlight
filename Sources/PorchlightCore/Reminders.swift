@@ -92,6 +92,35 @@ public enum Snooze: Codable, Sendable, Equatable {
     }
 }
 
+/// The ways to say "not now" that the inbox and notifications offer.
+public enum SnoozeChoice: String, Sendable, CaseIterable {
+    case hour
+    case tomorrow
+    case untilChange
+    /// Ends a snooze.
+    case wake
+
+    public var title: String {
+        switch self {
+        case .hour: "For 1 hour"
+        case .tomorrow: "Until tomorrow morning"
+        case .untilChange: "Until it asks something new"
+        case .wake: "Stop snoozing"
+        }
+    }
+
+    /// The snooze this choice means for a session, or nil for `wake` and for an until-change
+    /// snooze of a session whose wait time is unknown.
+    public func snooze(for session: Session, now: Date, calendar: Calendar = .current) -> Snooze? {
+        switch self {
+        case .hour: .until(now.addingTimeInterval(3600))
+        case .tomorrow: .tomorrow(after: now, calendar: calendar)
+        case .untilChange: session.waitingSince.map { .untilChange(waitingSince: $0) }
+        case .wake: nil
+        }
+    }
+}
+
 /// What has already been sent and what is snoozed. Saved to disk so a restart repeats nothing.
 public struct ReminderState: Codable, Sendable, Equatable {
     struct Sent: Codable, Sendable, Equatable {

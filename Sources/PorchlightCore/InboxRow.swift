@@ -91,6 +91,11 @@ public struct InboxRow: Sendable, Equatable, Identifiable {
         suggestedReply = session.suggestedReply
     }
 
+    /// What the row's snooze menu offers: ways to pause, or the way back when already paused.
+    public var snoozeChoices: [SnoozeChoice] {
+        isSnoozed ? [.wake, .hour, .tomorrow, .untilChange] : [.hour, .tomorrow, .untilChange]
+    }
+
     /// Collapses whitespace so a multi-line question or command fits a row.
     static func singleLine(_ text: String) -> String {
         text.split(whereSeparator: \.isWhitespace).joined(separator: " ")

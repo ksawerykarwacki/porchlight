@@ -6,6 +6,7 @@ import SwiftUI
 public struct InboxActions {
     public var open: (String) -> Void = { _ in }
     public var copyReply: (String) -> Void = { _ in }
+    public var snooze: (String, SnoozeChoice) -> Void = { _, _ in }
     public var openAgentView: () -> Void = {}
     public var refresh: () -> Void = {}
     public var quit: () -> Void = {}
@@ -80,6 +81,7 @@ public struct InboxView: View {
         var actions = InboxActions()
         actions.open = { model.open(sessionID: $0) }
         actions.copyReply = { model.copyReply(sessionID: $0) }
+        actions.snooze = { id, choice in Task { await model.snooze(sessionID: id, choice) } }
         actions.openAgentView = { model.openAgentView() }
         actions.refresh = { model.refresh() }
         actions.quit = quit
@@ -153,7 +155,7 @@ public struct InboxView: View {
                 .padding(.bottom, 4)
 
                 ForEach(section.rows) { row in
-                    InboxRowView(row: row, actions: actions, hover: hover)
+                    InboxRowView(row: row, actions: actions, hover: hover, drawsMenus: scrolls)
                 }
             }
         }
@@ -239,8 +241,15 @@ struct InboxRowView: View {
     let row: InboxRow
     let actions: InboxActions
     let hover: HoverTracker
+    /// Off for offscreen rendering, which draws a system menu as a placeholder block.
+    var drawsMenus = true
 
     private var isHovered: Bool { hover.hovered == row.id }
+
+    private var snoozeLabel: some View {
+        Label(row.isSnoozed ? "Snoozed" : "Snooze", systemImage: row.isSnoozed ? "moon.zzz.fill" : "moon")
+            .font(.system(size: 11.5, weight: .medium))
+    }
     private var waits: Bool { row.kind == .question || row.kind == .approval || row.kind == .waiting }
 
     var body: some View {
@@ -309,6 +318,33 @@ struct InboxRowView: View {
             }
             .buttonStyle(.plain)
             .help("Open in your terminal")
+            .overlay(alignment: .bottomTrailing) {
+                if waits {
+                    // Shown for the row under the pointer, and always for a snoozed one, so a
+                    // snooze can be seen and undone.
+                    Group {
+                        if drawsMenus {
+                            Menu {
+                                ForEach(row.snoozeChoices, id: \.self) { choice in
+                                    Button(choice.title) { actions.snooze(row.id, choice) }
+                                }
+                            } label: {
+                                snoozeLabel
+                            }
+                            .menuStyle(.borderlessButton)
+                            .menuIndicator(.hidden)
+                            .fixedSize()
+                        } else {
+                            snoozeLabel
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .padding(.trailing, 10)
+                    .padding(.bottom, 6)
+                    .opacity(isHovered || row.isSnoozed ? 1 : 0)
+                    .help(row.isSnoozed ? "Reminders are paused for this session" : "Pause reminders for this session")
+                }
+            }
 
             if row.suggestedReply != nil {
                 Button {

@@ -14,7 +14,7 @@ public final class InboxModel {
     private let locator: ClaudeLocator
     private let clock: @Sendable () -> Date
     private let settingsURL: URL
-    private var engine: ReminderEngine?
+    private let engine: ReminderEngine
     private var delivery: UserNotificationDelivery?
     private var log: ActivityLog?
     /// Why reminders are not reaching the screen, or nil when they can.
@@ -50,6 +50,7 @@ public final class InboxModel {
         launcher: (any TerminalLauncher)? = nil,
         locator: ClaudeLocator? = nil,
         settingsURL: URL = Settings.fileURL(),
+        remindersURL: URL = ReminderState.fileURL(),
         clock: @escaping @Sendable () -> Date = { Date() }
     ) {
         let settings = Settings.load(from: settingsURL)
@@ -65,9 +66,39 @@ public final class InboxModel {
         self.log = Bundle.main.bundleURL.pathExtension == "app" ? ActivityLog() : nil
         // Created now, not when polling starts: macOS hands a clicked notification to the
         // delegate that exists when the app finishes launching, and drops it otherwise.
-        self.delivery = UserNotificationDelivery { [weak self] action in
+        let relay = ActionRelay()
+        let delivery = UserNotificationDelivery { action in relay.send(action) }
+        self.delivery = delivery
+        self.engine = ReminderEngine(delivery: delivery, stateURL: remindersURL, now: clock)
+        self.snoozes = ReminderState.load(from: remindersURL).snoozes
+        relay.handler = { [weak self] action in
             Task { @MainActor in self?.handle(action) }
         }
+    }
+
+    /// Pauses or resumes reminders for a session, from the inbox.
+    public func snooze(sessionID: String, _ choice: SnoozeChoice) async {
+        guard let session = snapshot.sessions.first(where: { $0.id == sessionID }) else { return }
+        if let snooze = choice.snooze(for: session, now: clock()) {
+            await engine.snooze(sessionID: sessionID, snooze)
+            switch choice {
+            case .hour: show("\(session.name) is snoozed for an hour")
+            case .tomorrow: show("\(session.name) is snoozed until tomorrow morning")
+            default: show("\(session.name) is snoozed until it asks something new")
+            }
+        } else if choice == .wake {
+            await engine.clearSnooze(sessionID: sessionID)
+            show("Reminders are back on for \(session.name)")
+        } else {
+            show("Cannot tell when \(session.name) started waiting")
+        }
+        snoozes = await engine.snoozes()
+        log?.record("snooze \(sessionID): \(choice.rawValue)")
+    }
+
+    /// Replaces the sessions the model shows. The store calls this through `observe`.
+    func apply(_ snapshot: StoreSnapshot) {
+        self.snapshot = snapshot
     }
 
     public func setPrefersAgentView(_ value: Bool) {
@@ -103,19 +134,12 @@ public final class InboxModel {
     }
 
     private func observe() async {
-        let engine = makeEngine()
-        self.engine = engine
         for await update in await store.updates() {
-            snapshot = update.snapshot
+            apply(update.snapshot)
             await engine.process(update.snapshot)
             snoozes = await engine.snoozes()
             notificationProblem = delivery?.problem
         }
-    }
-
-    private func makeEngine() -> ReminderEngine {
-        let delivery = self.delivery ?? UserNotificationDelivery { _ in }
-        return ReminderEngine(delivery: delivery)
     }
 
     /// Carries out a button pressed on a notification.
@@ -127,8 +151,8 @@ public final class InboxModel {
         case .snooze(let sessionID, let seconds):
             let until = clock().addingTimeInterval(seconds)
             Task {
-                await engine?.snooze(sessionID: sessionID, .until(until))
-                if let engine { snoozes = await engine.snoozes() }
+                await engine.snooze(sessionID: sessionID, .until(until))
+                snoozes = await engine.snoozes()
             }
         case .showInbox:
             // The panel cannot be opened from here; bringing the app forward is the nearest thing.
@@ -208,5 +232,20 @@ public final class InboxModel {
             try? await Task.sleep(for: .seconds(4))
             if generation == noticeGeneration { notice = nil }
         }
+    }
+}
+
+/// Lets the notification delegate be created before the model that handles its actions exists.
+private final class ActionRelay: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: (@Sendable (ReminderAction) -> Void)?
+
+    var handler: (@Sendable (ReminderAction) -> Void)? {
+        get { lock.withLock { stored } }
+        set { lock.withLock { stored = newValue } }
+    }
+
+    func send(_ action: ReminderAction) {
+        handler?(action)
     }
 }
