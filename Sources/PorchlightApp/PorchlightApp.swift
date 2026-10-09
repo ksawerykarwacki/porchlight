@@ -16,6 +16,21 @@ struct PorchlightApp: App {
         let model = InboxModel()
         self.model = model
         model.willOpenTerminal = { PanelWindowObserver.closePanelAndLetGo() }
+        model.pickFolder = {
+            let dialog = NSOpenPanel()
+            dialog.canChooseDirectories = true
+            dialog.canChooseFiles = false
+            dialog.prompt = "Search This Folder"
+            dialog.message = "Choose the folder your repositories live in."
+            NSApp.activate(ignoringOtherApps: true)
+            return dialog.runModal() == .OK ? dialog.url?.path : nil
+        }
+        model.openNotificationSettings = {
+            if let url = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension") {
+                NSWorkspace.shared.open(url)
+            }
+        }
+        Task { await model.refreshSetup() }
         Task { await model.run() }
 
         let services = PaletteServices.live(

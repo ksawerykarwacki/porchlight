@@ -33,6 +33,8 @@ let usage = """
                                               example because of unpushed commits, its reason is printed
                                               and nothing is forced
       porchlight settings                     Print the settings in force, as JSON
+      porchlight settings export [FILE]       Write the settings file (to FILE, or print it)
+      porchlight settings import FILE         Replace the settings with those in FILE
       porchlight tab                          Run agent view in this tab and let the app switch it
                                               to a session when you click one
       porchlight doctor                       Check that the claude CLI can be found and used
@@ -324,7 +326,12 @@ switch arguments.first {
 case "status":
     await status(arguments: Array(arguments.dropFirst()))
 case "settings":
-    settings()
+    switch arguments.dropFirst().first {
+    case nil: settings()
+    case "export": exportSettings(to: arguments.dropFirst(2).first)
+    case "import": importSettings(from: arguments.dropFirst(2).first)
+    case let other?: fail("unknown: porchlight settings \(other)\n\n\(usage)", code: 2)
+    }
 case "new":
     #if canImport(PorchlightMac)
     guard AppSignal.isAppRunning else { fail("Porchlight is not running. Start the app, or use: porchlight dispatch") }

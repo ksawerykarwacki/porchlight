@@ -74,6 +74,16 @@ the session came with one. A daily summary arrives at 09:00.
 If notifications are turned off for Porchlight in System Settings, the panel says so.
 Set `PORCHLIGHT_NO_NOTIFICATIONS=1` to run the app without them.
 
+## First run
+
+The first time you open the panel, a card at the top lists what is left to set up: where your
+repositories live, a shortcut, notifications, opening at login. Each has a button; "Hide these"
+puts the card away. If the `claude` command cannot be found or is too old, the card says so and
+stays until that is fixed.
+
+`porchlight settings export settings.json` and `porchlight settings import settings.json` move your
+settings to another Mac.
+
 ## Repositories
 
 Porchlight keeps a list of the folders you can start a session in. Tell it where your code lives and

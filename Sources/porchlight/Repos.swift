@@ -114,3 +114,33 @@ func name(arguments: [String]) {
     let template = NameTemplate(settings: Settings.load().naming ?? NamingSettings())
     print(template.name(prompt: arguments.joined(separator: " "), directory: directory, branch: GitBranch.current(in: directory)))
 }
+
+/// `porchlight settings export [FILE]`: the settings file as it would be saved now.
+func exportSettings(to path: String?) {
+    guard let data = try? SettingsTransfer.export(Settings.load()) else { fail("could not encode the settings") }
+    guard let path else {
+        print(String(decoding: data, as: UTF8.self))
+        return
+    }
+    do {
+        try data.write(to: URL(fileURLWithPath: RepoPath.normalized(path)), options: .atomic)
+        print("Settings written to \(path)")
+    } catch {
+        fail("could not write \(path): \(error.localizedDescription)")
+    }
+}
+
+/// `porchlight settings import FILE`: replaces the settings, after checking the file is one.
+func importSettings(from path: String?) {
+    guard let path else { fail("usage: porchlight settings import FILE", code: 2) }
+    guard let data = try? Data(contentsOf: URL(fileURLWithPath: RepoPath.normalized(path))) else { fail("could not read \(path)") }
+    guard let imported = try? SettingsTransfer.read(data) else {
+        fail("\(path) is not a Porchlight settings file; nothing was changed")
+    }
+    do {
+        try imported.save()
+        print("Settings imported from \(path). The app picks them up at its next refresh; the shortcut after a restart.")
+    } catch {
+        fail("could not save the settings: \(error.localizedDescription)")
+    }
+}

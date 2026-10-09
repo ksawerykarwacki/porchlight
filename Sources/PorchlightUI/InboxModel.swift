@@ -43,6 +43,20 @@ public final class InboxModel {
     public let hover = HoverTracker()
     /// The result of the last action, shown briefly at the bottom of the inbox.
     public private(set) var notice: String?
+    /// What Porchlight can see of its own set-up, and the steps that follow from it.
+    public private(set) var setupFacts = SetupFacts()
+    public var setupSteps: [SetupStep] { Setup.steps(for: setupFacts) }
+    private let loginItem: LoginItem
+    /// Asks the user for a folder; returns its path or nil. Set by the app.
+    public var pickFolder: () -> String? = { nil }
+    /// Opens the system's notification settings. Set by the app.
+    public var openNotificationSettings: () -> Void = {}
+    /// Reads `claude --version`. Replaceable in tests.
+    var readClaudeVersion: @Sendable (URL) async -> CLIVersion? = { claude in
+        guard let result = try? await CLIRunner().run(claude, ["--version"], timeout: 10), result.succeeded else { return nil }
+        return CLIVersion(parsing: result.stdout)
+    }
+
     /// A stop or removal waiting for the user to confirm it.
     public private(set) var pendingControl: PendingControl?
     /// The last stop or removal Claude Code refused, kept until it is dismissed.
@@ -76,10 +90,12 @@ public final class InboxModel {
         locator: ClaudeLocator? = nil,
         settingsURL: URL = Settings.fileURL(),
         remindersURL: URL = ReminderState.fileURL(),
+        loginItem: LoginItem = .live(),
         clock: @escaping @Sendable () -> Date = { Date() }
     ) {
         let settings = Settings.load(from: settingsURL)
         self.store = store
+        self.loginItem = loginItem
         self.injectedLauncher = launcher
         self.locator = locator ?? ClaudeLocator(override: settings.claudePath)
         self.injectedLocator = locator
@@ -213,6 +229,7 @@ public final class InboxModel {
             await engine.process(update.snapshot)
             snoozes = await engine.snoozes()
             notificationProblem = delivery?.problem
+            await refreshSetup()
         }
     }
 
@@ -261,6 +278,56 @@ public final class InboxModel {
         apply(await store.snapshot)
         show("Started \(started.name ?? "a session") (\(started.id))")
         if open { self.open(sessionID: started.id) }
+    }
+
+    /// Looks again at what is set up. Cheap except for the version, which is read once.
+    public func refreshSetup() async {
+        let settings = Settings.load(from: settingsURL)
+        let located = locator.locate()
+        var facts = SetupFacts(
+            claudePath: located?.path, claudeCandidates: locator.candidates(), claudeVersion: setupFacts.claudeVersion,
+            hasWorkspaceRoot: !(settings.repos?.roots.isEmpty ?? true), notificationProblem: notificationProblem,
+            hasShortcut: hotkey != nil, launchesAtLogin: loginItem.isEnabled(), hidden: settings.setupHidden ?? false)
+        if facts.claudeVersion == nil, let located {
+            facts.claudeVersion = await readClaudeVersion(located)
+        }
+        setupFacts = facts
+    }
+
+    /// Does the step a button on the first-run card stands for.
+    public func performSetup(_ kind: SetupStep.Kind) async {
+        switch kind {
+        case .workspace:
+            guard let path = pickFolder(), RepoIndex.directoryExists(path) else { break }
+            var settings = Settings.load(from: settingsURL)
+            var repos = settings.repos ?? RepoIndexSettings()
+            repos.addRoot(path)
+            settings.repos = repos
+            do {
+                try settings.save(to: settingsURL)
+                show("Looking for repositories in \(RepoPath.abbreviated(RepoPath.normalized(path)))")
+            } catch {
+                show("Could not save the settings")
+            }
+        case .notifications: openNotificationSettings()
+        case .shortcut: setHotkey(.suggested)
+        case .loginItem:
+            if let problem = loginItem.set(true) {
+                show(problem, for: Self.problemNoticeSeconds)
+            } else {
+                show("Porchlight will open at login")
+            }
+        case .claudeMissing, .claudeTooOld: break
+        }
+        await refreshSetup()
+    }
+
+    /// Hides the optional first-run steps for good. Problems still show.
+    public func hideSetup() {
+        var settings = Settings.load(from: settingsURL)
+        settings.setupHidden = true
+        try? settings.save(to: settingsURL)
+        setupFacts.hidden = true
     }
 
     /// Asks to stop or remove a session. Nothing happens until `confirmControl`.

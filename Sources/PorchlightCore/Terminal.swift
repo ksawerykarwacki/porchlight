@@ -101,10 +101,13 @@ public struct Settings: Sendable, Equatable, Codable {
     public var naming: NamingSettings?
     /// The shortcut that opens the new-session palette from any app. Nil means none.
     public var hotkey: Hotkey?
+    /// True once the user hid the optional first-run steps.
+    public var setupHidden: Bool?
 
     public init(
         terminal: String? = nil, claudePath: String? = nil, preferAgentView: Bool? = nil, reminders: ReminderSettings? = nil,
-        transientErrors: TransientErrors? = nil, repos: RepoIndexSettings? = nil, naming: NamingSettings? = nil, hotkey: Hotkey? = nil
+        transientErrors: TransientErrors? = nil, repos: RepoIndexSettings? = nil, naming: NamingSettings? = nil, hotkey: Hotkey? = nil,
+        setupHidden: Bool? = nil
     ) {
         self.transientErrors = transientErrors
         self.terminal = terminal
@@ -114,10 +117,11 @@ public struct Settings: Sendable, Equatable, Codable {
         self.repos = repos
         self.naming = naming
         self.hotkey = hotkey
+        self.setupHidden = setupHidden
     }
 
     private enum CodingKeys: String, CodingKey {
-        case terminal, claudePath, preferAgentView, reminders, transientErrors, repos, naming, hotkey
+        case terminal, claudePath, preferAgentView, reminders, transientErrors, repos, naming, hotkey, setupHidden
     }
 
     /// Each value is read on its own, so one odd entry does not discard the rest.
@@ -131,6 +135,7 @@ public struct Settings: Sendable, Equatable, Codable {
         repos = try? c.decodeIfPresent(RepoIndexSettings.self, forKey: .repos)
         naming = try? c.decodeIfPresent(NamingSettings.self, forKey: .naming)
         hotkey = try? c.decodeIfPresent(Hotkey.self, forKey: .hotkey)
+        setupHidden = try? c.decodeIfPresent(Bool.self, forKey: .setupHidden)
     }
 
     public static func fileURL(in stateDirectory: URL = PorchlightPaths.stateDirectory()) -> URL {

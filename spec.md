@@ -269,6 +269,14 @@ Acceptance: from any app, hotkey → type 3 letters of a repo → Enter → type
 
 **FR-S3** Settings stored as a human-readable JSON/plist in `~/Library/Application Support/<app>/`; import/export.
 
+**Built as the first part of M5 (2026-10-09): first run, without an Apple account.**
+
+- A set-up card at the top of the sessions lists what is outstanding (FR-S1, FR-S2). Problems cannot be hidden: `claude` not found (with the places that were tried), or a version below the minimum (provisionally 2.1.294, with `claude update`). Optional steps each have a button and can be hidden for good: add a workspace folder, open the system's notification settings when reminders cannot be delivered, use the suggested shortcut, open at login.
+- Open at login uses the system's login-item service (`SMAppService`) and only from inside the app bundle. A refusal, or the system asking for approval under Login Items, is shown instead of assumed away.
+- `porchlight settings export [FILE]` and `porchlight settings import FILE` (FR-S3). An import is checked first: a file that is not a JSON object is refused and nothing changes; unknown keys and odd values are handled as when the app reads its own file.
+- Not verified: open at login on a real restart, and whether the system accepts an ad-hoc signed app as a login item at all.
+- Still to do in M5, all needing the owner: Developer ID signing and notarisation, the time-sensitive entitlement and the Focus decision that come with it, automatic updates, publishing a release and the cask, making the repository public.
+
 ### 6.7 Roadmap after v1
 
 - **v1.1** Phone webhook (FR-N7), naming hook installer (FR-NM4), transient-error retry (once spike resolved).

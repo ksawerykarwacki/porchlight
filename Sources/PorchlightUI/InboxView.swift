@@ -10,6 +10,10 @@ public struct InboxActions {
     public var openAgentView: () -> Void = {}
     /// Opens the palette that starts a new session.
     public var newSession: () -> Void = {}
+    /// What is left to set up, for the first-run card.
+    public var setupSteps: [SetupStep] = []
+    public var performSetup: (SetupStep.Kind) -> Void = { _ in }
+    public var hideSetup: () -> Void = {}
     /// A stop or removal waiting to be confirmed, and the last one that was refused.
     public var pendingControl: PendingControl?
     public var controlProblem: ControlProblem?
@@ -101,6 +105,9 @@ public struct InboxView: View {
     public init(model: InboxModel, newSession: @escaping () -> Void = {}, quit: @escaping () -> Void) {
         var actions = InboxActions()
         actions.newSession = newSession
+        actions.setupSteps = model.setupSteps
+        actions.performSetup = { kind in Task { await model.performSetup(kind) } }
+        actions.hideSetup = { model.hideSetup() }
         actions.pendingControl = model.pendingControl
         actions.controlProblem = model.controlProblem
         actions.askControl = { action, id in model.askControl(action, sessionID: id) }
@@ -186,6 +193,9 @@ public struct InboxView: View {
     }
 
     @ViewBuilder private var sessionList: some View {
+        if !actions.setupSteps.isEmpty {
+            SetupCard(steps: actions.setupSteps, hover: hover, perform: actions.performSetup, hide: actions.hideSetup)
+        }
         let sections = InboxGroups(sessions: snapshot.sessions, now: now)
             .sections(now: now, snoozes: snoozes, overdueAfter: actions.reminders.secondStep, transientErrors: actions.transientErrors)
         VStack(alignment: .leading, spacing: 0) {
@@ -566,6 +576,64 @@ struct OptionChip: View {
         .padding(.vertical, 3)
         .background(Capsule().fill(recommended ? Lamp.light.opacity(0.22) : Color.primary.opacity(0.06)))
         .overlay(Capsule().strokeBorder(recommended ? Lamp.light.opacity(0.55) : Color.primary.opacity(0.10), lineWidth: 1))
+    }
+}
+
+/// What is left to set up, at the top of the sessions: problems that stop Porchlight working,
+/// and optional steps that can be done here or hidden.
+struct SetupCard: View {
+    let steps: [SetupStep]
+    let hover: HoverTracker
+    let perform: (SetupStep.Kind) -> Void
+    let hide: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            ForEach(steps) { step in
+                HStack(alignment: .top, spacing: 10) {
+                    Circle()
+                        .fill(step.isProblem ? Lamp.ember : Lamp.light)
+                        .frame(width: 8, height: 8)
+                        .padding(.top, 4)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(step.title)
+                            .font(.system(size: 12.5, weight: .semibold))
+                        Text(step.detail)
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                        if let action = step.action {
+                            Button {
+                                perform(step.kind)
+                            } label: {
+                                Text(action)
+                                    .font(.system(size: 11.5, weight: .medium))
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 4)
+                                    .background(Capsule().fill(Color.primary.opacity(hover.hovered == "setup.\(step.id)" ? 0.16 : 0.08)))
+                                    .contentShape(Capsule())
+                            }
+                            .buttonStyle(.plain)
+                            .onHover { hover.set("setup.\(step.id)", $0) }
+                            .padding(.top, 2)
+                        }
+                    }
+                }
+            }
+            if Setup.canHide(steps) {
+                HStack {
+                    Spacer()
+                    QuietButton(title: "Hide these", symbol: nil, id: "setup.hide", hover: hover, action: hide)
+                }
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.primary.opacity(0.05)))
+        .padding(.horizontal, 10)
+        .padding(.top, 8)
+        .padding(.bottom, 2)
     }
 }
 
