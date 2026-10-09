@@ -370,6 +370,44 @@ Claude Code 2.1.295 ships an extension interface it calls mods: a plugin whose h
 - Checked: nine tests under `claude plugin test`; live, a model's own SendMessage to a stopped session by name woke it, the model was told "delivered", and the recipient's reply came back.
 - Not checked: installed from the marketplace rather than loaded with `--plugin-dir`; a recipient whose folder or worktree is gone; several stopped recipients at once; whether the hook is cut short when a restart takes long.
 
+**Second round of experiments (2026-10-10, same set-up): what a companion mod could and could not do.**
+
+*A channel between a mod and the app.*
+
+- `$.http.fetch` takes a `socketPath`, so a mod can speak HTTP to a Unix socket. Against a stand-in server on a socket with mode 0600 and a token in a 0600 file: an event reached the server in 1 to 7 ms; a command queued on the server reached the mod within milliseconds through a request held open (20 s, then asked again).
+- The mod's timers kept running while its hooks waited and after a failed turn.
+- With the server gone the request fails at once (`HooksError: … failed`); the probe asked again every three seconds at no visible cost. Without the token the server answered 403.
+- Not tested: a dozen sessions at once; the app restarting while requests are held.
+
+*Answering a question.*
+
+- A `tool.call` hook on the question tool can return the answer as the tool's result. Worked for one question, two questions in one call, multi-select (answers joined with a comma) and typed text in place of an option (`response`).
+- No time limit was met: an answer given 160 seconds after the question was taken. The dialog stays on screen meanwhile and can still be answered there.
+- A prompt submitted while a question is open is not delivered until the session is idle, and the call waits until then: code that awaits it stops listening.
+
+*Approving a tool call.* This is the limit of the approach.
+
+- In the session's default background mode a harmless command was not asked about at all (the mode's own decider let it through). With `--permission-mode default` the order is: `tool.check` (verdict `ask`), then `classic.PermissionRequest`, then the dialog.
+- A function hook answers a permission request with `{ decision: { behavior: "allow" } }`, not the settings hook's `hookSpecificOutput` wrapper. Given 6 seconds after the request, it ran the command with no dialog answered.
+- **Both hooks are given ten seconds.** After that their signal aborts and the engine goes on: an answer at 11, 22 or 30 seconds was ignored and the dialog stood. Holding `tool.check` only delays the dialog by its ten seconds.
+- So an approval from the app is possible for about ten seconds after the request (perhaps twenty using both hooks, not tried), and not from a notification clicked minutes later. Not tried: refusing the call with "waiting for approval", then allowing the same call and resubmitting once the user approves; drawing the dialog from the mod.
+
+*A turn that fails.*
+
+- With the session's proxy pointed at a closed local port (so nothing was sent anywhere), Claude Code retried ten times over three minutes, then the mod saw `classic.StopFailure` with `error: "server_error"` and `turn.complete` with `reason: "error"`. `claude agents` then listed the session as `blocked`.
+- The API's own classes: `rate_limit`, `overloaded` and `server_error` "may clear on their own"; `authentication_failed`, `billing_error`, `invalid_request`, `model_not_found` will not.
+- After the failure the mod was alive, and a prompt it submitted started a new turn.
+- Not tested: a real rate or usage limit, and the laptop sleeping.
+
+**What a full rework would be, if the owner decides on it.** In layers, each usable alone, the app working unchanged without the mod:
+
+1. *The app listens.* A Unix socket in the state folder, a token, a small protocol: events in, commands out. Sessions known through the mod are merged with the list from `claude agents`, which stays the source for sessions that are not running.
+2. *A companion mod that only reports:* session start and end, turn start and end, the question asked, the permission asked for, a failure and its class. This replaces reading `state.json` where the mod is present and makes the panel immediate.
+3. *Answering questions* from the panel, the palette and notifications: the options as buttons, typed text, several questions. This changes the rule in 12.1.
+4. *Retry after a passing failure:* on `rate_limit`, `overloaded` or `server_error`, after a wait the user sets, the mod submits "continue"; anything else is left to the user.
+5. *Approvals,* only within what the ten seconds allow, or by the refuse-and-resubmit route if that proves sound.
+6. *Inside Claude Code:* a line saying how many other sessions wait, slash commands, a session's own note when it goes idle, names at start.
+
 **Not built, and a decision for the owner:** answering a session's question or approving a tool call from the Porchlight panel through a mod. It would end "copy and open" for sessions that have the mod, on a documented interface, and it would change the rule in 12.1 that Porchlight never sends input into a session. Open before any design: a channel between mod and app that no other local program can use to answer for the user, permission approvals, and behaviour where plugins are disabled.
 
 ### 6.7 Roadmap after v1
