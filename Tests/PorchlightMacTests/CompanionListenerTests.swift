@@ -12,15 +12,14 @@ final class CompanionRig: @unchecked Sendable {
     let directory: URL
     let paths: CompanionPaths
     let hub = CompanionHub()
-    let secret: String
     let listener: CompanionListener
+    var secret: String { listener.secret }
 
     init(hold: TimeInterval = 25) throws {
         // Short on purpose: a socket's path may only be 103 bytes long.
         directory = URL(fileURLWithPath: "/tmp/pl-\(UUID().uuidString.prefix(8))")
         paths = CompanionPaths(directory: directory)
-        secret = try paths.writeDescriptor()
-        listener = CompanionListener(paths: paths, hub: hub, secret: secret, hold: hold)
+        listener = CompanionListener(paths: paths, hub: hub, hold: hold)
         try listener.start()
     }
 
@@ -103,8 +102,11 @@ final class CompanionRig: @unchecked Sendable {
 
     @Test func aSecondListenerReplacesADeadOneAndNotALiveOne() throws {
         let rig = try CompanionRig()
-        let second = CompanionListener(paths: rig.paths, hub: CompanionHub(), secret: "other")
+        let second = CompanionListener(paths: rig.paths, hub: CompanionHub())
+        let written = try Data(contentsOf: rig.paths.descriptor)
         #expect(throws: CompanionListener.StartFailure.alreadyRunning) { try second.start() }
+        // The copy that was refused left the running one's secret as it was.
+        #expect(try Data(contentsOf: rig.paths.descriptor) == written && second.secret.isEmpty && rig.secret.count == 48)
 
         // The first one gone, leaving its file behind as a crash would: the next start takes over.
         rig.listener.stop()
@@ -112,13 +114,14 @@ final class CompanionRig: @unchecked Sendable {
         #expect(!CompanionListener.isAnswering(rig.paths.socket.path))
         try second.start()
         #expect(CompanionListener.isAnswering(rig.paths.socket.path))
+        #expect(second.secret.count == 48 && second.secret != rig.secret && FileManager.default.fileExists(atPath: rig.paths.descriptor.path))
         second.stop()
-        #expect(!FileManager.default.fileExists(atPath: rig.paths.socket.path))
+        #expect(!FileManager.default.fileExists(atPath: rig.paths.socket.path) && !FileManager.default.fileExists(atPath: rig.paths.descriptor.path))
 
         let deep = CompanionPaths(
             directory: URL(fileURLWithPath: "/tmp/" + String(repeating: "a", count: 120)),
             fallbackDirectory: URL(fileURLWithPath: "/tmp/" + String(repeating: "b", count: 120)))
-        #expect(throws: CompanionListener.StartFailure.pathTooLong) { try CompanionListener(paths: deep, hub: CompanionHub(), secret: "s").start() }
+        #expect(throws: CompanionListener.StartFailure.pathTooLong) { try CompanionListener(paths: deep, hub: CompanionHub()).start() }
     }
 
     @Test func requestsArePartsOfOneUnderstoodShape() {

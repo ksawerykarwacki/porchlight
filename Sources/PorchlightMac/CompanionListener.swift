@@ -24,7 +24,8 @@ public final class CompanionListener: @unchecked Sendable {
 
     public let paths: CompanionPaths
     private let hub: CompanionHub
-    private let secret: String
+    /// What every request must carry. Made, and written for the mod to find, when listening starts.
+    public private(set) var secret = ""
     private let hold: TimeInterval
     private let queue = DispatchQueue(label: "porchlight.companion")
     private var listener: NWListener?
@@ -35,10 +36,9 @@ public final class CompanionListener: @unchecked Sendable {
     static let bodyLimit = 256 * 1024
     static let headerLimit = 16 * 1024
 
-    public init(paths: CompanionPaths = CompanionPaths(), hub: CompanionHub, secret: String, hold: TimeInterval = 25) {
+    public init(paths: CompanionPaths = CompanionPaths(), hub: CompanionHub, hold: TimeInterval = 25) {
         self.paths = paths
         self.hub = hub
-        self.secret = secret
         self.hold = hold
     }
 
@@ -50,6 +50,13 @@ public final class CompanionListener: @unchecked Sendable {
         if FileManager.default.fileExists(atPath: path) {
             guard !Self.isAnswering(path) else { throw StartFailure.alreadyRunning }
             try? FileManager.default.removeItem(atPath: path)
+        }
+        // Only now, with no other copy answering: a second copy must not replace the secret the
+        // first one's sessions are using.
+        do {
+            secret = try paths.writeDescriptor()
+        } catch {
+            throw StartFailure.couldNotListen("the file that tells the mod where the app is could not be written")
         }
         // The folder the socket is made in is closed to everyone else first. The socket file is
         // only given its own mode once it exists, and the process-wide mask is not touched for
@@ -93,7 +100,10 @@ public final class CompanionListener: @unchecked Sendable {
         self.listener = listener
     }
 
+    /// Stops listening and removes what a mod would look for.
     public func stop() {
+        guard listener != nil else { return }
+        paths.removeDescriptor()
         queue.sync {
             listener?.cancel()
             listener = nil

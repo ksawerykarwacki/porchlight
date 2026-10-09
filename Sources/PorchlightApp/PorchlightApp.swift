@@ -29,8 +29,7 @@ struct PorchlightApp: App {
         var listener: CompanionListener?
         var companionProblem: String?
         do {
-            let paths = CompanionPaths()
-            let started = CompanionListener(paths: paths, hub: hub, secret: try paths.writeDescriptor())
+            let started = CompanionListener(hub: hub)
             try started.start()
             listener = started
         } catch CompanionListener.StartFailure.alreadyRunning {
@@ -129,7 +128,6 @@ struct PorchlightApp: App {
                 quit: { [companionListener] in
                     // Gone on purpose: leave nothing for a mod to find or talk to.
                     companionListener?.stop()
-                    companionListener?.paths.removeDescriptor()
                     NSApplication.shared.terminate(nil)
                 })
                 // Keeps the panel attached to the menu bar when its height changes, and brings
