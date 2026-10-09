@@ -158,6 +158,35 @@ final class TriageWorld {
         #expect(model.summary == "1 session removed.")
     }
 
+    @Test func keepingASessionTakesItsRowAwayAtOnceAndSaysWhereItWent() async throws {
+        let world = TriageWorld()
+        let model = world.model
+        await model.load()
+        model.askRemoveSafe()
+        model.exclude("safe0001")
+        // Gone from the list without another look, and the bulk question still stands for the rest.
+        #expect(!model.items.contains { $0.id == "safe0001" })
+        #expect(model.safe.map(\.id) == ["safe0002"] && model.isConfirmingBulk)
+        model.exclude("safe0002")
+        // Nothing safe is left, so there is nothing left to confirm.
+        #expect(model.safe.isEmpty && !model.isConfirmingBulk)
+
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("porchlight-triage-keep-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let inbox = InboxModel(settingsURL: Settings.fileURL(in: directory), remindersURL: ReminderState.fileURL(in: directory))
+        var snapshot = StoreSnapshot()
+        snapshot.sessions = world.sessions
+        inbox.apply(snapshot)
+        inbox.keep(sessionID: "wait0005")
+        #expect(inbox.pins.isPinned("wait0005"))
+        #expect(inbox.notice == "Pinned forgotten. It is under Pinned on the Sessions tab and will not be suggested for removal.")
+        #expect(inbox.rows.first?.id == "wait0005")
+        // Keeping it again, or keeping something that is not there, changes nothing.
+        inbox.keep(sessionID: "wait0005")
+        inbox.keep(sessionID: "gone9999")
+        #expect(inbox.pins.sessions.count == 1)
+    }
+
     /// The path the app wires in: plain removal through the inbox model, which refuses a pinned
     /// or vanished session before running anything and never passes an override.
     @Test func theInboxRemovesPlainlyAndOnlyWhatItStillCan() async throws {

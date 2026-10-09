@@ -169,7 +169,8 @@ struct TriageRow: View {
                     HStack(spacing: 2) {
                         QuietButton(title: "Open", symbol: nil, id: "\(id).open", hover: hover) { actions.open(item.id) }
                         QuietButton(title: "Remove…", symbol: nil, id: "\(id).remove", hover: hover) { actions.askControl(.remove, item.id) }
-                        QuietButton(title: "Pin", symbol: nil, id: "\(id).pin", hover: hover) { actions.togglePin(item.id) }
+                        QuietButton(title: "Keep (pin)", symbol: nil, id: "\(id).pin", hover: hover) { actions.keepFromTriage(item.id) }
+                            .help("Pin this session: it moves to Pinned on the Sessions tab and is no longer suggested for removal")
                     }
                     .padding(.leading, -8)
                     .opacity(isBeingRemoved ? 0.4 : 1)

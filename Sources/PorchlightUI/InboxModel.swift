@@ -388,6 +388,15 @@ public final class InboxModel {
         savePins()
     }
 
+    /// Pins a session from the Triage tab: the answer "keep this one" to its verdict. Says what
+    /// that means, since the row then leaves the tab.
+    public func keep(sessionID: String) {
+        guard let session = snapshot.sessions.first(where: { $0.id == sessionID }), !pins.isPinned(sessionID) else { return }
+        pins.pin(sessionID, now: clock())
+        show("Pinned \(session.name). It is under Pinned on the Sessions tab and will not be suggested for removal.", for: 8)
+        savePins()
+    }
+
     /// Turns a pinned session's reminders off or back on.
     public func setPinQuiet(sessionID: String, _ quiet: Bool) {
         guard pins.isPinned(sessionID), let session = snapshot.sessions.first(where: { $0.id == sessionID }) else { return }

@@ -73,6 +73,8 @@ public struct InboxActions {
     public var cancelRemoveSafe: () -> Void = {}
     public var confirmRemoveSafe: () -> Void = {}
     public var dismissTriageResult: () -> Void = {}
+    /// Pins a session from its Triage row and takes the row away.
+    public var keepFromTriage: (String) -> Void = { _ in }
     public var setShowsSettings: (Bool) -> Void = { _ in }
     public var reminders = ReminderSettings()
     public var updateReminders: ((inout ReminderSettings) -> Void) -> Void = { _ in }
@@ -160,6 +162,10 @@ public struct InboxView: View {
             actions.cancelRemoveSafe = { triage.cancelRemoveSafe() }
             actions.confirmRemoveSafe = { Task { await triage.confirmRemoveSafe() } }
             actions.dismissTriageResult = { triage.dismissResult() }
+            actions.keepFromTriage = { id in
+                model.keep(sessionID: id)
+                triage.exclude(id)
+            }
         }
         if let updates {
             actions.updateSummary = updates.summary

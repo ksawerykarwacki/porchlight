@@ -80,6 +80,13 @@ public final class TriageModel {
         hasLoaded = true
     }
 
+    /// Takes a session off the list straight away, when the user has just pinned it. The next
+    /// look would leave it out anyway; this spares the wait.
+    public func exclude(_ id: String) {
+        items.removeAll { $0.id == id }
+        if safe.isEmpty { isConfirmingBulk = false }
+    }
+
     public func askRemoveSafe() {
         guard !safe.isEmpty, removing == nil else { return }
         isConfirmingBulk = true
