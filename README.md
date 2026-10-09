@@ -78,7 +78,7 @@ Set `PORCHLIGHT_NO_NOTIFICATIONS=1` to run the app without them.
 
 The first time you open the panel, a card at the top lists what is left to set up: where your
 repositories live, a shortcut, notifications, opening at login. Each has a button; "Hide these"
-puts the card away. If the `claude` command cannot be found or is too old, the card says so and
+puts the card away, and the same choices stay on the Settings tab under General. If the `claude` command cannot be found or is too old, the card says so and
 stays until that is fixed.
 
 `porchlight settings export settings.json` and `porchlight settings import settings.json` move your
@@ -111,8 +111,11 @@ one; ⌘Return copies its suggested reply and opens it; ⌥Return snoozes it for
 
 To stop or remove a session, use the ⋯ menu on its row, ⌘S or ⌘D in the palette, or
 `porchlight stop <id>` and `porchlight rm <id>`. Both ask first. If Claude Code refuses to remove
-one, for example because its worktree has unpushed commits, Porchlight shows the reason and leaves
-the decision to you; it never forces a removal.
+one, for example because its worktree has unpushed commits, Porchlight shows the reason. If that
+reason names what would have to be discarded, "Discard and remove…" asks once more and then removes
+it anyway; nothing is discarded without that second answer. Before a removal Porchlight tells you
+how many uncommitted files and unpushed commits the session's worktree holds, and afterwards
+whether the worktree folder is still on disk.
 
 To open the palette from any app, set a shortcut on the Settings tab ("Shortcut for a new
 session"): click "Use ⌃⌥⌘N", or record your own. None is set until you choose one, and Porchlight

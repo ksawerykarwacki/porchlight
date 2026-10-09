@@ -115,6 +115,54 @@ final class LoginItemProbe: @unchecked Sendable {
         #expect(Settings.load(from: otherURL).repos == nil)
     }
 
+    @Test func theSameStepsLiveOnTheSettingsTabAfterTheCardIsHidden() async throws {
+        let probe = LoginItemProbe(enabled: false)
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("porchlight-general-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let url = Settings.fileURL(in: directory)
+        let locator = ClaudeLocator(override: "/bin/echo", environment: [:], homeDirectory: "/nowhere", isExecutable: { $0 == "/bin/echo" })
+        let model = InboxModel(locator: locator, settingsURL: url, remindersURL: ReminderState.fileURL(in: directory), loginItem: probe.item)
+        model.readClaudeVersion = { _ in CLIVersion([2, 1, 294]) }
+        model.hideSetup()
+        await model.refreshSetup()
+        #expect(model.setupSteps.isEmpty)
+
+        // Open at login, switched on and off from Settings.
+        #expect(model.setupFacts.launchesAtLogin == false)
+        await model.setLaunchesAtLogin(true)
+        #expect(probe.requests == [true] && model.setupFacts.launchesAtLogin == true)
+        await model.setLaunchesAtLogin(false)
+        #expect(probe.requests == [true, false] && model.setupFacts.launchesAtLogin == false)
+        #expect(model.notice == "Porchlight will no longer open at login")
+
+        // Workspace folders: added through the same step the card used, listed, and removable.
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("porchlight-root-\(UUID().uuidString)").path
+        try FileManager.default.createDirectory(atPath: folder, withIntermediateDirectories: true)
+        model.pickFolder = { folder }
+        await model.performSetup(.workspace)
+        #expect(model.workspaceRoots.count == 1)
+        await model.removeWorkspaceRoot(model.workspaceRoots[0])
+        #expect(model.workspaceRoots.isEmpty && Settings.load(from: url).repos?.roots.isEmpty == true)
+    }
+
+    @Test func theSettingsPageHasAGeneralSectionThatGrowsWithItsFolders() throws {
+        func height(_ actions: InboxActions) throws -> CGFloat {
+            try #require(ImageRenderer(content: SettingsPage(actions: actions, drawsMenus: false, timeSensitive: .unknown).frame(width: 400)).nsImage).size.height
+        }
+        var actions = InboxActions()
+        actions.workspaceRoots = ["~/code"]
+        let one = try height(actions)
+        actions.workspaceRoots = ["~/code", "~/work", "~/play"]
+        let two = try height(actions)
+        // Each folder is a row of its own.
+        #expect(two > one + 30)
+        actions.launchesAtLogin = true
+        let withLogin = try height(actions)
+        #expect(withLogin > two + 15)
+        actions.notificationProblem = "Notifications are turned off for Porchlight in System Settings > Notifications."
+        #expect(try height(actions) > withLogin + 40)
+    }
+
     @Test func notificationsOpenTheSystemSettings() async throws {
         let (model, _) = try model()
         var opened = 0

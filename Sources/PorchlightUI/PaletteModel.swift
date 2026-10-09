@@ -158,6 +158,8 @@ public final class PaletteModel {
     /// A stop or removal waiting for Return, and what the last one came to.
     public private(set) var pendingControl: PendingControl?
     public private(set) var controlMessage: String?
+    /// The last removal Claude Code refused, kept while its row stays selected.
+    public private(set) var refusedRemoval: ControlProblem?
     /// Opens Claude Code in a folder so the user can accept its trust prompt.
     public var onTrust: (String) -> Void = { _ in }
     public var onCopy: (String) -> Void = { _ in }
@@ -296,6 +298,7 @@ public final class PaletteModel {
         guard count > 0 else { return }
         // The question was about the row that was selected.
         pendingControl = nil
+        refusedRemoval = nil
         selection = max(0, min(count - 1, selection + offset))
     }
 
@@ -346,7 +349,14 @@ public final class PaletteModel {
     /// does not.
     public func askControlSelected(_ action: SessionAction) {
         guard step == .folder, let row = selectedSession, action == .stop ? row.canStop : row.canRemove else { return }
+        // Asked again for a removal Claude Code refused, with what it said could be discarded:
+        // the second question, with its refusal in full.
+        if action == .remove, let refused = refusedRemoval, refused.sessionID == row.id, !refused.overrides.isEmpty {
+            pendingControl = PendingControl(sessionID: row.id, name: row.title, action: .remove, overrides: refused.overrides, refusal: refused.text)
+            return
+        }
         controlMessage = nil
+        refusedRemoval = nil
         pendingControl = PendingControl(sessionID: row.id, name: row.title, action: action)
     }
 
@@ -360,6 +370,13 @@ public final class PaletteModel {
         let outcome = await onControl(pending)
         // A refusal is shown in the CLI's own words.
         controlMessage = outcome.succeeded ? pending.action.done(name: pending.name) : outcome.message
+        if case .refused(let text) = outcome {
+            let problem = ControlProblem(sessionID: pending.sessionID, name: pending.name, action: pending.action, text: text)
+            refusedRemoval = problem.overrides.isEmpty ? nil : problem
+            if refusedRemoval != nil { controlMessage = text + "\n\nPress ⌘D again to discard that and remove it anyway." }
+        } else {
+            refusedRemoval = nil
+        }
         sessions = await services.sessions()
         rank()
     }

@@ -94,7 +94,7 @@ public struct PaletteView: View {
             Text(note)
                 .font(.system(size: 12.5))
                 .foregroundStyle(model.pendingControl == nil ? .secondary : .primary)
-                .lineLimit(6)
+                .lineLimit(10)
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, 18)
@@ -105,7 +105,7 @@ public struct PaletteView: View {
         Divider()
         HStack(spacing: 2) {
             if let pending = model.pendingControl {
-                KeyHint(keys: "↩", label: pending.action.verb, id: "palette.hint.choose", hover: hover, prominent: true, action: model.confirmFolder)
+                KeyHint(keys: "↩", label: pending.verb, id: "palette.hint.choose", hover: hover, prominent: true, action: model.confirmFolder)
                 KeyHint(keys: "esc", label: "Cancel", id: "palette.hint.close", hover: hover, action: model.escape)
             } else if let row = model.selectedSession {
                 KeyHint(keys: "↩", label: "Open", id: "palette.hint.choose", hover: hover, action: model.confirmFolder)

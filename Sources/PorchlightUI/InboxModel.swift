@@ -62,7 +62,13 @@ public final class InboxModel {
     /// The last stop or removal Claude Code refused, kept until it is dismissed.
     public private(set) var controlProblem: ControlProblem?
     /// Set only by tests; otherwise the installed `claude` is run.
-    var runControl: (@Sendable (SessionAction, String) async -> ControlOutcome)?
+    var runControl: (@Sendable (SessionAction, String, [SessionControl.Override]) async -> ControlOutcome)?
+    /// Looks into a session's worktree before a removal. Replaceable in tests.
+    var inspectWorktree: @Sendable (Session) async -> WorktreeReport? = { await WorktreeInspector().report(for: $0) }
+    /// A worktree that a removal left on disk, said once so it is not left behind unknowingly.
+    public private(set) var leftover: String?
+    /// The folders searched for repositories, as saved.
+    public private(set) var workspaceRoots: [String] = []
     /// Called just before a terminal is brought forward. The app closes the menu-bar panel here:
     /// while the panel is open it keeps the keyboard, so the terminal would come to the front
     /// without taking the typing.
@@ -292,6 +298,27 @@ public final class InboxModel {
             facts.claudeVersion = await readClaudeVersion(located)
         }
         setupFacts = facts
+        workspaceRoots = settings.repos?.roots ?? []
+    }
+
+    /// Stops searching a folder for repositories.
+    public func removeWorkspaceRoot(_ root: String) async {
+        var settings = Settings.load(from: settingsURL)
+        var repos = settings.repos ?? RepoIndexSettings()
+        repos.removeRoot(root)
+        settings.repos = repos
+        try? settings.save(to: settingsURL)
+        await refreshSetup()
+    }
+
+    /// Switches opening at login on or off, and says so if the system would not.
+    public func setLaunchesAtLogin(_ enabled: Bool) async {
+        if let problem = loginItem.set(enabled) {
+            show(problem, for: Self.problemNoticeSeconds)
+        } else {
+            show(enabled ? "Porchlight will open at login" : "Porchlight will no longer open at login")
+        }
+        await refreshSetup()
     }
 
     /// Does the step a button on the first-run card stands for.
@@ -335,6 +362,25 @@ public final class InboxModel {
         guard let session = snapshot.sessions.first(where: { $0.id == sessionID }), action.applies(to: session) else { return }
         controlProblem = nil
         pendingControl = PendingControl(sessionID: sessionID, name: session.name, action: action)
+        guard action == .remove else { return }
+        // Say what the worktree holds before anything is removed. It arrives a moment later.
+        Task {
+            guard let report = await inspectWorktree(session), pendingControl?.sessionID == sessionID, pendingControl?.isForced == false else { return }
+            pendingControl?.worktree = report.summary
+        }
+    }
+
+    /// After Claude Code refused a removal and named what would be lost: asks, a second time and
+    /// with its refusal in full, whether to remove anyway.
+    public func askForcedRemoval() {
+        guard let problem = controlProblem, !problem.overrides.isEmpty else { return }
+        pendingControl = PendingControl(
+            sessionID: problem.sessionID, name: problem.name, action: .remove, overrides: problem.overrides, refusal: problem.text)
+        controlProblem = nil
+    }
+
+    public func dismissLeftover() {
+        leftover = nil
     }
 
     public func cancelControl() {
@@ -357,21 +403,28 @@ public final class InboxModel {
     /// Stops or removes a session that the user has already confirmed elsewhere (the palette).
     @discardableResult
     public func control(_ pending: PendingControl) async -> ControlOutcome {
+        let session = snapshot.sessions.first { $0.id == pending.sessionID }
         let outcome: ControlOutcome
         if let runControl {
-            outcome = await runControl(pending.action, pending.sessionID)
+            outcome = await runControl(pending.action, pending.sessionID, pending.overrides)
         } else if let claude = locator.locate() {
-            outcome = await SessionControl(claude: claude).run(pending.action, id: pending.sessionID)
+            outcome = await SessionControl(claude: claude).run(pending.action, id: pending.sessionID, overrides: pending.overrides)
         } else {
             outcome = .couldNotRun("The claude command was not found")
         }
-        log?.record("\(pending.action.rawValue) \(pending.sessionID): \(outcome.succeeded ? "done" : "not done: \(outcome.message)")")
+        let how = pending.isForced ? " (discarding, confirmed twice)" : ""
+        log?.record("\(pending.action.rawValue) \(pending.sessionID)\(how): \(outcome.succeeded ? "done" : "not done: \(outcome.message)")")
         if outcome.succeeded {
             show(pending.action.done(name: pending.name))
             await store.refresh()
             apply(await store.snapshot)
+            // Claude Code keeps a worktree that has uncommitted changes. Say so, with the path,
+            // rather than leave a folder behind unmentioned.
+            if pending.action == .remove, let session, let report = await inspectWorktree(session) {
+                leftover = "\(pending.name) was removed from the list. \(report.leftover)"
+            }
         } else {
-            controlProblem = ControlProblem(sessionID: pending.sessionID, action: pending.action, text: outcome.message)
+            controlProblem = ControlProblem(sessionID: pending.sessionID, name: pending.name, action: pending.action, text: outcome.message)
         }
         return outcome
     }

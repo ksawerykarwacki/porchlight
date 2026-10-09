@@ -34,10 +34,12 @@ case "${1:-}" in
         echo "stopped ${2:-}"
         ;;
     rm)
-        # "stopped <id>" and "removed <id>" are what the real CLI printed on 2.1.294. The refusal's
-        # wording is a stand-in; the real one names the value --discard-unpushed takes.
-        if [ "$mode" = "rm-refused" ]; then
-            printf 'Not removed: worktree fix-login has 2 unpushed commits.\nTo discard them: claude rm %s --discard-unpushed 1a2b3c4@wt-9\n' "${2:-}" >&2
+        # "stopped <id>" and "removed <id>" are what the real CLI printed on 2.1.294. So is the
+        # shape of the refusal: on stdout, exit 1, with the exact flag and value to pass.
+        if [ "$mode" = "rm-refused" ] && [ "${3:-}" != "--discard-unpushed" ]; then
+            printf 'kept %s \xe2\x80\x94 its worktree is still at \xe2\x80\x9c/repo/.claude/worktrees/fix-login\xe2\x80\x9d\n' "${2:-}"
+            printf '  2 unpushed commits on \xe2\x80\x9cworktree-fix-login\xe2\x80\x9d: 1a2b3c4 \xe2\x80\x9cFix login\xe2\x80\x9d and 1 more. They exist on no remote, so deleting the worktree would lose them.\n'
+            printf "  push them and run 'claude rm %s' again, or discard the worktree and its commits: claude rm %s --discard-unpushed 1a2b3c4@wt-9\n" "${2:-}" "${2:-}"
             exit 1
         fi
         echo "removed ${2:-}"

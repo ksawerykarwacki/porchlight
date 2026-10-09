@@ -21,6 +21,18 @@ public struct InboxActions {
     public var cancelControl: () -> Void = {}
     public var confirmControl: () -> Void = {}
     public var dismissControlProblem: () -> Void = {}
+    /// After a refused removal that named what would be lost: ask again, to remove anyway.
+    public var askForcedRemoval: () -> Void = {}
+    /// A worktree a removal left on disk.
+    public var leftover: String?
+    public var dismissLeftover: () -> Void = {}
+    /// The general settings: opening at login (nil when this copy cannot), the folders searched
+    /// for repositories, and why reminders are not delivered.
+    public var launchesAtLogin: Bool?
+    public var setLaunchesAtLogin: (Bool) -> Void = { _ in }
+    public var workspaceRoots: [String] = []
+    public var removeWorkspaceRoot: (String) -> Void = { _ in }
+    public var notificationProblem: String?
     /// The shortcut that opens the new-session palette from any app.
     public var hotkey: Hotkey?
     public var setHotkey: (Hotkey?) -> Void = { _ in }
@@ -114,6 +126,14 @@ public struct InboxView: View {
         actions.cancelControl = { model.cancelControl() }
         actions.confirmControl = { Task { await model.confirmControl() } }
         actions.dismissControlProblem = { model.dismissControlProblem() }
+        actions.askForcedRemoval = { model.askForcedRemoval() }
+        actions.leftover = model.leftover
+        actions.dismissLeftover = { model.dismissLeftover() }
+        actions.launchesAtLogin = model.setupFacts.launchesAtLogin
+        actions.setLaunchesAtLogin = { value in Task { await model.setLaunchesAtLogin(value) } }
+        actions.workspaceRoots = model.workspaceRoots
+        actions.removeWorkspaceRoot = { root in Task { await model.removeWorkspaceRoot(root) } }
+        actions.notificationProblem = model.notificationProblem
         actions.hotkey = model.hotkey
         actions.setHotkey = { model.setHotkey($0) }
         actions.open = { model.open(sessionID: $0) }
@@ -170,7 +190,11 @@ public struct InboxView: View {
                 // taller of the two and switching tabs never resizes its window. A window that
                 // gets shorter keeps its bottom edge, which would drop it away from the menu bar.
                 ZStack(alignment: .top) {
-                    SettingsPage(actions: actions)
+                    // Shorter than the session list's limit: the settings scroll, so that a few
+                    // sessions do not sit in a panel as tall as the whole settings page.
+                    ScrollView { SettingsPage(actions: actions) }
+                        .frame(maxHeight: 360)
+                        .fixedSize(horizontal: false, vertical: true)
                         .shown(actions.showsSettings)
                     ScrollView { sessionList }
                         .frame(maxHeight: 480)
@@ -195,6 +219,13 @@ public struct InboxView: View {
     @ViewBuilder private var sessionList: some View {
         if !actions.setupSteps.isEmpty {
             SetupCard(steps: actions.setupSteps, hover: hover, perform: actions.performSetup, hide: actions.hideSetup)
+        }
+        if let leftover = actions.leftover {
+            ControlNote(
+                title: "A worktree was left on disk", text: leftover, monospaced: false,
+                primary: ("OK", actions.dismissLeftover), secondary: nil, danger: nil, id: "leftover", hover: hover)
+                .padding(.leading, -20)
+                .padding(.top, 8)
         }
         let sections = InboxGroups(sessions: snapshot.sessions, now: now)
             .sections(now: now, snoozes: snoozes, overdueAfter: actions.reminders.secondStep, transientErrors: actions.transientErrors)
@@ -320,9 +351,15 @@ struct InboxRowView: View {
 
     private var isHovered: Bool { hover.hovered == row.id }
 
+    /// The moon on the title line. The words are in its tooltip and, for a snoozed row, in the
+    /// age next to it; a label here used to sit on top of the question.
     private var snoozeLabel: some View {
-        Label(row.isSnoozed ? "Snoozed" : "Snooze", systemImage: row.isSnoozed ? "moon.zzz.fill" : "moon")
-            .font(.system(size: 11.5, weight: .medium))
+        Image(systemName: row.isSnoozed ? "moon.zzz.fill" : "moon")
+            .font(.system(size: 12, weight: .medium))
+    }
+    /// Room kept at the end of the title line for the row's controls, so they never cover text.
+    private var controlsWidth: CGFloat {
+        (waits ? 22 : 0) + (row.canStop || row.canRemove ? 22 : 0)
     }
     private var waits: Bool { row.kind == .question || row.kind == .approval || row.kind == .waiting }
 
@@ -348,11 +385,8 @@ struct InboxRowView: View {
                                     .lineLimit(1)
                                     .fixedSize()
                             }
-                            // Appears under the pointer: says the row is a button and what it does.
-                            Image(systemName: "arrow.up.forward")
-                                .font(.system(size: 10, weight: .semibold))
-                                .foregroundStyle(.secondary)
-                                .opacity(isHovered ? 1 : 0)
+                            // The row's own controls are drawn over this gap.
+                            Color.clear.frame(width: controlsWidth, height: 1)
                         }
                         HStack(spacing: 4) {
                             Text(row.repo)
@@ -392,8 +426,8 @@ struct InboxRowView: View {
             }
             .buttonStyle(.plain)
             .help("Open in your terminal")
-            .overlay(alignment: .bottomTrailing) {
-                HStack(spacing: 10) {
+            .overlay(alignment: .topTrailing) {
+                HStack(spacing: 8) {
                     if waits {
                         // Shown for the row under the pointer, and always for a snoozed one, so
                         // a snooze can be seen and undone.
@@ -446,7 +480,7 @@ struct InboxRowView: View {
                     }
                 }
                 .padding(.trailing, 10)
-                .padding(.bottom, 6)
+                .padding(.top, 7)
             }
 
             if row.suggestedReply != nil {
@@ -493,14 +527,16 @@ struct InboxRowView: View {
 
             if let pending = actions.pendingControl, pending.sessionID == row.id {
                 ControlNote(
-                    title: nil, text: pending.question, monospaced: false,
-                    primary: (pending.action.verb, actions.confirmControl), secondary: ("Cancel", actions.cancelControl),
+                    title: pending.isForced ? "This cannot be undone" : nil, text: pending.question, monospaced: false,
+                    primary: (pending.verb, actions.confirmControl), secondary: ("Cancel", actions.cancelControl), danger: nil,
                     id: "control.\(row.id)", hover: hover)
             } else if let problem = actions.controlProblem, problem.sessionID == row.id {
                 // Claude Code's own words: for a removal they say what would be lost.
                 ControlNote(
                     title: problem.title, text: problem.text, monospaced: true,
                     primary: ("Open in terminal", { actions.open(row.id) }), secondary: ("Dismiss", actions.dismissControlProblem),
+                    // Only when Claude Code itself named what to pass; it asks once more first.
+                    danger: problem.overrides.isEmpty ? nil : ("Discard and remove…", actions.askForcedRemoval),
                     id: "problem.\(row.id)", hover: hover)
             }
         }
@@ -623,7 +659,9 @@ struct SetupCard: View {
             }
             if Setup.canHide(steps) {
                 HStack {
-                    Spacer()
+                    Text("These stay available on the Settings tab.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.tertiary)
                     QuietButton(title: "Hide these", symbol: nil, id: "setup.hide", hover: hover, action: hide)
                 }
             }
@@ -643,7 +681,9 @@ struct ControlNote: View {
     let text: String
     let monospaced: Bool
     let primary: (title: String, action: () -> Void)
-    let secondary: (title: String, action: () -> Void)
+    let secondary: (title: String, action: () -> Void)?
+    /// A third button for something that destroys work; it leads to a second question.
+    let danger: (title: String, action: () -> Void)?
     let id: String
     let hover: HoverTracker
 
@@ -656,12 +696,20 @@ struct ControlNote: View {
             Text(text)
                 .font(monospaced ? .system(size: 11.5, design: .monospaced) : .system(size: 12))
                 .foregroundStyle(monospaced ? .secondary : .primary)
-                .lineLimit(8)
+                // Long enough for Claude Code's whole refusal: what it says would be lost is the
+                // part that must not be cut off.
+                .lineLimit(18)
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 6) {
                 button(primary.title, id: "\(id).primary", strong: true, action: primary.action)
-                button(secondary.title, id: "\(id).secondary", strong: false, action: secondary.action)
+                if let secondary {
+                    button(secondary.title, id: "\(id).secondary", strong: false, action: secondary.action)
+                }
+            }
+            if let danger {
+                // On a line of its own: beside the other two its title wrapped.
+                button(danger.title, id: "\(id).danger", strong: false, action: danger.action)
             }
         }
         .padding(10)
@@ -676,6 +724,8 @@ struct ControlNote: View {
         Button(action: action) {
             Text(title)
                 .font(.system(size: 11.5, weight: strong ? .semibold : .medium))
+                .lineLimit(1)
+                .fixedSize()
                 .padding(.horizontal, 10)
                 .padding(.vertical, 4)
                 .background(Capsule().fill(strong ? Lamp.ember.opacity(hover.hovered == id ? 0.30 : 0.20) : Color.primary.opacity(hover.hovered == id ? 0.16 : 0.08)))
@@ -840,6 +890,62 @@ struct SettingsPage: View {
                     Text(HotkeyRecorder.RecorderButton.title(for: actions.hotkey, recording: false))
                         .foregroundStyle(.secondary)
                 }
+            }
+
+            Divider().padding(.vertical, 10)
+            Text("General")
+                .font(.system(size: 13, weight: .semibold))
+                .padding(.bottom, 6)
+            if let launches = actions.launchesAtLogin {
+                row("Open Porchlight at login") {
+                    if drawsMenus {
+                        Toggle("", isOn: Binding(get: { launches }, set: { actions.setLaunchesAtLogin($0) }))
+                            .labelsHidden()
+                            .toggleStyle(.switch)
+                            .controlSize(.small)
+                    } else {
+                        Text(launches ? "On" : "Off").foregroundStyle(.secondary)
+                    }
+                }
+            }
+            row("Folders searched for repositories") {
+                Button("Add a folder…") { actions.performSetup(.workspace) }
+                    .buttonStyle(.link)
+                    .font(.system(size: 12))
+            }
+            if actions.workspaceRoots.isEmpty {
+                Text("None yet. Folders of sessions you already have are listed anyway.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            ForEach(actions.workspaceRoots, id: \.self) { root in
+                HStack(spacing: 6) {
+                    Text(root)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Spacer(minLength: 8)
+                    Button("Remove") { actions.removeWorkspaceRoot(root) }
+                        .buttonStyle(.link)
+                        .font(.system(size: 12))
+                }
+                .padding(.vertical, 2)
+            }
+            if let problem = actions.notificationProblem {
+                Divider().padding(.vertical, 10)
+                Text("Reminders cannot reach you")
+                    .font(.system(size: 13, weight: .semibold))
+                    .padding(.bottom, 2)
+                Text(problem)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button("Open Notification settings") { actions.performSetup(.notifications) }
+                    .buttonStyle(.link)
+                    .font(.system(size: 12))
+                    .padding(.top, 4)
             }
         }
         .font(.system(size: 12.5))

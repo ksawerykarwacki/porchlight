@@ -10,17 +10,20 @@ import Testing
 final class ControlProbe: @unchecked Sendable {
     private let lock = NSLock()
     private var storedCalls: [(SessionAction, String)] = []
+    private var storedOverrides: [[SessionControl.Override]] = []
     private var storedOutcome: ControlOutcome = .done("")
 
     var calls: [(SessionAction, String)] { lock.withLock { storedCalls } }
+    var overrides: [[SessionControl.Override]] { lock.withLock { storedOverrides } }
     var outcome: ControlOutcome {
         get { lock.withLock { storedOutcome } }
         set { lock.withLock { storedOutcome = newValue } }
     }
 
-    func run(_ action: SessionAction, _ id: String) -> ControlOutcome {
+    func run(_ action: SessionAction, _ id: String, _ overrides: [SessionControl.Override] = []) -> ControlOutcome {
         lock.withLock {
             storedCalls.append((action, id))
+            storedOverrides.append(overrides)
             return storedOutcome
         }
     }
@@ -57,7 +60,8 @@ final class ControlProbe: @unchecked Sendable {
         await store.refresh()
         model.apply(await store.snapshot)
         let probe = ControlProbe()
-        model.runControl = { action, id in probe.run(action, id) }
+        model.runControl = { action, id, overrides in probe.run(action, id, overrides) }
+        model.inspectWorktree = { _ in nil }
         return (model, sessions, probe)
     }
 
@@ -98,7 +102,7 @@ final class ControlProbe: @unchecked Sendable {
         probe.outcome = .refused(words)
         model.askControl(.remove, sessionID: "bbbb2222")
         await model.confirmControl()
-        #expect(model.controlProblem == ControlProblem(sessionID: "bbbb2222", action: .remove, text: words))
+        #expect(model.controlProblem == ControlProblem(sessionID: "bbbb2222", name: "old report", action: .remove, text: words))
         #expect(model.controlProblem?.title == "Claude Code did not remove it")
         // Refused once: not tried again, and the session is still listed.
         #expect(probe.calls.count == 1)
@@ -115,6 +119,63 @@ final class ControlProbe: @unchecked Sendable {
         #expect(model.controlProblem?.text == "The claude command was not found")
         model.dismissControlProblem()
         #expect(model.controlProblem == nil)
+    }
+
+    @Test func aRefusedRemovalCanBeForcedOnlyAfterASecondQuestionAndOnlyWithWhatTheCLINamed() async throws {
+        let (model, sessions, probe) = try await model()
+        let words = "Not removed: worktree fix-login has 2 unpushed commits.\nTo discard them: claude rm bbbb2222 --discard-unpushed 1a2b3c4@wt-9"
+        probe.outcome = .refused(words)
+        model.askControl(.remove, sessionID: "bbbb2222")
+        await model.confirmControl()
+        #expect(probe.overrides == [[]])
+
+        // The button on the refusal asks; it does not remove.
+        model.askForcedRemoval()
+        #expect(probe.calls.count == 1)
+        let pending = try #require(model.pendingControl)
+        #expect(pending.isForced && pending.refusal == words && pending.question.contains("2 unpushed commits"))
+        // Cancelling leaves everything as it was.
+        model.cancelControl()
+        #expect(probe.calls.count == 1 && model.snapshot.sessions.contains { $0.id == "bbbb2222" })
+
+        // Refused again, asked again, confirmed: removed with exactly the value the CLI printed.
+        model.askControl(.remove, sessionID: "bbbb2222")
+        await model.confirmControl()
+        model.askForcedRemoval()
+        probe.outcome = .done("removed bbbb2222")
+        await sessions.remove("bbbb2222")
+        await model.confirmControl()
+        #expect(probe.overrides.last == [SessionControl.Override(flag: "--discard-unpushed", value: "1a2b3c4@wt-9")])
+        #expect(!model.snapshot.sessions.contains { $0.id == "bbbb2222" } && model.controlProblem == nil)
+
+        // A refusal that names nothing offers nothing to force.
+        probe.outcome = .refused("Not removed: the daemon is not running.")
+        model.askControl(.stop, sessionID: "aaaa1111")
+        await model.confirmControl()
+        model.askForcedRemoval()
+        #expect(model.pendingControl == nil)
+    }
+
+    @Test func theQuestionSaysWhatTheWorktreeHoldsAndALeftoverIsReported() async throws {
+        let (model, sessions, _) = try await model()
+        let report = WorktreeReport(name: "fix-login", path: "/Users/u/code/two/.claude/worktrees/fix-login", uncommitted: 2, unpushed: 0)
+        model.inspectWorktree = { _ in report }
+        model.askControl(.remove, sessionID: "bbbb2222")
+        for _ in 0..<200 where model.pendingControl?.worktree == nil { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(model.pendingControl?.worktree == report.summary)
+        #expect(model.pendingControl?.question.contains("2 uncommitted files") == true)
+
+        // Claude Code removed the row and kept the folder: the user is told where it is.
+        await sessions.remove("bbbb2222")
+        await model.confirmControl()
+        #expect(model.leftover == "old report was removed from the list. Its worktree is still on disk with 2 uncommitted files: /Users/u/code/two/.claude/worktrees/fix-login")
+        model.dismissLeftover()
+        #expect(model.leftover == nil)
+
+        // A stop asks nothing about the worktree.
+        model.askControl(.stop, sessionID: "aaaa1111")
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(model.pendingControl?.worktree == nil)
     }
 
     @Test func onlyWhatAppliesCanBeAskedFor() async throws {
@@ -216,6 +277,37 @@ final class ControlProbe: @unchecked Sendable {
         #expect(model.controlMessage == "Not removed: worktree fix-login has 2 unpushed commits.")
         #expect(model.sessions.contains { $0.id == "bbbb0002" })
         #expect(probe.calls.count == 1)
+    }
+
+    @Test func aSecondAskAfterARefusalThatNamedWhatToDiscardForcesIt() async throws {
+        let (harness, probe) = try await harness()
+        let model = harness.model
+        var passed: [[SessionControl.Override]] = []
+        model.onControl = { pending in
+            passed.append(pending.overrides)
+            return pending.isForced ? .done("removed") : .refused("Not removed: 2 unpushed commits. Use --discard-unpushed 1a2b3c4@wt-9")
+        }
+        model.moveSelection(by: 1)
+        model.askControlSelected(.remove)
+        await model.confirmControl()
+        #expect(model.refusedRemoval != nil)
+        #expect(model.controlMessage?.contains("Press ⌘D again") == true)
+
+        // The second ⌘D asks, with the refusal; Return then removes with what the CLI named.
+        model.askControlSelected(.remove)
+        #expect(model.pendingControl?.isForced == true && model.pendingControl?.verb == "Discard and remove")
+        #expect(passed.count == 1)
+        await model.confirmControl()
+        #expect(passed == [[], [SessionControl.Override(flag: "--discard-unpushed", value: "1a2b3c4@wt-9")]])
+        #expect(model.refusedRemoval == nil)
+
+        // Moving to another row forgets the refusal: ⌘D there is an ordinary first question.
+        model.askControlSelected(.remove)
+        await model.confirmControl()
+        model.moveSelection(by: -1)
+        model.askControlSelected(.remove)
+        #expect(model.pendingControl?.isForced == false)
+        _ = probe
     }
 
     @Test func theyAreOfferedOnlyWhereTheyApply() async throws {
