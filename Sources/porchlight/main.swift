@@ -17,6 +17,10 @@ let usage = """
       porchlight snooze <id> 1h|4h|tomorrow|change|off
                                               Pause reminders for a session: for a while, until
                                               tomorrow 09:00, until it asks something new, or not
+      porchlight repos [--json] [TEXT]        List the repositories sessions can start in, or the
+                                              ones matching TEXT
+      porchlight repos root add|remove DIR    Choose the folders that are searched for repositories
+      porchlight repos pin|unpin DIR          Keep a repository at the top of the list
       porchlight settings                     Print the settings in force, as JSON
       porchlight tab                          Run agent view in this tab and let the app switch it
                                               to a session when you click one
@@ -257,12 +261,14 @@ func settings() {
         let claudePath: String?
         let preferAgentView: Bool
         let reminders: ReminderSettings
+        let repos: RepoIndexSettings
     }
     let url = Settings.fileURL()
     let loaded = Settings.load(from: url)
     let report = Report(
         file: url.path, terminal: loaded.terminal, claudePath: loaded.claudePath,
-        preferAgentView: loaded.preferAgentView ?? false, reminders: loaded.reminders ?? ReminderSettings())
+        preferAgentView: loaded.preferAgentView ?? false, reminders: loaded.reminders ?? ReminderSettings(),
+        repos: loaded.repos ?? RepoIndexSettings())
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
     guard let data = try? encoder.encode(report) else { fail("could not encode the settings") }
@@ -305,6 +311,8 @@ case "status":
     await status(arguments: Array(arguments.dropFirst()))
 case "settings":
     settings()
+case "repos":
+    await repos(arguments: Array(arguments.dropFirst()))
 case "snooze":
     await snooze(arguments: Array(arguments.dropFirst()))
 case "tab":

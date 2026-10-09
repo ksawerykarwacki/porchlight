@@ -93,16 +93,22 @@ public struct Settings: Sendable, Equatable, Codable {
     public var preferAgentView: Bool?
     /// When and how to remind. Nil uses the defaults.
     public var reminders: ReminderSettings?
+    /// Where to look for repositories to start sessions in. Nil means nowhere yet.
+    public var repos: RepoIndexSettings?
 
-    public init(terminal: String? = nil, claudePath: String? = nil, preferAgentView: Bool? = nil, reminders: ReminderSettings? = nil) {
+    public init(
+        terminal: String? = nil, claudePath: String? = nil, preferAgentView: Bool? = nil, reminders: ReminderSettings? = nil,
+        repos: RepoIndexSettings? = nil
+    ) {
         self.terminal = terminal
         self.claudePath = claudePath
         self.preferAgentView = preferAgentView
         self.reminders = reminders
+        self.repos = repos
     }
 
     private enum CodingKeys: String, CodingKey {
-        case terminal, claudePath, preferAgentView, reminders
+        case terminal, claudePath, preferAgentView, reminders, repos
     }
 
     /// Each value is read on its own, so one odd entry does not discard the rest.
@@ -112,6 +118,7 @@ public struct Settings: Sendable, Equatable, Codable {
         claudePath = try? c.decodeIfPresent(String.self, forKey: .claudePath)
         preferAgentView = try? c.decodeIfPresent(Bool.self, forKey: .preferAgentView)
         reminders = try? c.decodeIfPresent(ReminderSettings.self, forKey: .reminders)
+        repos = try? c.decodeIfPresent(RepoIndexSettings.self, forKey: .repos)
     }
 
     public static func fileURL(in stateDirectory: URL = PorchlightPaths.stateDirectory()) -> URL {

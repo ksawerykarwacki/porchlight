@@ -164,6 +164,14 @@ Acceptance: from any app, hotkey → type 3 letters of a repo → Enter → type
 
 **FR-R4** Re-index on launch, on settings change, and every N minutes in the background (cheap, async). Pinned repos survive re-index.
 
+**Built in M3 layer 1 (2026-10-09): the index, without the palette.** `RepoScanner` and `RepoIndex` in the core, `porchlight repos` in the tool.
+
+- Roots, depth (default 3, accepted range 1 to 8), excludes and pins live under `repos` in `settings.json`, read tolerantly like the other settings. Paths are stored with `~`.
+- An exclude is a folder name (`node_modules`), a wildcard name (`*.bundle`) or the end of a path (`.claude/worktrees`). Hidden folders are skipped unless they are repositories themselves. Symbolic links are not followed.
+- A session's folder joins the list even outside the roots; a Claude worktree counts as its repository. Folders that no longer exist are left out, pinned or not.
+- Search: the letters typed must appear in the name in order, and score higher together and at the start of a word. The rest of the path only matches text as typed, because scattered letters match almost any long path.
+- Not built: the "include worktrees" toggle (FR-R2), background re-indexing (FR-R4, comes with the app's palette), suggesting roots at first run (M5).
+
 ### 6.6 Onboarding & settings — v1
 
 **FR-S1** First run checks: `claude` on PATH (also probe common install locations and a user-set path, since GUI apps don't inherit shell PATH); version ≥ minimum (Appendix A); `claude agents --json` works. Each failure shows a specific fix.

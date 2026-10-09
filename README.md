@@ -61,6 +61,22 @@ the session came with one. A daily summary arrives at 09:00.
 If notifications are turned off for Porchlight in System Settings, the panel says so.
 Set `PORCHLIGHT_NO_NOTIFICATIONS=1` to run the app without them.
 
+## Repositories
+
+Porchlight keeps a list of the folders you can start a session in. Tell it where your code lives and
+it finds the repositories there:
+
+```sh
+porchlight repos root add ~/code   # search this folder, three levels deep
+porchlight repos                   # list what was found
+porchlight repos api               # the ones matching "api"
+porchlight repos pin ~/code/api    # keep one at the top
+```
+
+A folder is a repository if it holds `.git`. Folders of sessions that already exist are listed too,
+wherever they are. `node_modules`, `Library` and Claude Code's own worktrees are skipped; the depth
+and the skipped names are under `repos` in `settings.json`.
+
 ## Terminals
 
 Clicking a session runs `claude attach <id>` in your terminal. Pick the terminal in the panel's
