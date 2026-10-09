@@ -7,19 +7,23 @@ public struct WrapUpSettings: Codable, Sendable, Equatable {
     /// The model alias or name given to `claude --model`. A small one: the summary is read by a
     /// person deciding in a few seconds, and the whole conversation is the input.
     public var model: String
+    /// Which model is asked first. Where the on-device one is missing, Claude is used.
+    public var engine: WrapUpEngine
 
-    public init(model: String = WrapUpSettings.defaultModel) {
+    public init(model: String = WrapUpSettings.defaultModel, engine: WrapUpEngine = .onDevice) {
         self.model = model
+        self.engine = engine
     }
 
     private enum CodingKeys: String, CodingKey {
-        case model
+        case model, engine
     }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         let model = (try? c.decodeIfPresent(String.self, forKey: .model)) ?? Self.defaultModel
         self.model = WrapUp.isValidModel(model) ? model : Self.defaultModel
+        engine = (try? c.decodeIfPresent(WrapUpEngine.self, forKey: .engine)) ?? .onDevice
     }
 }
 
@@ -38,6 +42,22 @@ public struct SessionNote: Codable, Sendable, Equatable, Identifiable {
     public let summary: String
     public let model: String
     public let createdAt: Date
+    /// Absent in notes written before there was a choice: those were Claude's.
+    public var engine: WrapUpEngine?
+    /// For a summary made from part of the conversation: how many turns it read, and whether
+    /// any were left out.
+    public var turnsRead: Int?
+    public var isPartial: Bool?
+
+    public var madeOnDevice: Bool { engine == .onDevice }
+
+    /// Who wrote it and from how much, for a caption: "with haiku", or "on this Mac from the
+    /// first request and the last 11 turns".
+    public var source: String {
+        guard madeOnDevice else { return "with \(model)" }
+        guard isPartial == true, let turns = turnsRead, turns > 1 else { return "on this Mac" }
+        return "on this Mac from the first request and the last \(turns - 1) \(turns == 2 ? "turn" : "turns")"
+    }
 
     public init(
         id: String, sessionID: String, name: String, repo: String, directory: String, branch: String? = nil, pullRequest: String? = nil,
@@ -122,6 +142,10 @@ public enum WrapUpFailure: Error, Sendable, Equatable {
     case empty
     /// The summary was made but the note could not be written.
     case couldNotSave(String)
+    /// Apple's on-device model cannot be used: the tool is missing, or it said why not.
+    case onDeviceUnavailable(String)
+    /// Claude Code no longer has the conversation's file.
+    case conversationGone
 
     public var message: String {
         switch self {
@@ -132,6 +156,8 @@ public enum WrapUpFailure: Error, Sendable, Equatable {
         case .couldNotRun(let text): "Could not run claude: \(text)"
         case .empty: "Claude Code returned no summary."
         case .couldNotSave(let text): "The summary could not be saved: \(text)"
+        case .onDeviceUnavailable(let why): why
+        case .conversationGone: "Claude Code no longer has this session's conversation on disk."
         }
     }
 }
@@ -156,8 +182,18 @@ public enum WrapUp {
     /// `**Doing:**` (haiku, 2026-10-09), and the row shows text as it is.
     public static func tidy(_ answer: String) -> String {
         ANSI.strip(answer).replacingOccurrences(of: "**", with: "")
+            // The on-device model ends its lines with two spaces, Markdown's line break.
+            .replacingOccurrences(of: "[ \\t]+\n", with: "\n", options: .regularExpression)
             .replacingOccurrences(of: "\n{3,}", with: "\n\n", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    static func note(for session: Session, summary: String, model: String, branch: String?, pullRequest: String?, now: Date) -> SessionNote {
+        let folders = folders(for: session)
+        return SessionNote(
+            id: session.id, sessionID: session.summary.sessionId ?? "", name: session.name, repo: session.location.repoName,
+            directory: folders.first(where: RepoIndex.directoryExists) ?? folders.first ?? "", branch: branch, pullRequest: pullRequest,
+            summary: summary, model: model, createdAt: now)
     }
 
     /// The flags from `requiredFlags` that the help text does not list.
@@ -255,11 +291,8 @@ public struct SessionSummariser: Sendable {
         case .failure(let failure):
             return .failure(failure)
         case .success(let summary):
-            let folders = WrapUp.folders(for: session)
-            let note = SessionNote(
-                id: session.id, sessionID: session.summary.sessionId ?? "", name: session.name, repo: session.location.repoName,
-                directory: folders.first(where: RepoIndex.directoryExists) ?? folders.first ?? "", branch: branch, pullRequest: pullRequest,
-                summary: summary, model: model, createdAt: now)
+            var note = WrapUp.note(for: session, summary: summary, model: model, branch: branch, pullRequest: pullRequest, now: now)
+            note.engine = .claude
             do {
                 try archive.save(note)
             } catch {

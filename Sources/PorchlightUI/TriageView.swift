@@ -14,7 +14,9 @@ public struct TriageState {
     public var summarising: String?
     public var notes: [String: SessionNote] = [:]
     public var wrapUpProblem: TriageModel.WrapUpProblem?
-    public var wrapUpModel = WrapUpSettings.defaultModel
+    public var summarisingEngine: WrapUpEngine?
+    public var plan = WrapUpPlan()
+    public var wrapUpModel: String { plan.model }
 
     public init() {}
 
@@ -31,7 +33,8 @@ public struct TriageState {
         summarising = model.summarising
         notes = model.notes
         wrapUpProblem = model.wrapUpProblem
-        wrapUpModel = model.wrapUpModel
+        summarisingEngine = model.summarisingEngine
+        plan = model.plan
     }
 
     var safe: [TriageItem] { items.filter { $0.verdict == .safeToRemove } }
@@ -191,7 +194,7 @@ struct TriageRow: View {
                     .padding(.leading, -8)
                     .opacity(isBeingRemoved ? 0.4 : 1)
                     if state.summarising == item.id {
-                        Text("Summarising with \(state.wrapUpModel)… a long conversation can take a minute.")
+                        Text(state.summarisingEngine == .onDevice ? "Summarising on this Mac…" : "Summarising with \(state.wrapUpModel)… a long conversation can take a minute.")
                             .font(.system(size: 11.5))
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -203,8 +206,10 @@ struct TriageRow: View {
 
             if state.pendingWrapUp == item.id {
                 ControlNote(
-                    title: nil, text: TriageRow.wrapUpQuestion(model: state.wrapUpModel), monospaced: false,
-                    primary: ("Summarise", actions.confirmWrapUp), secondary: ("Cancel", actions.cancelWrapUp), danger: nil,
+                    title: nil, text: TriageRow.wrapUpQuestion(state.plan), monospaced: false,
+                    primary: ("Summarise", actions.confirmWrapUp), secondary: ("Cancel", actions.cancelWrapUp),
+                    // Not a danger, but the third button's place: the thorough way, which costs.
+                    danger: state.plan.engine == .onDevice ? (TriageRow.claudeInstead(state.plan), actions.confirmWrapUpWithClaude) : nil,
                     id: "triage.wrap.\(item.id)", hover: hover)
             } else if let problem = state.wrapUpProblem, problem.id == item.id {
                 ControlNote(
@@ -233,6 +238,22 @@ struct TriageRow: View {
         .padding(.horizontal, 6)
     }
 
+    /// The question for the engine in force. Whatever spends Claude usage says so.
+    static func wrapUpQuestion(_ plan: WrapUpPlan) -> String {
+        if plan.engine == .onDevice {
+            return "Summarise this session on this Mac? Apple's on-device model reads the first request and the end of the conversation from Claude Code's files. "
+                + "It is free and nothing leaves this Mac; the session is not changed. The summary is kept, also after the session is removed."
+        }
+        let question = wrapUpQuestion(model: plan.model)
+        // The choice was this Mac and it cannot be honoured: say why before Claude is offered.
+        if plan.chosen == .onDevice, let why = plan.onDevice.explanation { return "\(why)\n\n\(question)" }
+        return question
+    }
+
+    static func claudeInstead(_ plan: WrapUpPlan) -> String {
+        "Read all of it with \(plan.model) (uses Claude usage)"
+    }
+
     static func wrapUpQuestion(model: String) -> String {
         "Summarise this session with \(model)? Claude Code reads the whole conversation as a copy, with every tool off, so the session itself is not changed. "
             + "It uses some of your Claude usage. The summary is kept, also after the session is removed."
@@ -249,7 +270,7 @@ struct TriageNote: View {
 
     static func caption(_ note: SessionNote, now: Date) -> String {
         let age = Age.short(since: note.createdAt, now: now).map { $0 == "just now" ? $0 : "\($0) ago" } ?? "just now"
-        return "Summarised \(age) with \(note.model). Kept after the session is removed."
+        return "Summarised \(age) \(note.source). Kept after the session is removed."
     }
 
     var body: some View {

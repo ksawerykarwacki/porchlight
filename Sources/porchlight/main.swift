@@ -31,10 +31,13 @@ let usage = """
       porchlight triage [--json]              List sessions that are finished, stopped or long waiting,
                                               each with a verdict: safe to remove, needs a decision,
                                               stale, or keep
-      porchlight wrap-up <id> [--model MODEL] [--json]
-                                              Summarise a session with a small model and keep the
-                                              summary as a note. The session is not changed: it is
-                                              read as a copy, with every tool off. Uses Claude usage
+      porchlight wrap-up <id> [--on-device | --claude] [--model MODEL] [--json]
+                                              Summarise a session and keep the summary as a note.
+                                              On this Mac (the default where Apple's on-device model
+                                              is available): free, reads the first request and the
+                                              end. With Claude: reads all of it as a copy with every
+                                              tool off, and uses Claude usage. The session is not
+                                              changed either way
       porchlight notes [--json] [TEXT]        Show the notes kept so far, or the ones containing TEXT
       porchlight pin <id> [--quiet]           Keep a session: it is grouped at the top and never
                                               offered for removal; --quiet also turns its reminders off
@@ -53,6 +56,7 @@ let usage = """
 
     Environment:
       PORCHLIGHT_CLAUDE   Path to the claude executable, overriding the search
+      PORCHLIGHT_FM       Path to Apple's fm tool, instead of /usr/bin/fm
     """
 
 func fail(_ message: String, code: Int32 = 1) -> Never {

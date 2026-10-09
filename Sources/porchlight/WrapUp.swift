@@ -9,7 +9,7 @@ func printNote(_ note: SessionNote) {
     if let branch = note.branch { heading += "  \(branch)" }
     if let pullRequest = note.pullRequest { heading += "  \(pullRequest)" }
     print(heading)
-    print("  summarised \(formatter.string(from: note.createdAt)) with \(note.model)")
+    print("  summarised \(formatter.string(from: note.createdAt)) \(note.source)")
     for line in note.summary.split(separator: "\n", omittingEmptySubsequences: false) {
         print("  \(line)")
     }
@@ -24,20 +24,24 @@ func printNotes(_ notes: [SessionNote]) {
     print(String(decoding: data, as: UTF8.self))
 }
 
-/// `porchlight wrap-up <id> [--model MODEL] [--json]`: summarise a session with a small model and
-/// keep the summary as a note. Asking for it is the consent: it reads the whole conversation and
-/// uses Claude usage.
+/// `porchlight wrap-up <id> [--on-device | --claude] [--model MODEL] [--json]`: summarise a
+/// session and keep the summary as a note. Asking for it is the consent: with Claude it reads the
+/// whole conversation and uses Claude usage.
 func wrapUp(arguments: [String]) async {
+    let usage = "usage: porchlight wrap-up <id> [--on-device | --claude] [--model MODEL] [--json]"
     var rest = arguments
     let json = rest.contains("--json")
     rest.removeAll { $0 == "--json" }
+    let forced: WrapUpEngine? = rest.contains("--on-device") ? .onDevice : rest.contains("--claude") ? .claude : nil
+    if rest.contains("--on-device"), rest.contains("--claude") { fail(usage, code: 2) }
+    rest.removeAll { $0 == "--on-device" || $0 == "--claude" }
     var model: String?
     if let index = rest.firstIndex(of: "--model"), index + 1 < rest.count {
         model = rest[index + 1]
         rest.removeSubrange(index...(index + 1))
     }
     guard rest.count == 1, let id = rest.first, !id.hasPrefix("-") else {
-        fail("usage: porchlight wrap-up <id> [--model MODEL] [--json]", code: 2)
+        fail(usage, code: 2)
     }
     let locator = claudeLocator()
     guard let claude = locator.locate() else { fail(describe(.claudeNotFound(candidates: locator.candidates()))) }
@@ -48,8 +52,17 @@ func wrapUp(arguments: [String]) async {
     guard let session = snapshot.sessions.first(where: { $0.id == id }) else { fail("no session has the id \(id)") }
 
     let facts = await TriageGatherer().facts(for: session)
-    let result = await SessionSummariser(claude: claude).wrapUp(
-        session, model: model ?? (Settings.load().wrapUp ?? WrapUpSettings()).model, archive: NotesArchive(), branch: facts.branch,
+    let settings = Settings.load().wrapUp ?? WrapUpSettings()
+    let runner = WrapUpRunner(claude: claude)
+    // Asked for by name, an engine is used or fails. Chosen by the settings, a missing
+    // on-device model gives way to Claude, and that is said.
+    var engine = forced ?? settings.engine
+    if forced == nil, engine == .onDevice, let why = await runner.onDevice.status().explanation {
+        FileHandle.standardError.write(Data("\(why)\nUsing Claude (\(model ?? settings.model)) instead.\n".utf8))
+        engine = .claude
+    }
+    let result = await runner.wrapUp(
+        session, engine: engine, model: model ?? settings.model, branch: facts.branch,
         pullRequest: facts.branch == nil ? nil : facts.pullRequest.summary)
     switch result {
     case .failure(let failure):

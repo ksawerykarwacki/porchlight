@@ -1,0 +1,72 @@
+#!/bin/bash
+# Stand-in for Apple's `fm` tool in tests. Records how it was called and what it was given.
+#
+#   FAKE_FM_LOG     file that receives argv, NUL-separated
+#   FAKE_FM_INPUT   file that receives standard input of the last `respond`
+#   FAKE_FM_MODE    unavailable | fail | empty | overflow-once | licence | unlicensed | unlicensed-quietly | unlicensed-respond | unlicensed-status | old-tool (default: normal)
+set -u
+if [ -n "${FAKE_FM_LOG:-}" ]; then
+    printf '%s\0' "$@" >> "$FAKE_FM_LOG"
+fi
+mode="${FAKE_FM_MODE:-normal}"
+
+# What the real tool printed before its terms were accepted (macOS 27.0, 2026-10-09). Whether
+# it then exits 0 was not seen; "unlicensed-quietly" stands for that case.
+if [ "$mode" = "unlicensed" ] || [ "$mode" = "unlicensed-quietly" ] || { [ "$mode" = "unlicensed-respond" ] && [ "${1:-}" = "respond" ]; }; then
+    echo "YOU HAVE NOT AGREED TO THE APPLE FOUNDATION MODELS CLI LEGAL NOTICE & TERMS."
+    echo "Agreeing to the Apple Foundation Models CLI Legal Notice & Terms applies to every user on the machine, so it must be run as a privileged user (e.g. 'sudo fm license')."
+    if [ "$mode" = "unlicensed-quietly" ]; then exit 0; fi
+    exit 1
+fi
+
+case "${1:-}" in
+    license)
+        # Both answers as the real tool gave them, the second on a fresh machine with blank
+        # space around it.
+        if [ "$mode" = "unlicensed-status" ]; then
+            printf "\n  Not agreed. run 'sudo fm license' to review and agree.  \n\n"
+        elif [ "$mode" = "old-tool" ]; then
+            echo "Error: Unknown command 'license'" >&2
+            exit 64
+        else
+            echo "Agreed to license FM1 version 1.0 on 9 Oct 2026 at 13:33."
+        fi
+        ;;
+    available)
+        if [ "$mode" = "unavailable" ]; then
+            echo "System model unavailable: Apple Intelligence is not enabled"
+            exit 1
+        fi
+        # What the real tool printed on macOS 27.0.
+        echo "System model available"
+        ;;
+    respond)
+        input="$(cat)"
+        if [ -n "${FAKE_FM_INPUT:-}" ]; then printf '%s' "$input" > "$FAKE_FM_INPUT"; fi
+        # The real tool was only seen with these: no streaming, instructions as an argument.
+        if [ "${2:-}" != "--no-stream" ] || [ "${3:-}" != "--instructions" ] || [ -z "${4:-}" ] || [ -n "${5:-}" ] || [ -z "$input" ]; then
+            echo "fake-fm: unexpected respond call: $*" >&2
+            exit 64
+        fi
+        case "$mode" in
+            fail) echo "Error: The model refused the request." >&2; exit 1 ;;
+            licence) echo "Error: You must agree to the license before using this tool." >&2; exit 1 ;;
+            empty) exit 0 ;;
+            overflow-once)
+                # As the real tool said for a prompt of 10,615 tokens.
+                if [ ! -e "${FAKE_FM_LOG}.overflowed" ]; then
+                    : > "${FAKE_FM_LOG}.overflowed"
+                    echo "Error: The session's transcript exceeded the model's context size." >&2
+                    exit 1
+                fi
+                ;;
+        esac
+        printf 'Doing: renaming the config file.  \n'
+        printf 'Stopped at: waiting for a yes.  \n'
+        printf 'Worth keeping: nothing. (%s characters read)\n' "${#input}"
+        ;;
+    *)
+        echo "fake-fm: unsupported arguments: $*" >&2
+        exit 64
+        ;;
+esac

@@ -26,6 +26,8 @@ final class TriageWorld {
     let archive = NotesArchive(directory: FileManager.default.temporaryDirectory.appendingPathComponent("porchlight-triage-notes-\(UUID().uuidString)/notes"))
     /// When set, a summary waits here until `release` is called, the way a real one takes a while.
     var holdsWrapUp = false
+    /// The engine chosen and whether this Mac has the on-device model. Claude unless a test says otherwise.
+    nonisolated(unsafe) var plan = WrapUpPlan(chosen: .claude, model: "haiku", onDevice: .missing)
     private var waiting: [CheckedContinuation<Void, Never>] = []
 
     func release() {
@@ -78,8 +80,8 @@ final class TriageWorld {
             },
             reload: { [self] in self.reloads += 1 },
             now: { TriageWorld.now },
-            wrapUp: { [self] item, model in
-                self.wrapped.append("\(item.id) \(model)")
+            wrapUp: { [self] item, engine, model in
+                self.wrapped.append("\(item.id) \(engine == .onDevice ? "on-device" : model)")
                 if self.holdsWrapUp {
                     await withCheckedContinuation { self.waiting.append($0) }
                 }
@@ -87,12 +89,12 @@ final class TriageWorld {
                 let note = SessionNote(
                     id: item.id, sessionID: "22222222-0000-4000-8000-000000000000", name: item.session.name, repo: item.session.location.repoName,
                     directory: item.session.summary.cwd, branch: item.facts.branch, summary: "Doing: \(item.session.name).\nStopped at: waiting.\nWorth keeping: nothing.",
-                    model: model, createdAt: TriageWorld.now)
+                    model: engine == .onDevice ? WrapUp.onDeviceModelName : model, createdAt: TriageWorld.now)
                 try? self.archive.save(note)
                 return .success(note)
             },
             notes: { [archive] in archive.all() },
-            wrapUpModel: { "haiku" }))
+            wrapUpPlan: { [self] in self.plan }))
     }
 }
 
