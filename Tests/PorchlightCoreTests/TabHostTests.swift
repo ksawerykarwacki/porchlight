@@ -65,6 +65,38 @@ import Testing
         #expect(lines(log).count == 4)
     }
 
+    /// The host does not find out by looking every so often: with ten seconds between looks it
+    /// still follows a request and a session being left at once.
+    @Test func theHostIsWokenByARequestAndByItsProgramEnding() async throws {
+        let directory = try scratch()
+        let log = directory.appendingPathComponent("log")
+        let channel = TabChannel(directory: directory.appendingPathComponent("tab"))
+        var host = TabHost(channel: channel, commands: commands(log: log, directory: directory))
+        host.pollInterval = 10
+        let running = Task.detached { [host] in try host.run() }
+        #expect(await waitUntil(5) { lines(log) == ["agents"] && channel.liveHost() != nil })
+
+        var started = Date()
+        try channel.request(sessionID: "4cb41c2a")
+        #expect(await waitUntil(5) { lines(log) == ["agents", "attach 4cb41c2a"] })
+        #expect(Date().timeIntervalSince(started) < 2)
+
+        started = Date()
+        FileManager.default.createFile(atPath: directory.appendingPathComponent("leave-4cb41c2a").path, contents: nil)
+        #expect(await waitUntil(5) { lines(log) == ["agents", "attach 4cb41c2a", "agents"] })
+        #expect(Date().timeIntervalSince(started) < 2)
+
+        started = Date()
+        FileManager.default.createFile(atPath: directory.appendingPathComponent("quit").path, contents: nil)
+        #expect(try await running.value == 7)
+        #expect(Date().timeIntervalSince(started) < 2)
+
+        // A child that is already gone, or a folder that is not there, never makes it wait long.
+        started = Date()
+        TabHost.wait(forExitOf: 1_999_999, orChangeIn: directory.appendingPathComponent("nowhere"), atMost: 0.2)
+        #expect(Date().timeIntervalSince(started) < 1)
+    }
+
     @Test func ignoresRequestsThatAreNotPlainSessionIDs() async throws {
         let directory = try scratch()
         let channel = TabChannel(directory: directory)
