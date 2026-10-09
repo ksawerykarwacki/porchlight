@@ -77,6 +77,21 @@ A folder is a repository if it holds `.git`. Folders of sessions that already ex
 wherever they are. `node_modules`, `Library` and Claude Code's own worktrees are skipped; the depth
 and the skipped names are under `repos` in `settings.json`.
 
+## Starting a session
+
+```sh
+porchlight dispatch --repo api "Fix the rounding of invoice totals"
+```
+
+starts a Claude Code background session in the repository that best matches `api`, named from the
+prompt, and prints its id. Use `--dir` for a folder instead of a search, `--open` to attach to it
+straight away, and `--model`, `--effort`, `--agent`, `--permission-mode` or `--worktree` for the
+matching `claude` options. Porchlight runs `claude --bg` for you and passes only options your
+version of Claude Code lists in `claude --help`.
+
+Claude Code refuses to start in a folder it has never been used in. Run `claude` there once and
+accept its trust prompt; Porchlight does not try to get around it.
+
 ## Names
 
 A session started from Porchlight is named from its prompt: "Fix the flaky settings test in CI"

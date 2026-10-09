@@ -11,6 +11,14 @@ public enum DispatchOutput {
         }
         return text.firstMatch(of: /\b([0-9a-f]{8})\b/).map { String($0.output.1) }
     }
+
+    /// The name from "backgrounded · <id> · <name>", when the line has one.
+    public static func sessionName(from stdout: String) -> String? {
+        let text = ANSI.strip(stdout)
+        guard let match = text.firstMatch(of: /backgrounded\s*·\s*[0-9a-f]{8}\s*·[ \t]*([^\n]+)/) else { return nil }
+        let name = match.output.1.trimmingCharacters(in: .whitespaces)
+        return name.isEmpty ? nil : name
+    }
 }
 
 public enum DispatchFailure: Sendable, Equatable {

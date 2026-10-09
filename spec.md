@@ -144,6 +144,16 @@ Acceptance: with 3 blocked sessions, badge shows 3; answering one in the termina
 
 Acceptance: from any app, hotkey → type 3 letters of a repo → Enter → type prompt → ⌘↩ starts a session in that repo; it appears in agent view and in the inbox within 3 s.
 
+**Built in M3 layer 3 (2026-10-09): dispatch, without the palette.** `Dispatcher`, `DispatchCapabilities`, `DispatchHistory` and `RepoRanking` in the core, `porchlight dispatch` in the tool.
+
+- The command is `claude --bg [--name …] [--model …] [--effort …] [--agent …] [--permission-mode …] [--worktree[=name]] -- <prompt>`, run as an argument array in the chosen folder. The prompt comes after `--`, so a prompt that starts with a dash cannot be read as a flag.
+- **Not verified against the real CLI:** that `claude` accepts `--` before the prompt and `--worktree=name` as one argument. Both are standard for the option parser its help output comes from, and the stand-in CLI in the tests accepts them, but no real session has been started this way yet. The first real dispatch settles it; if it fails, the fallback is to refuse prompts that start with a dash.
+- Flags are only passed when `claude --help` lists them. Effort levels and permission modes are read from the help text too, and a value it does not list is refused before anything starts. `bypassPermissions` is never offered.
+- Failures show the CLI's own words and the command as a line that can be pasted into a terminal. An untrusted folder is recognised and reported with the folder to open.
+- The last 20 dispatches are kept in `dispatches.json` (folder, name, model, time; never the prompt).
+- Ranking: with nothing typed, pinned, then most used, then by name. Use is one point per dispatch, halved for every week since, plus a quarter point for having sessions at all. With text typed, match quality comes first and use or a pin only decides between matches that are about as good.
+- Not built here: the toast with Open (FR-L4) and "repeat last" (FR-L6) belong to the palette.
+
 ### 6.4 Naming — v1 (at dispatch) **[PROPOSED]**
 
 **FR-NM1** Name template setting, default `{slug}`. Tokens: `{repo}`, `{branch}` (current branch of the chosen dir), `{ticket}` (first match of a user-configured regex against prompt then branch; empty by default — no ticket system assumed), `{slug}` (first 3–4 significant words of the prompt, kebab-case), `{date}`.

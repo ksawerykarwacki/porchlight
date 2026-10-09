@@ -21,6 +21,11 @@ let usage = """
                                               ones matching TEXT
       porchlight repos root add|remove DIR    Choose the folders that are searched for repositories
       porchlight repos pin|unpin DIR          Keep a repository at the top of the list
+      porchlight dispatch [--dir DIR | --repo TEXT] [--open] PROMPT
+                                              Start a background session in a folder (default: this
+                                              one), named from the prompt. More options: --name,
+                                              --no-name, --model, --effort, --agent,
+                                              --permission-mode, --worktree[=NAME], --json
       porchlight name [--dir DIR] PROMPT      Print the name a session started with PROMPT would get
       porchlight settings                     Print the settings in force, as JSON
       porchlight tab                          Run agent view in this tab and let the app switch it
@@ -313,6 +318,8 @@ case "status":
     await status(arguments: Array(arguments.dropFirst()))
 case "settings":
     settings()
+case "dispatch":
+    await dispatch(arguments: Array(arguments.dropFirst()))
 case "name":
     name(arguments: Array(arguments.dropFirst()))
 case "repos":

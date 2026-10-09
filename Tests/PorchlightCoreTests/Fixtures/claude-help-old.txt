@@ -1,0 +1,20 @@
+Usage: claude [options] [command] [prompt]
+
+Options:
+  --agents <json-or-file>               JSON object defining custom agents
+  --bg, --background                    Start the session in the background and
+                                        return immediately.
+  --effort <level>                      Effort level for the current session
+  --fallback-model <model>              Enable automatic fallback to specified
+                                        model(s)
+  --input-format <format>               Input format (only works with --print):
+                                        "text" (default), or "stream-json"
+                                        (realtime streaming input) (choices:
+                                        "text", "stream-json")
+  --remote-control-session-name-prefix <prefix>
+      Prefix for auto-generated Remote Control session names
+  -p, --print                           Print response and exit
+  -v, --version                         Output the version number
+
+Commands:
+  agents [options]                      Manage background agents

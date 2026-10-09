@@ -2,7 +2,7 @@
 # Stand-in for the `claude` CLI in tests. Records how it was called and replays fixtures.
 #
 #   FAKE_CLAUDE_LOG    file that receives the working directory and argv, NUL-separated
-#   FAKE_CLAUDE_MODE   untrusted | broken-json | fail | hang (default: normal)
+#   FAKE_CLAUDE_MODE   untrusted | broken-json | fail | hang | old-help | no-id | refuse (default: normal)
 set -u
 here="$(cd "$(dirname "$0")" && pwd)"
 
@@ -26,13 +26,32 @@ case "${1:-}" in
             *) cat "$here/agents-all.json" ;;
         esac
         ;;
+    --help)
+        if [ "$mode" = "old-help" ]; then cat "$here/claude-help-old.txt"; else cat "$here/claude-help.txt"; fi
+        ;;
     --bg)
         if [ "$mode" = "untrusted" ]; then
             echo "Workspace not trusted. Run \`claude\` in $PWD once and accept the trust prompt, then retry." >&2
             exit 1
         fi
+        if [ "$mode" = "refuse" ]; then
+            echo "error: unknown option '--model'" >&2
+            exit 1
+        fi
+        if [ "$mode" = "no-id" ]; then
+            echo "started something"
+            exit 0
+        fi
+        # The name given with --name, else what Claude Code would make up.
+        name="probe"
+        previous=""
+        for argument in "$@"; do
+            if [ "$argument" = "--" ]; then break; fi
+            if [ "$previous" = "--name" ] || [ "$previous" = "-n" ]; then name="$argument"; fi
+            previous="$argument"
+        done
         # Observed on 2.1.294: coloured even though stdout is not a terminal.
-        printf 'backgrounded \xc2\xb7 \033[36m4cb41c2a\033[39m \xc2\xb7 probe\n'
+        printf 'backgrounded \xc2\xb7 \033[36m4cb41c2a\033[39m \xc2\xb7 %s\n' "$name"
         printf '\033[2m  claude agents             list sessions\033[22m\n'
         ;;
     *)

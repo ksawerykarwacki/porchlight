@@ -1,0 +1,48 @@
+Usage: claude [options] [command] [prompt]
+
+Claude Code - starts an interactive session by default, use -p/--print for
+non-interactive output
+
+Arguments:
+  prompt                                Your prompt
+
+Options:
+  --agent <agent>                       Agent for the current session. Overrides
+                                        the 'agent' setting.
+  --agents <json-or-file>               JSON object defining custom agents, or
+                                        with --print the path to a file that
+                                        holds one
+  --bg, --background                    Start the session in the background and
+                                        return immediately. Prints the id that
+                                        `claude attach`, `logs`, `stop` and `rm`
+                                        take; `claude agents` lists them.
+  --effort <level>                      Effort level for the current session
+                                        (low, medium, high, xhigh, max)
+  --fallback-model <model>              Enable automatic fallback to specified
+                                        model(s) when the default model is
+                                        overloaded or not available.
+  --input-format <format>               Input format (only works with --print):
+                                        "text" (default), or "stream-json"
+                                        (realtime streaming input) (choices:
+                                        "text", "stream-json")
+  --model <model>                       Model for the current session. Provide
+                                        an alias for the latest model (e.g.
+                                        'opus' or 'sonnet') or a model's full
+                                        name.
+  -n, --name <name>                     Set a display name for this session
+                                        (shown in the prompt box, /resume
+                                        picker, and terminal title)
+  --permission-mode <mode>              Permission mode to use for the session
+                                        (choices: "acceptEdits", "auto",
+                                        "bypassPermissions", "manual",
+                                        "dontAsk", "plan")
+  -p, --print                           Print response and exit (useful for
+                                        pipes).
+  -v, --version                         Output the version number
+  -w, --worktree [name]                 Create a new git worktree for this
+                                        session (optionally specify a name)
+
+Commands:
+  agents [options]                      Manage background agents
+  attach <id|name>                      Open a background session in this
+                                        terminal.
