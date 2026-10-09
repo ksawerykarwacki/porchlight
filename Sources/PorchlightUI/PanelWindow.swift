@@ -47,6 +47,25 @@ public struct PanelWindowObserver: NSViewRepresentable {
         panel?.close()
     }
 
+    /// Closes the panel and gives up being the active app, so the keyboard goes back to the app
+    /// the user was in. For actions that hand over to another app, such as a terminal.
+    @MainActor
+    public static func closePanelAndLetGo() {
+        panel?.close()
+        NSApp?.deactivate()
+    }
+
+    /// Who has the keyboard right now, for the activity log: a focus problem cannot be seen from
+    /// inside the app, only reconstructed afterwards.
+    @MainActor
+    public static func focusReport() -> String {
+        let front = NSWorkspace.shared.frontmostApplication?.localizedName ?? "none"
+        let active = NSApp?.isActive == true
+        let panelKey = panel?.isKeyWindow == true
+        let panelVisible = panel?.isVisible == true
+        return "front=\(front) porchlightActive=\(active) panelKey=\(panelKey) panelVisible=\(panelVisible)"
+    }
+
     final class ObserverView: NSView {
         var onClose: (() -> Void)?
         /// The top edge where the system last placed the window.

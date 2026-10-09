@@ -515,6 +515,27 @@ struct PaletteHarness {
         #expect(launcher.commands.map(\.arguments) == [["/bin/echo", "attach", "4cb41c2a"]])
     }
 
+    @Test func openingASessionLetsGoOfTheKeyboardFirst() async throws {
+        let sessions = Sessions()
+        let launcher = Opened()
+        let model = try model(sessions, launcher: launcher)
+        var snapshot = StoreSnapshot()
+        snapshot.sessions = [Session(summary: SessionSummary(id: "aaaa1111", name: "one", cwd: "/Users/u/code/one", state: .blocked))]
+        model.apply(snapshot)
+
+        // What the app wires to closing the menu-bar panel, and what was launched by then.
+        var launchedWhenAsked: [Int] = []
+        model.willOpenTerminal = { launchedWhenAsked.append(launcher.commands.count) }
+        model.open(sessionID: "aaaa1111")
+        // Asked straight away, before the terminal is touched.
+        #expect(launchedWhenAsked == [0])
+        for _ in 0..<200 where launcher.commands.isEmpty { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(launcher.commands.count == 1)
+
+        model.openAgentView()
+        #expect(launchedWhenAsked == [0, 1])
+    }
+
     @Test func trustingAFolderOpensPlainClaudeThereAndNothingElse() async throws {
         let launcher = Opened()
         let model = try model(Sessions(), launcher: launcher)

@@ -128,6 +128,8 @@ public struct MacTerminalLauncher: TerminalLauncher {
     /// Where a running `porchlight tab` listens for sessions to show.
     public var tabChannel = TabChannel()
     public var runner = CLIRunner()
+    /// Brings the app at a path to the front with the keyboard. Replaceable in tests.
+    public var activate: @Sendable (String) async -> Void = MacTerminalLauncher.activateApp
     public var home = NSHomeDirectory()
     public var scratch = PorchlightPaths.stateDirectory().appendingPathComponent("run").path
 
@@ -157,26 +159,24 @@ public struct MacTerminalLauncher: TerminalLauncher {
             // Bringing the app forward is all that can be done everywhere: none of these
             // terminals lets another program select one particular tab.
             if let existing = installed(processes?.terminalAttached(to: sessionID)) {
-                _ = try? await runner.run(URL(fileURLWithPath: "/usr/bin/open"), ["-a", existing.path])
+                await bringForward(existing.path)
                 return .alreadyOpen(terminal: existing.app.displayName)
             }
             // A `porchlight tab` is the one place a click can land exactly: it swaps that tab
             // to the session, so nothing new is opened.
             if let host = tabChannel.liveHost(), await tabChannel.requestAndWait(sessionID: sessionID) {
                 let terminal = installed(processes?.terminal(owning: host.pid))
-                if let terminal {
-                    _ = try? await runner.run(URL(fileURLWithPath: "/usr/bin/open"), ["-a", terminal.path])
-                }
+                if let terminal { await bringForward(terminal.path) }
                 return .switchedInTab(terminal: terminal?.app.displayName)
             }
             if preferAgentView, let existing = installed(processes?.terminalRunningAgentView()) {
-                _ = try? await runner.run(URL(fileURLWithPath: "/usr/bin/open"), ["-a", existing.path])
+                await bringForward(existing.path)
                 return .agentViewFocused(terminal: existing.app.displayName)
             }
         }
         if command.opensAgentView, let existing = installed(await processTable()?.terminalRunningAgentView()) {
             // Agent view is already open somewhere: go there rather than start a second one.
-            _ = try? await runner.run(URL(fileURLWithPath: "/usr/bin/open"), ["-a", existing.path])
+            await bringForward(existing.path)
             return .agentViewFocused(terminal: existing.app.displayName)
         }
         guard let terminal = await resolveTerminal() else {
@@ -186,10 +186,34 @@ public struct MacTerminalLauncher: TerminalLauncher {
         let steps = TerminalPlanner.plan(for: terminal.app, appPath: terminal.path, command: command, shell: shell, home: home, scratch: scratch)
         do {
             try await execute(steps)
+            await activate(terminal.path)
             return .opened(terminal: terminal.app.displayName)
         } catch {
             return await copy(command, reason: "\(terminal.app.displayName) could not be opened")
         }
+    }
+
+    /// Opens the app (which also un-hides and un-minimises it) and then hands it the keyboard.
+    /// Opening alone is not enough when the terminal was already the front app: macOS then has
+    /// nothing to do, and the keyboard stays with whoever took it last, which was Porchlight's
+    /// own panel.
+    func bringForward(_ path: String) async {
+        _ = try? await runner.run(URL(fileURLWithPath: "/usr/bin/open"), ["-a", path])
+        await activate(path)
+    }
+
+    /// Makes the running app at `path` the active one, giving up this app's own claim first.
+    @MainActor
+    public static func activateApp(atPath path: String) {
+        let wanted = URL(fileURLWithPath: path).standardizedFileURL.path
+        guard let app = NSWorkspace.shared.runningApplications.first(where: { $0.bundleURL?.standardizedFileURL.path == wanted }) else { return }
+        // Since macOS 14 an app is only activated over the active one if that one yields to it.
+        NSApp?.yieldActivation(to: app)
+        app.activate(options: [.activateAllWindows])
+    }
+
+    public static let activateApp: @Sendable (String) async -> Void = { path in
+        await MainActor.run { activateApp(atPath: path) }
     }
 
     func processTable() async -> ProcessTable? {

@@ -41,6 +41,10 @@ public final class InboxModel {
     public let hover = HoverTracker()
     /// The result of the last action, shown briefly at the bottom of the inbox.
     public private(set) var notice: String?
+    /// Called just before a terminal is brought forward. The app closes the menu-bar panel here:
+    /// while the panel is open it keeps the keyboard, so the terminal would come to the front
+    /// without taking the typing.
+    public var willOpenTerminal: () -> Void = {}
     private var noticeGeneration = 0
 
     public var waitingCount: Int { snapshot.waitingCount }
@@ -300,28 +304,38 @@ public final class InboxModel {
         var configured = MacTerminalLauncher(preferred: chosenTerminal)
         configured.preferAgentView = prefersAgentView
         let launcher: any TerminalLauncher = injectedLauncher ?? configured
+        log?.record("focus before: \(PanelWindowObserver.focusReport())")
+        willOpenTerminal()
+        log?.record("focus after closing the panel: \(PanelWindowObserver.focusReport())")
         Task {
             let command = makeCommand(claude.path)
             let outcome = await launcher.open(command)
             log?.record("open \(command.sessionID ?? "agent view"): \(outcome)")
+            log?.record("focus after opening: \(PanelWindowObserver.focusReport())")
             switch outcome {
             case .opened(let terminal): show("Opened in \(terminal)")
             case .alreadyOpen(let terminal): show("Already open in \(terminal)")
             case .switchedInTab(let terminal): show("Showing \(command.title) in your Porchlight tab" + (terminal.map { " in \($0)" } ?? ""))
             case .agentViewFocused(let terminal):
                 show(command.opensAgentView ? "Agent view is already open in \(terminal)" : "Agent view is open in \(terminal); pick \(command.title) there")
-            case .copiedToClipboard(let reason): show("\(reason.prefix(1).uppercased() + reason.dropFirst()). Command copied; paste it in a terminal.")
-            case .failed(let reason): show(reason.prefix(1).uppercased() + reason.dropFirst())
+            // The panel is closed by now, so what went wrong stays up until it is seen.
+            case .copiedToClipboard(let reason):
+                show("\(reason.prefix(1).uppercased() + reason.dropFirst()). Command copied; paste it in a terminal.", for: Self.problemNoticeSeconds)
+            case .failed(let reason): show(reason.prefix(1).uppercased() + reason.dropFirst(), for: Self.problemNoticeSeconds)
             }
         }
     }
 
-    private func show(_ message: String) {
+    static let noticeSeconds: Double = 4
+    /// Long enough to still be there when the panel is opened again to see why nothing happened.
+    static let problemNoticeSeconds: Double = 120
+
+    private func show(_ message: String, for seconds: Double = InboxModel.noticeSeconds) {
         notice = message
         noticeGeneration += 1
         let generation = noticeGeneration
         Task {
-            try? await Task.sleep(for: .seconds(4))
+            try? await Task.sleep(for: .seconds(seconds))
             if generation == noticeGeneration { notice = nil }
         }
     }

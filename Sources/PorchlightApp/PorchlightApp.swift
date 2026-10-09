@@ -15,6 +15,7 @@ struct PorchlightApp: App {
     init() {
         let model = InboxModel()
         self.model = model
+        model.willOpenTerminal = { PanelWindowObserver.closePanelAndLetGo() }
         Task { await model.run() }
 
         let services = PaletteServices.live(
