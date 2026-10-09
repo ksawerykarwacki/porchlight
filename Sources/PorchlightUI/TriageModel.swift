@@ -19,21 +19,23 @@ public final class TriageModel {
         /// Reads the sessions again after removals.
         public var reload: @MainActor () async -> Void
         public var now: @Sendable () -> Date
-        /// Summarises one session with the named model and keeps the result as a note. Only ever
-        /// called after the user has said yes: it spends usage.
-        public var wrapUp: @MainActor (TriageItem, String) async -> Result<SessionNote, WrapUpFailure>
+        /// Summarises one session with the given engine (and Claude model, for that engine) and
+        /// keeps the result as a note. Only ever called after the user has said yes: with Claude
+        /// it spends usage.
+        public var wrapUp: @MainActor (TriageItem, WrapUpEngine, String) async -> Result<SessionNote, WrapUpFailure>
         /// The notes kept so far.
         public var notes: @Sendable () -> [SessionNote]
-        public var wrapUpModel: @Sendable () -> String
+        /// The chosen engine and whether this Mac has the on-device model. Asks `fm`, so it is slow.
+        public var wrapUpPlan: @Sendable () async -> WrapUpPlan
 
         public init(
             sessions: @escaping @MainActor () -> [Session], pins: @escaping @MainActor () -> Pins,
             settings: @escaping @Sendable () -> TriageSettings = { TriageSettings() }, gatherer: TriageGatherer = TriageGatherer(),
             remove: @escaping @MainActor (String) async -> ControlOutcome, reload: @escaping @MainActor () async -> Void = {},
             now: @escaping @Sendable () -> Date = { Date() },
-            wrapUp: @escaping @MainActor (TriageItem, String) async -> Result<SessionNote, WrapUpFailure> = { _, _ in .failure(.couldNotRun("not set up")) },
+            wrapUp: @escaping @MainActor (TriageItem, WrapUpEngine, String) async -> Result<SessionNote, WrapUpFailure> = { _, _, _ in .failure(.couldNotRun("not set up")) },
             notes: @escaping @Sendable () -> [SessionNote] = { [] },
-            wrapUpModel: @escaping @Sendable () -> String = { WrapUpSettings.defaultModel }
+            wrapUpPlan: @escaping @Sendable () async -> WrapUpPlan = { WrapUpPlan() }
         ) {
             self.sessions = sessions
             self.pins = pins
@@ -44,7 +46,7 @@ public final class TriageModel {
             self.now = now
             self.wrapUp = wrapUp
             self.notes = notes
-            self.wrapUpModel = wrapUpModel
+            self.wrapUpPlan = wrapUpPlan
         }
     }
 
@@ -83,6 +85,10 @@ public final class TriageModel {
     public private(set) var pendingWrapUp: String?
     /// The session being summarised right now. One at a time: each is a whole conversation read.
     public private(set) var summarising: String?
+    /// The engine doing that summary.
+    public private(set) var summarisingEngine: WrapUpEngine?
+    /// The engine a wrap-up would use, as of the last look.
+    public private(set) var plan = WrapUpPlan()
     /// The notes kept so far, by session id. They are Porchlight's own and outlive the sessions.
     public private(set) var notes: [String: SessionNote] = [:]
     public private(set) var wrapUpProblem: WrapUpProblem?
@@ -104,7 +110,9 @@ public final class TriageModel {
         isLoading = true
         let found = await services.gatherer.items(
             sessions: services.sessions(), pins: services.pins(), settings: services.settings(), now: services.now())
+        let plan = await services.wrapUpPlan()
         guard mine == generation else { return }
+        self.plan = plan
         items = found
         notes = Dictionary(services.notes().map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         isLoading = false
@@ -161,7 +169,10 @@ public final class TriageModel {
         return refused == 0 ? "\(done)." : "\(done); Claude Code refused \(refused), listed below."
     }
 
-    public var wrapUpModel: String { services.wrapUpModel() }
+    /// Reads the choice of engine again, after it was changed in the settings.
+    public func refreshPlan() async {
+        plan = await services.wrapUpPlan()
+    }
 
     /// Puts up the question for one session. Nothing is read or spent until it is answered.
     public func askWrapUp(_ id: String) {
@@ -176,13 +187,20 @@ public final class TriageModel {
 
     /// Summarises the session the question was about. The session itself is left as it is; the
     /// summary is kept as a note, also after the session has been removed.
-    public func confirmWrapUp() async {
+    ///
+    /// The engine is the one in force. Passing `.claude` is the row's "read all of it" button:
+    /// the only other way Claude usage is spent is the engine in force being Claude, which the
+    /// question says.
+    public func confirmWrapUp(with override: WrapUpEngine? = nil) async {
         guard let id = pendingWrapUp, summarising == nil else { return }
         pendingWrapUp = nil
         guard let item = items.first(where: { $0.id == id }) else { return }
+        let engine = override == .claude ? .claude : plan.engine
         summarising = id
-        let result = await services.wrapUp(item, services.wrapUpModel())
+        summarisingEngine = engine
+        let result = await services.wrapUp(item, engine, plan.model)
         summarising = nil
+        summarisingEngine = nil
         switch result {
         case .success(let note): notes[id] = note
         case .failure(let failure): wrapUpProblem = WrapUpProblem(id: id, text: failure.message)

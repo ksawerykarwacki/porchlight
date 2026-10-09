@@ -30,15 +30,17 @@ struct PorchlightApp: App {
             remove: { id in await model.removePlainly(sessionID: id) },
             reload: { await model.reload() },
             // Only reached after the question in the Triage row has been answered with yes.
-            wrapUp: { item, name in
+            wrapUp: { item, engine, name in
                 let settings = Settings.load(from: settingsURL)
-                guard let claude = ClaudeLocator(override: settings.claudePath).locate() else { return .failure(.couldNotRun("claude was not found")) }
-                return await SessionSummariser(claude: claude).wrapUp(
-                    item.session, model: name, archive: NotesArchive(), branch: item.facts.branch,
+                return await WrapUpRunner(claude: ClaudeLocator(override: settings.claudePath).locate()).wrapUp(
+                    item.session, engine: engine, model: name, branch: item.facts.branch,
                     pullRequest: item.facts.branch == nil ? nil : item.facts.pullRequest.summary)
             },
             notes: { NotesArchive().all() },
-            wrapUpModel: { (Settings.load(from: settingsURL).wrapUp ?? WrapUpSettings()).model }))
+            wrapUpPlan: {
+                let settings = Settings.load(from: settingsURL).wrapUp ?? WrapUpSettings()
+                return WrapUpPlan(chosen: settings.engine, model: settings.model, onDevice: await OnDeviceModel().status())
+            }))
         model.pickFolder = {
             let dialog = NSOpenPanel()
             dialog.canChooseDirectories = true

@@ -1,0 +1,51 @@
+#!/bin/bash
+# Stand-in for Apple's `fm` tool in tests. Records how it was called and what it was given.
+#
+#   FAKE_FM_LOG     file that receives argv, NUL-separated
+#   FAKE_FM_INPUT   file that receives standard input of the last `respond`
+#   FAKE_FM_MODE    unavailable | fail | empty | overflow-once | licence (default: normal)
+set -u
+if [ -n "${FAKE_FM_LOG:-}" ]; then
+    printf '%s\0' "$@" >> "$FAKE_FM_LOG"
+fi
+mode="${FAKE_FM_MODE:-normal}"
+
+case "${1:-}" in
+    available)
+        if [ "$mode" = "unavailable" ]; then
+            echo "System model unavailable: Apple Intelligence is not enabled"
+            exit 1
+        fi
+        # What the real tool printed on macOS 27.0.
+        echo "System model available"
+        ;;
+    respond)
+        input="$(cat)"
+        if [ -n "${FAKE_FM_INPUT:-}" ]; then printf '%s' "$input" > "$FAKE_FM_INPUT"; fi
+        # The real tool was only seen with these: no streaming, instructions as an argument.
+        if [ "${2:-}" != "--no-stream" ] || [ "${3:-}" != "--instructions" ] || [ -z "${4:-}" ] || [ -n "${5:-}" ] || [ -z "$input" ]; then
+            echo "fake-fm: unexpected respond call: $*" >&2
+            exit 64
+        fi
+        case "$mode" in
+            fail) echo "Error: The model refused the request." >&2; exit 1 ;;
+            licence) echo "Error: You must agree to the license before using this tool." >&2; exit 1 ;;
+            empty) exit 0 ;;
+            overflow-once)
+                # As the real tool said for a prompt of 10,615 tokens.
+                if [ ! -e "${FAKE_FM_LOG}.overflowed" ]; then
+                    : > "${FAKE_FM_LOG}.overflowed"
+                    echo "Error: The session's transcript exceeded the model's context size." >&2
+                    exit 1
+                fi
+                ;;
+        esac
+        printf 'Doing: renaming the config file.  \n'
+        printf 'Stopped at: waiting for a yes.  \n'
+        printf 'Worth keeping: nothing. (%s characters read)\n' "${#input}"
+        ;;
+    *)
+        echo "fake-fm: unsupported arguments: $*" >&2
+        exit 64
+        ;;
+esac

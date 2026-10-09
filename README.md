@@ -142,15 +142,23 @@ each one and refuses if anything would be lost. Pull requests are looked up with
 (`gh`), if you have it.
 
 Not sure what an old session was about? **Wrap up…** on its Triage row (or
-`porchlight wrap-up <id>`) has a small model summarise it: what it was doing, where it stopped, and
-whether anything would be lost. It asks first, because it reads the whole conversation and uses
-some of your Claude usage. The session itself is not changed: Claude Code reads it as a copy, with
-every tool off and nothing saved. The summary is kept as a note in Porchlight's own folder, also
-after the session is removed, together with the command that opens the conversation again;
-`porchlight notes [TEXT]` lists or searches the notes. The model is `haiku` unless `wrapUp.model`
-in `settings.json` names another. Claude Code deletes old conversations by itself
-(`cleanupPeriodDays`, 30 days unless you changed it), so a very old session may have nothing left
-to summarise; Porchlight then shows what Claude Code said.
+`porchlight wrap-up <id>`) summarises it: what it was doing, where it stopped, and whether anything
+would be lost. It asks first and says which model will do it. The session itself is never changed.
+There are two ways, chosen under Settings, "Wrapping up":
+
+- **This Mac** (the default where it is available): Apple's on-device model, through the `fm` tool
+  that comes with macOS. Free, and nothing leaves the Mac. Its memory is small, so Porchlight gives
+  it the first request and the end of the conversation, read from Claude Code's own files. Good for
+  "where did this stop"; it can miss what was decided in the middle. It needs macOS 26 or later with
+  Apple Intelligence, and Apple's terms accepted once: `sudo fm license`.
+- **Claude**: a small Claude model (`haiku`, or `wrapUp.model` in `settings.json`) reads the whole
+  conversation as a copy, with every tool off and nothing saved. More thorough, and it uses some of
+  your Claude usage. Each question on this Mac also offers it for that one session.
+
+The summary is kept as a note in Porchlight's own folder, also after the session is removed,
+together with the command that opens the conversation again; `porchlight notes [TEXT]` lists or
+searches the notes. Claude Code deletes old conversations by itself (`cleanupPeriodDays`, 30 days
+unless you changed it), so a very old session may have nothing left to summarise.
 
 To stop or remove a session, use the ⋯ menu on its row, ⌘S or ⌘D in the palette, or
 `porchlight stop <id>` and `porchlight rm <id>`. Both ask first. If Claude Code refuses to remove
