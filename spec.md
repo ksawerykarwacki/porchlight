@@ -234,7 +234,7 @@ Acceptance: from any app, hotkey → type 3 letters of a repo → Enter → type
 - **Fix:** at launch, before anything is started, the app asks the login shell for its environment (`$SHELL -l -i -c` printing `env -0` between two markers, five-second limit) and takes it on, so every program it starts inherits it. The shell's own bookkeeping (`SHLVL`, `PWD`, `TERM`, …) is not taken. Skipped when the app was started from a terminal, and with `PORCHLIGHT_KEEP_ENVIRONMENT` set.
 - The values are passed on and kept in memory only: never logged, never written.
 - **A supervisor that is already running keeps the environment it was started with.** After updating, sessions only get the new environment once the old supervisor has gone: it exits by itself when its last client disconnects, or `claude daemon stop --any --keep-workers` ends it and leaves the sessions running.
-- Checked: the real login shell (zsh) asked from a bare environment answered in 0.44 s with the full path. Not checked: the running app, a session started from it afterwards, shells other than zsh, and whether `claude --bg` also passes its own caller's environment to the session.
+- Checked: the real login shell (zsh) asked from a bare environment answered in 0.44 s with the full path. Confirmed by the owner on the machine that had the problem (2026-10-10): after updating and replacing the supervisor, the one Porchlight started had the full path. Not checked: shells other than zsh, and whether `claude --bg` also passes its own caller's environment to the session.
 
 ### 6.4 Naming — v1 (at dispatch) **[PROPOSED]**
 
@@ -349,6 +349,28 @@ The problem: sessions pile up, many stalled for weeks, and it is not clear which
   - ⌘Return copies the summary with its name, repository and branch. ⌘D asks, then deletes the note only. Escape goes back to the list, or closes the palette when it was opened on its notes from the Triage tab's link.
   - Not verified: resuming a removed session's conversation for real (no such session existed), and the keys in the live panel.
 - Not built: a Notes view in the menu-bar panel itself (the palette is where the keyboard is).
+
+### 6.9 Mods **[STARTED 2026-10-10]**
+
+Claude Code 2.1.295 ships an extension interface it calls mods: a plugin whose hooks run inside each session. It describes itself as early access that "moves between releases", so nothing in the app depends on it, and each mod is optional.
+
+**Found by experiment (2026-10-10, haiku, throwaway sessions in `lantern-probe`, 2.1.296):**
+
+- A mod loads in a background session (`claude --bg --plugin-dir …`) and sees its prompt, turns, tool calls and deliveries.
+- A `tool.call` hook can answer the question tool in place of its dialog: a session "blocked, input needed" continued when the hook returned the answer. The dialog stays usable; whichever answers first wins.
+- `$.prompt.submit` starts a turn in an idle session, recorded with origin `{kind: "plugin", name}`, where a typed prompt is `{kind: "composer"}`.
+- A message between sessions arrives as `<cross-session-message from-name="…">` with origin `peer`.
+- A message to a session with no process is not delivered: "no live session on this machine has id …", or by name "No agent named '…' is reachable."
+- `claude respawn <id>` restarts such a session in about 0.7 s, under the same id, with its conversation, and without starting a turn. The same held for a session that had gone idle by itself 23 hours earlier, not only one stopped with `claude stop`. Attaching restarts a session too.
+- Repairing a send after it failed delivers the text but leaves the sending model told it failed. Waking the recipient before the send does not have that flaw.
+- Editing a mod's file reloads it in running sessions and resets what its module remembered.
+
+**Built: `mods/wake` (`porchlight-wake`).** One `session.send` hook: look the recipient up in `claude agents --json --all` (about 130 ms); if it is exactly one background session of this machine with no process, and not the sender, run `claude respawn <short id>` and wait up to about three seconds for it to be running; then let the send go on unchanged. Nothing is sent or altered by the mod, nothing is stopped or removed, a session is not restarted twice within twenty seconds, and any failure in the mod lets the send go on. Installed with `/plugin install porchlight-wake --marketplace ksawerykarwacki/porchlight` (`.claude-plugin/marketplace.json` at the repository's root).
+
+- Checked: nine tests under `claude plugin test`; live, a model's own SendMessage to a stopped session by name woke it, the model was told "delivered", and the recipient's reply came back.
+- Not checked: installed from the marketplace rather than loaded with `--plugin-dir`; a recipient whose folder or worktree is gone; several stopped recipients at once; whether the hook is cut short when a restart takes long.
+
+**Not built, and a decision for the owner:** answering a session's question or approving a tool call from the Porchlight panel through a mod. It would end "copy and open" for sessions that have the mod, on a documented interface, and it would change the rule in 12.1 that Porchlight never sends input into a session. Open before any design: a channel between mod and app that no other local program can use to answer for the user, permission approvals, and behaviour where plugins are disabled.
 
 ### 6.7 Roadmap after v1
 
