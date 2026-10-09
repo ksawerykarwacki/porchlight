@@ -24,6 +24,7 @@ struct PorchlightApp: App {
         self.model = model
         model.willOpenTerminal = { PanelWindowObserver.closePanelAndLetGo() }
         let settingsURL = Settings.fileURL()
+        let savedWrapUp = Settings.load(from: settingsURL).wrapUp ?? WrapUpSettings()
         self.triage = TriageModel(services: TriageModel.Services(
             sessions: { model.snapshot.sessions }, pins: { model.pins },
             settings: { Settings.load(from: settingsURL).triage ?? TriageSettings() },
@@ -40,7 +41,11 @@ struct PorchlightApp: App {
             wrapUpPlan: {
                 let settings = Settings.load(from: settingsURL).wrapUp ?? WrapUpSettings()
                 return WrapUpPlan(chosen: settings.engine, model: settings.model, onDevice: await OnDeviceModel().status())
-            }))
+            }),
+            // The saved choice at once; whether this Mac has the model follows a moment later.
+            plan: WrapUpPlan(chosen: savedWrapUp.engine, model: savedWrapUp.model, onDevice: .missing))
+        let triage = self.triage
+        Task { await triage.refreshPlan() }
         model.pickFolder = {
             let dialog = NSOpenPanel()
             dialog.canChooseDirectories = true

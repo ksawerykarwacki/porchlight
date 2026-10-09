@@ -177,6 +177,7 @@ public struct InboxView: View {
             actions.confirmWrapUpWithClaude = { Task { await triage.confirmWrapUp(with: .claude) } }
             actions.setWrapUpEngine = { engine in
                 model.setWrapUpEngine(engine)
+                triage.choose(engine)
                 Task { await triage.refreshPlan() }
             }
             actions.cancelWrapUp = { triage.cancelWrapUp() }

@@ -94,8 +94,11 @@ public final class TriageModel {
     public private(set) var wrapUpProblem: WrapUpProblem?
     private var generation = 0
 
-    public init(services: Services) {
+    /// `plan` is what is known before the first look: the saved choice, so the Settings page is
+    /// right even if the Triage tab was never opened.
+    public init(services: Services, plan: WrapUpPlan = WrapUpPlan()) {
         self.services = services
+        self.plan = plan
     }
 
     public var safe: [TriageItem] { items.filter { $0.verdict == .safeToRemove } }
@@ -172,6 +175,11 @@ public final class TriageModel {
     /// Reads the choice of engine again, after it was changed in the settings.
     public func refreshPlan() async {
         plan = await services.wrapUpPlan()
+    }
+
+    /// Shows a new choice of engine at once; `refreshPlan` then confirms it from what was saved.
+    public func choose(_ engine: WrapUpEngine) {
+        plan.chosen = engine
     }
 
     /// Puts up the question for one session. Nothing is read or spent until it is answered.

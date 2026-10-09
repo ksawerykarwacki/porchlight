@@ -107,6 +107,22 @@ import Testing
         #expect(calls == [.onDevice, .claude])
     }
 
+    @Test func theChoiceIsKnownBeforeTriageWasEverOpenedAndShowsAtOnce() async {
+        let world = TriageWorld()
+        world.plan = onThisMac
+        // Never loaded: the plan it was made with is what the Settings page draws.
+        let seeded = TriageModel(services: TriageModel.Services(sessions: { [] }, pins: { Pins() }, remove: { _ in .done("") }, wrapUpPlan: { [world] in world.plan }),
+                                 plan: WrapUpPlan(chosen: .onDevice, model: "sonnet", onDevice: .missing))
+        #expect(TriageState(seeded).plan.chosen == .onDevice && TriageState(seeded).plan.model == "sonnet" && !seeded.hasLoaded)
+        // Whether this Mac has the model arrives without a look at the sessions.
+        await seeded.refreshPlan()
+        #expect(seeded.plan == onThisMac && !seeded.hasLoaded)
+        // A new choice shows before the saved settings have been read back.
+        seeded.choose(.claude)
+        #expect(TriageState(seeded).plan.chosen == .claude && seeded.plan.engine == .claude)
+        #expect(TriageState(TriageWorld().model).plan == WrapUpPlan())
+    }
+
     @Test func theSettingsPageExplainsTheChoice() {
         #expect(SettingsPage.wrapUpNote(onThisMac).contains("free and nothing leaves this Mac"))
         #expect(SettingsPage.wrapUpNote(withClaude).contains("using haiku") && SettingsPage.wrapUpNote(withClaude).contains("Claude usage"))
