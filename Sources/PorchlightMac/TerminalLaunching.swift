@@ -202,18 +202,45 @@ public struct MacTerminalLauncher: TerminalLauncher {
         await activate(path)
     }
 
+    @MainActor
+    static func runningApp(atPath path: String) -> NSRunningApplication? {
+        let wanted = URL(fileURLWithPath: path).standardizedFileURL.path
+        return NSWorkspace.shared.runningApplications.first { $0.bundleURL?.standardizedFileURL.path == wanted }
+    }
+
     /// Makes the running app at `path` the active one, giving up this app's own claim first.
     @MainActor
     public static func activateApp(atPath path: String) {
-        let wanted = URL(fileURLWithPath: path).standardizedFileURL.path
-        guard let app = NSWorkspace.shared.runningApplications.first(where: { $0.bundleURL?.standardizedFileURL.path == wanted }) else { return }
+        guard let app = runningApp(atPath: path) else { return }
         // Since macOS 14 an app is only activated over the active one if that one yields to it.
         NSApp?.yieldActivation(to: app)
         app.activate(options: [.activateAllWindows])
     }
 
+    /// What the last hand-over did, for the activity log.
+    @MainActor public private(set) static var lastHandOver = "none"
+
+    /// Hands the keyboard to the app at `path`. When that app is already the front one, asking
+    /// macOS to activate it does nothing, and a terminal that lost the keyboard to the menu-bar
+    /// panel is never told it has it back (seen with Warp, 2026-10-09: front app Warp, Porchlight
+    /// inactive, panel closed, and typing went nowhere). So Porchlight first becomes the active
+    /// app for a moment, which makes the hand-over a real change that the terminal reacts to.
     public static let activateApp: @Sendable (String) async -> Void = { path in
-        await MainActor.run { activateApp(atPath: path) }
+        let wasFront = await MainActor.run { () -> Bool in
+            guard let app = runningApp(atPath: path), NSApp != nil else { return false }
+            guard NSWorkspace.shared.frontmostApplication == app else { return false }
+            FocusBounce.take()
+            return true
+        }
+        if wasFront {
+            try? await Task.sleep(for: .milliseconds(180))
+        }
+        await MainActor.run {
+            let between = NSWorkspace.shared.frontmostApplication?.localizedName ?? "none"
+            FocusBounce.release()
+            activateApp(atPath: path)
+            lastHandOver = wasFront ? "bounced through Porchlight (front in between: \(between))" : "activated directly"
+        }
     }
 
     func processTable() async -> ProcessTable? {
@@ -319,5 +346,29 @@ struct ProcessTable {
             current = entry.parent
         }
         return nil
+    }
+}
+
+/// Lets Porchlight become the active app for a moment without showing anything.
+@MainActor
+enum FocusBounce {
+    private static var window: NSWindow?
+
+    static func take() {
+        let window = self.window ?? {
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1, height: 1), styleMask: [.borderless], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            window.alphaValue = 0
+            window.ignoresMouseEvents = true
+            window.level = .floating
+            return window
+        }()
+        self.window = window
+        NSApp.activate(ignoringOtherApps: true)
+        window.orderFrontRegardless()
+    }
+
+    static func release() {
+        window?.orderOut(nil)
     }
 }

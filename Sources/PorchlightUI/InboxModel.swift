@@ -352,7 +352,7 @@ public final class InboxModel {
             let command = makeCommand(claude.path)
             let outcome = await launcher.open(command)
             log?.record("open \(command.sessionID ?? "agent view"): \(outcome)")
-            log?.record("focus after opening: \(PanelWindowObserver.focusReport())")
+            log?.record("focus after opening: \(PanelWindowObserver.focusReport()) handOver=\(MacTerminalLauncher.lastHandOver)")
             switch outcome {
             case .opened(let terminal): show("Opened in \(terminal)")
             case .alreadyOpen(let terminal): show("Already open in \(terminal)")
