@@ -6,6 +6,7 @@
 #
 # The version goes into the bundle's Info.plist. It is the first argument, else the VERSION
 # environment variable, else 0.0.1.
+# PORCHLIGHT_SWIFT_FLAGS adds flags to every `swift build` (see below).
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -17,10 +18,15 @@ if [[ ! "$VERSION" =~ ^[0-9A-Za-z][0-9A-Za-z.+-]*$ ]]; then
 fi
 APP="dist/Porchlight.app"
 
-swift build -c release --product PorchlightApp
-swift build -c release --product porchlight
-swift build -c release --product PorchlightIconTool
-BIN="$(swift build -c release --show-bin-path)"
+# Extra flags for every `swift build`, split on spaces. The Homebrew formula passes
+# --disable-sandbox: Homebrew builds inside its own sandbox, and SwiftPM's cannot nest in it.
+read -r -a SWIFT_FLAGS <<< "${PORCHLIGHT_SWIFT_FLAGS:-}"
+build() { swift build -c release ${SWIFT_FLAGS[@]+"${SWIFT_FLAGS[@]}"} "$@"; }
+
+build --product PorchlightApp
+build --product porchlight
+build --product PorchlightIconTool
+BIN="$(build --show-bin-path)"
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Helpers" "$APP/Contents/Resources"
