@@ -319,8 +319,9 @@ enum NotesWorld {
         }
         let without = try height()
         actions.triage.notes = ["dddd0009": NotesWorld.removed]
-        // The link sits on the line that is already there.
-        #expect(try height() == without)
+        // With nothing safe to remove the link is the only button, on a line of its own.
+        let with = try height()
+        #expect(with > without && with < without + 40)
         #expect(TriagePage.notesLink(1) == "1 note" && TriagePage.notesLink(12) == "12 notes")
         actions.showNotes()
         #expect(calls == 1)

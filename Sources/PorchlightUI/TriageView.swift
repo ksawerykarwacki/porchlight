@@ -102,14 +102,14 @@ struct TriagePage: View {
                     danger: nil, id: "triage.bulk", hover: hover)
                     .padding(.leading, -30)
                     .padding(.trailing, -10)
-            } else {
+            } else if (!state.safe.isEmpty && state.removing == nil) || !state.notes.isEmpty {
+                // Looking again is the footer's Refresh button.
                 HStack(spacing: 2) {
                     if !state.safe.isEmpty, state.removing == nil {
                         QuietButton(
                             title: "Remove the \(state.safe.count) safe \(state.safe.count == 1 ? "one" : "ones")…", symbol: "trash", id: "triage.removeSafe", hover: hover,
                             action: actions.askRemoveSafe)
                     }
-                    QuietButton(title: state.isLoading ? "Looking…" : "Look again", symbol: "arrow.clockwise", id: "triage.reload", hover: hover, action: actions.reloadTriage)
                     if !state.notes.isEmpty {
                         QuietButton(title: TriagePage.notesLink(state.notes.count), symbol: "note.text", id: "triage.notes", hover: hover, action: actions.showNotes)
                             .help("Read and search the summaries kept from wrapped-up sessions, also of sessions since removed")

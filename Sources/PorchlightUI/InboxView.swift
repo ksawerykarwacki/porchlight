@@ -68,7 +68,10 @@ public struct InboxActions {
     public var triage = TriageState()
     /// The clock the Triage tab's ages are measured against.
     public var triageNow = Date()
+    /// Reads the sessions again and then looks at what each idle one holds.
     public var reloadTriage: () -> Void = {}
+    /// Asks again whether this Mac has the on-device model, for the Settings page.
+    public var refreshSettings: () -> Void = {}
     public var askRemoveSafe: () -> Void = {}
     public var cancelRemoveSafe: () -> Void = {}
     public var confirmRemoveSafe: () -> Void = {}
@@ -169,7 +172,14 @@ public struct InboxView: View {
                     Task { await triage.load() }
                 }
             }
-            actions.reloadTriage = { Task { await triage.load() } }
+            actions.reloadTriage = {
+                Task {
+                    // The sessions first: a look at stale ones would judge what is no longer true.
+                    await model.reload()
+                    await triage.load()
+                }
+            }
+            actions.refreshSettings = { Task { await triage.refreshPlan() } }
             actions.askRemoveSafe = { triage.askRemoveSafe() }
             actions.cancelRemoveSafe = { triage.cancelRemoveSafe() }
             actions.confirmRemoveSafe = { Task { await triage.confirmRemoveSafe() } }
@@ -384,7 +394,10 @@ public struct InboxView: View {
             HStack(spacing: 2) {
                 QuietButton(title: "New session", symbol: "plus", id: "footer.new", hover: hover, action: actions.newSession)
                 QuietButton(title: "Agent view", symbol: "rectangle.stack", id: "footer.agents", hover: hover, action: actions.openAgentView)
-                QuietButton(title: "Refresh", symbol: "arrow.clockwise", id: "footer.refresh", hover: hover, action: actions.refresh)
+                // One button for whichever tab is showing, where the eye already expects it.
+                let refresh = FooterRefresh(actions)
+                QuietButton(title: refresh.title, symbol: "arrow.clockwise", id: "footer.refresh", hover: hover, action: refresh.action)
+                    .help(refresh.help)
                 Spacer()
                 QuietButton(title: "Quit", symbol: nil, id: "footer.quit", hover: hover, action: actions.quit)
             }
@@ -439,6 +452,33 @@ struct TabButton: View {
         .onHover { hover.set(id, $0) }
         .animation(.easeOut(duration: 0.12), value: hover.hovered == id)
         .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+/// The footer's Refresh button, which refreshes what the panel is showing.
+struct FooterRefresh {
+    let title: String
+    let help: String
+    let action: () -> Void
+
+    init(_ actions: InboxActions) {
+        if actions.showsTriage {
+            // The look takes a moment: git and GitHub are asked about each idle session.
+            title = actions.triage.isLoading ? "Looking…" : "Refresh"
+            help = "Read the sessions again and look at what each idle one holds"
+            action = actions.reloadTriage
+        } else if actions.showsSettings {
+            title = "Refresh"
+            help = "Read the sessions again, and check again what this Mac can do"
+            action = {
+                actions.refresh()
+                actions.refreshSettings()
+            }
+        } else {
+            title = "Refresh"
+            help = "Read the sessions again"
+            action = actions.refresh
+        }
     }
 }
 

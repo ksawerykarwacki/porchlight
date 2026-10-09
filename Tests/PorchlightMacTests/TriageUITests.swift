@@ -316,6 +316,45 @@ final class TriageWorld {
         #expect(sessions > 300)
     }
 
+    @Test func theFootersRefreshDoesWhatTheShownTabNeeds() async {
+        var calls: [String] = []
+        var actions = InboxActions()
+        actions.refresh = { calls.append("sessions") }
+        actions.reloadTriage = { calls.append("triage") }
+        actions.refreshSettings = { calls.append("settings") }
+
+        // Sessions: the sessions, and nothing that asks git or GitHub.
+        FooterRefresh(actions).action()
+        #expect(calls == ["sessions"] && FooterRefresh(actions).title == "Refresh")
+
+        // Triage: one action that reads the sessions and then looks, and says so while it runs.
+        actions.showsTriage = true
+        FooterRefresh(actions).action()
+        #expect(calls == ["sessions", "triage"])
+        actions.triage.isLoading = true
+        #expect(FooterRefresh(actions).title == "Looking…")
+        actions.triage.isLoading = false
+        #expect(FooterRefresh(actions).title == "Refresh" && FooterRefresh(actions).help.contains("idle"))
+
+        // Settings: the sessions, and whether this Mac has the on-device model.
+        actions.showsTriage = false
+        actions.showsSettings = true
+        FooterRefresh(actions).action()
+        #expect(calls == ["sessions", "triage", "sessions", "settings"])
+        // A look in progress on another tab does not rename the button here.
+        actions.triage.isLoading = true
+        #expect(FooterRefresh(actions).title == "Refresh")
+
+        // The Triage tab has no button of its own for it any more: with nothing safe and no
+        // notes, its header is the one line of text.
+        var empty = InboxActions()
+        empty.showsTriage = true
+        empty.triage.hasLoaded = true
+        var withSafe = empty
+        withSafe.triage = await state()
+        #expect(try! height(withSafe) > (try! height(empty)))
+    }
+
     @Test func theTabsCallTheirActions() {
         var calls: [String] = []
         var actions = InboxActions()
