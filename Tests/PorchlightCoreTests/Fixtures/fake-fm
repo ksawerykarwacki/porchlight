@@ -3,7 +3,7 @@
 #
 #   FAKE_FM_LOG     file that receives argv, NUL-separated
 #   FAKE_FM_INPUT   file that receives standard input of the last `respond`
-#   FAKE_FM_MODE    unavailable | fail | empty | overflow-once | licence | unlicensed | unlicensed-quietly | unlicensed-respond (default: normal)
+#   FAKE_FM_MODE    unavailable | fail | empty | overflow-once | licence | unlicensed | unlicensed-quietly | unlicensed-respond | unlicensed-status | old-tool (default: normal)
 set -u
 if [ -n "${FAKE_FM_LOG:-}" ]; then
     printf '%s\0' "$@" >> "$FAKE_FM_LOG"
@@ -20,6 +20,18 @@ if [ "$mode" = "unlicensed" ] || [ "$mode" = "unlicensed-quietly" ] || { [ "$mod
 fi
 
 case "${1:-}" in
+    license)
+        # Both answers as the real tool gave them, the second on a fresh machine with blank
+        # space around it.
+        if [ "$mode" = "unlicensed-status" ]; then
+            printf "\n  Not agreed. run 'sudo fm license' to review and agree.  \n\n"
+        elif [ "$mode" = "old-tool" ]; then
+            echo "Error: Unknown command 'license'" >&2
+            exit 64
+        else
+            echo "Agreed to license FM1 version 1.0 on 9 Oct 2026 at 13:33."
+        fi
+        ;;
     available)
         if [ "$mode" = "unavailable" ]; then
             echo "System model unavailable: Apple Intelligence is not enabled"

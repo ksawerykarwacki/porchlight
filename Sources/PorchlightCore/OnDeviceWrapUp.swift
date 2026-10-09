@@ -196,8 +196,9 @@ public struct OnDeviceModel: Sendable {
     public static let licenceNeeded = "Apple's terms for its on-device model have not been accepted on this Mac. Run \"sudo fm license\" once in a terminal; it applies to every user of the Mac."
 
     /// True for the tool's refusal as the owner saw it on macOS 27.0 (2026-10-09): "YOU HAVE NOT
-    /// AGREED TO THE APPLE FOUNDATION MODELS CLI LEGAL NOTICE & TERMS." Which stream and exit code
-    /// it uses was not seen, so only the words are looked at.
+    /// AGREED TO THE APPLE FOUNDATION MODELS CLI LEGAL NOTICE & TERMS." from any command, and
+    /// "Not agreed. run 'sudo fm license' to review and agree." from `fm license --status`. Which
+    /// stream and exit code it uses was not seen, so only the words are looked at.
     static func asksForLicence(_ result: CLIResult) -> Bool {
         (result.stdout + result.stderr).localizedCaseInsensitiveContains("not agreed")
     }
@@ -225,6 +226,11 @@ public struct OnDeviceModel: Sendable {
     /// Asks the tool whether the model can be used.
     public func status() async -> OnDeviceStatus {
         guard FileManager.default.isExecutableFile(atPath: executable.path) else { return .missing }
+        // Asked first and by its own command: the tool's way of saying whether the terms stand.
+        // A tool too old to know the command says something else, and is asked the next question.
+        if let licence = try? await runner.run(executable, ["license", "--status"], environment: environment, timeout: 10), Self.asksForLicence(licence) {
+            return .licenceNeeded
+        }
         guard let result = try? await runner.run(executable, ["available"], environment: environment, timeout: 10) else { return .notReady("") }
         if Self.asksForLicence(result) { return .licenceNeeded }
         if result.succeeded { return .available }

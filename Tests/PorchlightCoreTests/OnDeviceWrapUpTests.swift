@@ -159,7 +159,7 @@ struct ConversationWorld {
         let made = try await world.model().summarise(world.session(), reader: world.reader).get()
         #expect(made.summary.hasPrefix("Doing: renaming the config file.") && made.summary.contains("\nStopped at: waiting for a yes."))
         #expect(made.digest.turns == 2 && !made.digest.isPartial)
-        #expect(try world.recorded() == ["available", "respond", "--no-stream", "--instructions", WrapUp.onDeviceInstructions])
+        #expect(try world.recorded() == ["license", "--status", "available", "respond", "--no-stream", "--instructions", WrapUp.onDeviceInstructions])
         let given = try String(contentsOf: world.input, encoding: .utf8)
         #expect(given == "The session:\n\nUSER: Rename config.yml to settings.yml\n\nASSISTANT: Renamed. Delete the old file?")
         // The conversation never rides on the command line, where other processes could read it.
@@ -198,7 +198,7 @@ struct ConversationWorld {
     /// With the words the real tool printed before its terms were accepted.
     @Test func termsNotYetAcceptedAreRecognisedAndTheCommandIsNamed() async throws {
         let world = try world()
-        for mode in ["unlicensed", "unlicensed-quietly"] {
+        for mode in ["unlicensed", "unlicensed-quietly", "unlicensed-status"] {
             #expect(await world.model(mode).status() == .licenceNeeded)
             let refused = await world.model(mode).summarise(world.session(), reader: world.reader).map(\.summary)
             #expect(refused == .failure(.onDeviceUnavailable(OnDeviceModel.licenceNeeded)))
@@ -208,6 +208,12 @@ struct ConversationWorld {
         // Nothing was asked of the model, and Claude stands in until the terms are accepted.
         #expect(try !world.recorded().contains("respond"))
         #expect(await WrapUpRunner(claude: nil, onDevice: world.model("unlicensed"), reader: world.reader).engine(preferred: .onDevice) == .claude)
+        // The status command alone settled it: the model was not even asked whether it is there.
+        let fresh = try self.world()
+        #expect(await fresh.model("unlicensed-status").status() == .licenceNeeded)
+        #expect(try fresh.recorded() == ["license", "--status"])
+        // A tool that does not know the status command is simply asked the next question.
+        #expect(await fresh.model("old-tool").status() == .available)
         // Refused only at the answer: the same plain message, not the tool's capitals.
         let late = await world.model("unlicensed-respond").summarise(world.session(), reader: world.reader).map(\.summary)
         #expect(late == .failure(.onDeviceUnavailable(OnDeviceModel.licenceNeeded)))
