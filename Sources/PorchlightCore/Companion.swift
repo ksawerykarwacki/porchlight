@@ -119,11 +119,13 @@ public struct CompanionFacts: Sendable, Equatable {
             next.waiting = nil
             next.waitingSince = nil
         case .question(let questions):
+            // The mod says again what is open every so often, in case the app was restarted
+            // meanwhile: the same thing reported twice has been waiting since the first time.
+            if waiting != .question(questions) { next.waitingSince = event.receivedAt }
             next.waiting = .question(questions)
-            next.waitingSince = event.receivedAt
         case .permission(let tool, let detail):
+            if waiting != .permission(tool: tool, detail: detail) { next.waitingSince = event.receivedAt }
             next.waiting = .permission(tool: tool, detail: detail)
-            next.waitingSince = event.receivedAt
         case .resumed:
             next.waiting = nil
             next.waitingSince = nil

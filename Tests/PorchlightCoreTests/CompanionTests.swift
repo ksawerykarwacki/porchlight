@@ -102,6 +102,24 @@ private func question(_ text: String, _ options: [String]) -> [String: Any] {
         #expect(hub.receive(Data("junk".utf8)) == nil && hub.reportCount == 12)
     }
 
+    @Test func theSameThingReportedAgainHasBeenWaitingSinceTheFirstTime() {
+        final class Clock: @unchecked Sendable { var now = start }
+        let clock = Clock()
+        let hub = CompanionHub(now: { clock.now })
+        let asked: [String: Any] = ["kind": "question", "questions": [question("Apple or pear?", ["apple", "pear"])]]
+        hub.receive(body(asked))
+        clock.now = start + 60
+        hub.receive(body(asked))
+        #expect(hub.snapshot()[conversation]?.waitingSince == start && hub.snapshot()[conversation]?.lastReportAt == start + 60)
+        // A different question starts its own wait.
+        hub.receive(body(["kind": "question", "questions": [question("Tea or coffee?", ["tea", "coffee"])]]))
+        #expect(hub.snapshot()[conversation]?.waitingSince == start + 60)
+        hub.receive(body(["kind": "permission", "tool": "Bash", "detail": "make"]))
+        clock.now = start + 120
+        hub.receive(body(["kind": "permission", "tool": "Bash", "detail": "make"]))
+        #expect(hub.snapshot()[conversation]?.waitingSince == start + 60)
+    }
+
     @Test func aReportWakesWhoeverListensAndOldSessionsAreForgotten() async {
         let hub = CompanionHub(now: { start })
         var changes = hub.changes().makeAsyncIterator()
