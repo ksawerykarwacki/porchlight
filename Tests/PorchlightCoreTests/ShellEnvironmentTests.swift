@@ -79,6 +79,19 @@ import Testing
         #expect(set.isEmpty)
     }
 
+    /// Many at once, each on a thread the tests share: it must not wait for a task.
+    @Test func adoptingDoesNotHangWhenManyRunSideBySide() async throws {
+        let path = try shell(#"export PATH="/opt/homebrew/bin:/usr/bin:/bin"; eval "$4""#)
+        let bare = bare
+        let changed = await withTaskGroup(of: Bool.self) { group in
+            for _ in 0..<24 {
+                group.addTask { ShellEnvironment.adopt(current: bare, shell: path) { _, _ in } }
+            }
+            return await group.reduce(0) { $0 + ($1 ? 1 : 0) }
+        }
+        #expect(changed == 24)
+    }
+
     @Test func theLoginShellIsARealProgram() {
         let shell = ShellEnvironment.loginShell()
         #expect(shell.hasPrefix("/") && FileManager.default.isExecutableFile(atPath: shell))

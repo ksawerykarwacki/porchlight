@@ -40,7 +40,8 @@ public struct CLIRunner: Sendable {
         }
     }
 
-    private static func runBlocking(
+    /// The same without Swift concurrency, for the one caller that must wait where it stands.
+    static func runBlocking(
         _ executable: URL,
         _ arguments: [String],
         cwd: URL?,

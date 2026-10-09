@@ -42,6 +42,14 @@ public enum ShellEnvironment {
         return parse(result.stdout)
     }
 
+    /// The same, waiting on the calling thread.
+    static func resolveBlocking(shell: String, timeout: TimeInterval = 5) -> [String: String]? {
+        guard FileManager.default.isExecutableFile(atPath: shell),
+              let result = try? CLIRunner.runBlocking(URL(fileURLWithPath: shell), arguments(), cwd: nil, environment: nil, input: nil, timeout: timeout)
+        else { return nil }
+        return parse(result.stdout)
+    }
+
     /// What the app's environment should become: the shell's variables over its own, except the
     /// ones that are only about that shell, and never an empty PATH.
     public static func merged(current: [String: String], shell: [String: String]) -> [String: String] {
@@ -72,24 +80,15 @@ public enum ShellEnvironment {
         set: (String, String) -> Void = { setenv($0, $1, 1) }
     ) -> Bool {
         guard current["TERM_PROGRAM"] == nil, current["PORCHLIGHT_KEEP_ENVIRONMENT"] == nil else { return false }
-        let shell = shell ?? loginShell(environment: current)
-        let done = DispatchSemaphore(value: 0)
-        let answer = Answer()
-        Task.detached {
-            answer.value = await resolve(shell: shell, timeout: timeout)
-            done.signal()
-        }
-        done.wait()
-        guard let found = answer.value else { return false }
+        // Plainly blocking, with no task to wait for: parking a thread on a semaphore until a
+        // task finishes hangs for good when every thread the tasks run on is parked the same
+        // way, which is what happened on a three-core CI machine running tests side by side.
+        guard let found = resolveBlocking(shell: shell ?? loginShell(environment: current), timeout: timeout) else { return false }
         var changed = false
         for (name, value) in merged(current: current, shell: found) where current[name] != value {
             set(name, value)
             changed = true
         }
         return changed
-    }
-
-    private final class Answer: @unchecked Sendable {
-        var value: [String: String]?
     }
 }
