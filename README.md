@@ -54,6 +54,10 @@ brew install --HEAD porchlight
 brew services start porchlight     # start now, and at every login
 ```
 
+While this repository is private, Homebrew needs a GitHub token to fetch it: put
+`HOMEBREW_GITHUB_API_TOKEN=$(gh auth token)` in front of the `brew install` line. The token is kept
+in Homebrew's cached clone, so use one you are content to leave there.
+
 It needs the Xcode Command Line Tools and takes a few minutes to build. Because it is built on your
 Mac and not downloaded as an app, macOS does not ask for it to be notarised. To update, use
 **Update and restart** on the Settings tab, or `brew upgrade --fetch-HEAD porchlight`. To remove it:

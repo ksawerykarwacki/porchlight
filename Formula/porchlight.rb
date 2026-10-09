@@ -8,11 +8,28 @@
 # which is enough for a locally built app.
 #
 # Keep this in step with scripts/make-app.sh, which does the bundling.
+# While the repository is private, Homebrew cannot clone it: it fetches inside a sandbox that has
+# no access to the keychain, and it does not use HOMEBREW_GITHUB_API_TOKEN for git. This puts
+# that token into the clone address when it is set, so that
+#
+#   HOMEBREW_GITHUB_API_TOKEN=$(gh auth token) brew install --HEAD porchlight
+#
+# works. Without the variable it is the ordinary git download. The address, token included, is
+# kept in Homebrew's cached clone (~/Library/Caches/Homebrew/porchlight--git), which is also what
+# lets a later `brew upgrade` fetch without the variable. Remove this once the repository is public.
+class PorchlightGitDownloadStrategy < GitDownloadStrategy
+  def initialize(url, name, version, **meta)
+    token = Homebrew::EnvConfig.github_api_token.to_s
+    url = url.sub("https://github.com/", "https://x-access-token:#{token}@github.com/") unless token.empty?
+    super
+  end
+end
+
 class Porchlight < Formula
   desc "Menu-bar companion for Claude Code background sessions"
   homepage "https://github.com/ksawerykarwacki/porchlight"
   license "Apache-2.0"
-  head "https://github.com/ksawerykarwacki/porchlight.git", branch: "main"
+  head "https://github.com/ksawerykarwacki/porchlight.git", branch: "main", using: PorchlightGitDownloadStrategy
 
   depends_on macos: :sonoma
 
