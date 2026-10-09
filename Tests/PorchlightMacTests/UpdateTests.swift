@@ -143,6 +143,31 @@ final class CommandProbe: @unchecked Sendable {
         #expect(noBrew.state == .failed("Homebrew was not found at /opt/homebrew/bin/brew or /usr/local/bin/brew."))
     }
 
+    /// What the owner saw on 2026-10-09: the message ended in lines of Homebrew's sandbox profile.
+    @Test func aFailureInsideHomebrewsSandboxShowsTheErrorNotTheSandboxProfile() async {
+        let output = """
+            ==> Fetching downloads for: porchlight
+            Failure while executing; `/usr/bin/env HOME=/Users/u /usr/bin/sandbox-exec -p \\(version\\ 1\\)'
+            '\\(debug\\ deny\\)'
+            '\\ \\ \\ \\ \\(with\\ no-sandbox\\)'
+            '\\(allow\\ default\\)\\ \\;\\ allow\\ everything\\ else'
+            ' git fetch origin` exited with 128. Here's the output:
+            error: unable to read askpass response from '/usr/bin/false'
+            fatal: could not read Username for 'https://github.com': terminal prompts disabled
+            """
+        let probe = CommandProbe(lsRemote: (0, "\(Self.newer)\trefs/heads/main"), upgrade: (1, output))
+        let model = UpdateModel(bundlePath: Self.cellar, updater: probe.updater)
+        await model.check()
+        await model.update()
+        guard case .failed(let message) = model.state else {
+            Issue.record("expected a failure")
+            return
+        }
+        #expect(message.contains("fatal: could not read Username for 'https://github.com'"))
+        #expect(message.contains("error: unable to read askpass response"))
+        #expect(!message.contains("no-sandbox") && !message.contains("allow\\ default") && !message.contains("sandbox-exec"))
+    }
+
     @Test func theNewCopyIsStartedThroughTheServiceWhenThereIsOneAndOpenedOtherwise() {
         #expect(AppRestart.command(serviceIsLoaded: true, brew: "/opt/homebrew/bin/brew")
             == ["/opt/homebrew/bin/brew", "services", "restart", "ksawerykarwacki/porchlight/porchlight"])

@@ -79,9 +79,13 @@ public struct AppUpdater: Sendable {
         text.split(whereSeparator: \.isNewline).last.map { String($0).trimmingCharacters(in: .whitespaces) }.flatMap { $0.isEmpty ? nil : $0 }
     }
 
-    /// The end of Homebrew's output, where it says what went wrong.
+    /// The end of Homebrew's output, where it says what went wrong. When a command it ran in its
+    /// sandbox fails, Homebrew prints the whole sandbox profile, one quoted line after another;
+    /// those lines say nothing about the failure and are left out.
     static func tail(_ text: String, lines: Int = 6) -> String {
-        let all = text.split(whereSeparator: \.isNewline).map(String.init)
+        let all = text.split(whereSeparator: \.isNewline).map(String.init).filter { line in
+            !line.hasPrefix("'") && !line.contains("sandbox-exec")
+        }
         return all.suffix(lines).joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
