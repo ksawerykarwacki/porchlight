@@ -134,6 +134,13 @@ Pinned sessions are grouped at the top and are never offered for removal. "Turn 
 is for one whose normal state is waiting for you: it then stops reminding and stops lighting the
 lantern.
 
+The **Triage** tab (or `porchlight triage`) lists sessions that are finished, stopped, or have
+waited for a week, and says for each whether it can go: *safe to remove* (nothing would be lost),
+*needs a decision* (uncommitted or unpushed work), *stale* (waiting a long time) or *keep* (its pull
+request is open). "Remove the safe ones" clears the first group in one go; Claude Code still checks
+each one and refuses if anything would be lost. Pull requests are looked up with the GitHub CLI
+(`gh`), if you have it.
+
 To stop or remove a session, use the ⋯ menu on its row, ⌘S or ⌘D in the palette, or
 `porchlight stop <id>` and `porchlight rm <id>`. Both ask first. If Claude Code refuses to remove
 one, for example because its worktree has unpushed commits, Porchlight shows the reason. If that
