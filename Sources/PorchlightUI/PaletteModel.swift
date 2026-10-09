@@ -6,6 +6,8 @@ import PorchlightCore
 /// for `claude`.
 public struct PaletteServices: Sendable {
     public var loadIndex: @Sendable () async -> RepoIndex
+    /// The sessions as the inbox shows them, in the inbox's order.
+    public var sessions: @Sendable () async -> [InboxRow]
     public var loadHistory: @Sendable () -> DispatchHistory
     public var saveHistory: @Sendable (DispatchHistory) -> Void
     public var naming: @Sendable () -> NamingSettings
@@ -20,6 +22,7 @@ public struct PaletteServices: Sendable {
 
     public init(
         loadIndex: @escaping @Sendable () async -> RepoIndex,
+        sessions: @escaping @Sendable () async -> [InboxRow] = { [] },
         loadHistory: @escaping @Sendable () -> DispatchHistory = { DispatchHistory() },
         saveHistory: @escaping @Sendable (DispatchHistory) -> Void = { _ in },
         naming: @escaping @Sendable () -> NamingSettings = { NamingSettings() },
@@ -32,6 +35,7 @@ public struct PaletteServices: Sendable {
         home: String = NSHomeDirectory()
     ) {
         self.loadIndex = loadIndex
+        self.sessions = sessions
         self.loadHistory = loadHistory
         self.saveHistory = saveHistory
         self.naming = naming
@@ -49,7 +53,8 @@ public struct PaletteServices: Sendable {
         settingsURL: URL = Settings.fileURL(),
         historyURL: URL = DispatchHistory.fileURL(),
         locator: @escaping @Sendable () -> ClaudeLocator,
-        sessionDirectories: @escaping @Sendable () async -> [String]
+        sessionDirectories: @escaping @Sendable () async -> [String],
+        sessions: @escaping @Sendable () async -> [InboxRow] = { [] }
     ) -> PaletteServices {
         PaletteServices(
             loadIndex: {
@@ -57,6 +62,7 @@ public struct PaletteServices: Sendable {
                 let directories = await sessionDirectories()
                 return RepoIndex.build(settings: settings, sessionDirectories: directories)
             },
+            sessions: sessions,
             loadHistory: { DispatchHistory.load(from: historyURL) },
             saveHistory: { try? $0.save(to: historyURL) },
             naming: { Settings.load(from: settingsURL).naming ?? NamingSettings() },
@@ -120,7 +126,13 @@ public final class PaletteModel {
     public private(set) var isLoading = true
 
     public private(set) var query = ""
+    /// The repositories that match, best first.
     public private(set) var results: [Repo] = []
+    /// Every session, as last read.
+    public private(set) var sessions: [InboxRow] = []
+    /// The sessions on offer: with nothing typed the ones that need the user and a few that are
+    /// working; with text, every session that matches.
+    public private(set) var sessionResults: [InboxRow] = []
     public private(set) var selection = 0
 
     public private(set) var folder: Repo?
@@ -134,6 +146,12 @@ public final class PaletteModel {
     /// Called when a session was started; the flag says whether to open it as well.
     public var onStarted: (Dispatched, Bool) -> Void = { _, _ in }
     public var onOpen: (Dispatched) -> Void = { _ in }
+    /// Opens an existing session in the terminal.
+    public var onOpenSession: (String) -> Void = { _ in }
+    /// Puts a session's suggested reply on the clipboard.
+    public var onCopyReply: (String) -> Void = { _ in }
+    public var onSnooze: (String, SnoozeChoice) async -> Void = { _, _ in }
+    public var onRetry: (String) -> Void = { _ in }
     /// Opens Claude Code in a folder so the user can accept its trust prompt.
     public var onTrust: (String) -> Void = { _ in }
     public var onCopy: (String) -> Void = { _ in }
@@ -164,6 +182,9 @@ public final class PaletteModel {
     }
 
     private func reload() async {
+        // The sessions come from memory, so they are on screen before the disk has been searched.
+        sessions = await services.sessions()
+        rank()
         async let loadedIndex = services.loadIndex()
         async let loadedCapabilities = services.capabilities()
         index = await loadedIndex
@@ -197,32 +218,119 @@ public final class PaletteModel {
             let ranking = RepoRanking(history: history, now: services.now(), home: services.home)
             results = ranking.ranked(index, query: query)
         }
-        selection = min(selection, max(results.count - 1, 0))
+        sessionResults = Self.sessions(sessions, matching: query)
+        selection = min(selection, max(items.count - 1, 0))
     }
 
-    /// The rows on screen: a window of the results that always holds the selected one.
-    public var visibleResults: ArraySlice<Repo> {
-        let first = max(0, min(selection - Self.visibleRows + 1, results.count - Self.visibleRows))
-        return results[first..<min(first + Self.visibleRows, results.count)]
+    /// How many working sessions are listed before anything is typed. The ones that need the
+    /// user are all listed.
+    public static let workingSessionsShown = 3
+
+    static func sessions(_ sessions: [InboxRow], matching query: String) -> [InboxRow] {
+        let query = query.trimmingCharacters(in: .whitespaces)
+        guard !query.isEmpty else {
+            let waiting = sessions.filter { $0.kind.needsUser }
+            let working = sessions.filter { $0.kind == .working }.prefix(workingSessionsShown)
+            return waiting + working
+        }
+        // A path is a folder to start in, never a session.
+        guard !query.hasPrefix("/"), !query.hasPrefix("~") else { return [] }
+        let scored: [(row: InboxRow, score: Int, position: Int)] = sessions.enumerated().compactMap { position, row in
+            FuzzyMatch.score(query, name: row.title, path: row.place).map { (row, $0, position) }
+        }
+        // Equal matches keep the inbox's order, which puts what needs the user first.
+        return scored.sorted { $0.score != $1.score ? $0.score > $1.score : $0.position < $1.position }.map(\.row)
+    }
+
+    /// One line of the list: a session to open, or a folder to start a new one in.
+    public enum Item: Equatable, Identifiable {
+        case session(InboxRow)
+        case repo(Repo)
+
+        public var id: String {
+            switch self {
+            case .session(let row): "session:\(row.id)"
+            case .repo(let repo): "repo:\(repo.path)"
+            }
+        }
+    }
+
+    /// Sessions first, then repositories.
+    public var items: [Item] {
+        sessionResults.map(Item.session) + results.map(Item.repo)
+    }
+
+    /// The rows on screen: a window of the list that always holds the selected one.
+    public var visibleItems: ArraySlice<Item> {
+        let items = items
+        let first = max(0, min(selection - Self.visibleRows + 1, items.count - Self.visibleRows))
+        return items[first..<min(first + Self.visibleRows, items.count)]
+    }
+
+    public var selectedItem: Item? {
+        let items = items
+        return items.indices.contains(selection) ? items[selection] : nil
     }
 
     public var selectedRepo: Repo? {
-        results.indices.contains(selection) ? results[selection] : nil
+        if case .repo(let repo) = selectedItem { return repo }
+        return nil
+    }
+
+    public var selectedSession: InboxRow? {
+        if case .session(let row) = selectedItem { return row }
+        return nil
     }
 
     public func moveSelection(by offset: Int) {
-        guard !results.isEmpty else { return }
-        selection = max(0, min(results.count - 1, selection + offset))
+        let count = items.count
+        guard count > 0 else { return }
+        selection = max(0, min(count - 1, selection + offset))
     }
 
-    public func select(_ repo: Repo) {
-        if let position = results.firstIndex(of: repo) { selection = position }
+    public func select(_ item: Item) {
+        if let position = items.firstIndex(of: item) { selection = position }
     }
 
-    /// Enter on the folder step.
+    /// Return on the first step: open the selected session, or go on to the prompt for the
+    /// selected folder.
     public func confirmFolder() {
-        guard step == .folder, let repo = selectedRepo else { return }
-        choose(repo)
+        guard step == .folder else { return }
+        switch selectedItem {
+        case .session(let row): open(row)
+        case .repo(let repo): choose(repo)
+        case nil: break
+        }
+    }
+
+    // MARK: Sessions
+
+    public func open(_ row: InboxRow) {
+        onOpenSession(row.id)
+        onClose()
+    }
+
+    /// The reply the selected session suggests goes on the clipboard and the session opens, so
+    /// that pasting it is the next keystroke.
+    public func copyReplyAndOpenSelected() {
+        guard step == .folder, let row = selectedSession, row.suggestedReply != nil else { return }
+        onCopyReply(row.id)
+        open(row)
+    }
+
+    /// Pauses reminders for the selected session for an hour, or turns them back on if they are
+    /// paused. The palette stays open, on the next thing in the list.
+    public func snoozeSelected() async {
+        guard step == .folder, let row = selectedSession, row.kind.needsUser else { return }
+        await onSnooze(row.id, row.isSnoozed ? .wake : .hour)
+        sessions = await services.sessions()
+        rank()
+    }
+
+    public func retrySelected() {
+        guard step == .folder, let row = selectedSession, row.isRetryable else { return }
+        onRetry(row.id)
+        onClose()
     }
 
     public func choose(_ repo: Repo) {
@@ -372,4 +480,9 @@ public final class PaletteModel {
         default: break
         }
     }
+}
+
+extension InboxRow.Kind {
+    /// Whether the session is stopped until the user does something.
+    var needsUser: Bool { self == .question || self == .approval || self == .waiting }
 }

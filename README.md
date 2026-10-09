@@ -96,6 +96,9 @@ Click **New session** in the menu-bar panel, or run `porchlight new`, for the pa
 letters of a repository, press Return, write what Claude should do, and press ⌘Return (⇧⌘Return also
 opens the session in your terminal). The name is suggested from the prompt and can be changed.
 
+The palette also lists your sessions, the ones waiting on you first. Return opens the selected
+one; ⌘Return copies its suggested reply and opens it; ⌥Return snoozes it for an hour.
+
 To open the palette from any app, set a shortcut on the Settings tab ("Shortcut for a new
 session"): click "Use ⌃⌥⌘N", or record your own. None is set until you choose one, and Porchlight
 needs no extra permission for it.

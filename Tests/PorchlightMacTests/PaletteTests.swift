@@ -13,6 +13,12 @@ final class PaletteProbe: @unchecked Sendable {
     private var storedHistory = DispatchHistory()
     private var storedRepos = RepoIndexSettings()
     private var storedFailure: DispatchError?
+    private var storedRows: [InboxRow] = []
+
+    var rows: [InboxRow] {
+        get { lock.withLock { storedRows } }
+        set { lock.withLock { storedRows = newValue } }
+    }
 
     var requests: [DispatchRequest] { lock.withLock { storedRequests } }
     var history: DispatchHistory {
@@ -63,6 +69,7 @@ struct PaletteHarness {
                     scanned: names.map { "/Users/u/code/\($0)" }, sessionDirectories: ["/Users/u/code/docs"], settings: probe.repos,
                     home: PaletteHarness.home, exists: { _ in true })
             },
+            sessions: { probe.rows },
             loadHistory: { probe.history },
             saveHistory: { probe.history = $0 },
             naming: { naming },
@@ -141,13 +148,13 @@ struct PaletteHarness {
         let harness = try PaletteHarness()
         let model = harness.model
         await model.begin()
-        #expect(model.visibleResults.count == PaletteModel.visibleRows)
-        #expect(model.visibleResults.first == model.results.first)
+        #expect(model.visibleItems.count == PaletteModel.visibleRows)
+        #expect(model.visibleItems.first == model.items.first)
         model.moveSelection(by: 9)
-        #expect(model.visibleResults.last == model.results.last)
-        #expect(model.visibleResults.contains(model.selectedRepo!))
+        #expect(model.visibleItems.last == model.items.last)
+        #expect(model.visibleItems.contains(model.selectedItem!))
         model.moveSelection(by: -9)
-        #expect(model.visibleResults.first == model.results.first)
+        #expect(model.visibleItems.first == model.items.first)
     }
 
     @Test func aTypedPathIsOfferedAsAFolderEvenOutsideTheList() async throws {
@@ -386,7 +393,7 @@ struct PaletteHarness {
         // Eight rows, two rows, and a line of explanation.
         #expect(full.pixelsHigh > two.pixelsHigh + 6 * 30 * 2)
         #expect(two.pixelsHigh > none.pixelsHigh)
-        #expect(view.emptyMessage.contains("No repository matches “zzz”"))
+        #expect(view.emptyMessage.contains("No session or repository matches “zzz”"))
         // The row with sessions carries the lamp's colour.
         #expect(pixels(in: full, near: amber) > 0)
 
@@ -545,5 +552,285 @@ struct PaletteHarness {
         // No flag that could answer or skip the prompt.
         #expect(command.arguments == ["/bin/echo"])
         #expect(command.cwd == "/Users/u/code/new-repo")
+    }
+}
+
+/// Sessions as the inbox would list them: two that need the user, four working, one done.
+@MainActor
+enum PaletteSessions {
+    static let now = PaletteHarness.now
+
+    static func session(_ id: String, _ name: String, _ repo: String, _ state: SessionState, waited: TimeInterval = 600) -> Session {
+        Session(
+            summary: SessionSummary(id: id, name: name, cwd: "/Users/u/code/\(repo)", state: state),
+            observedBlockedSince: state == .blocked ? now - waited : nil)
+    }
+
+    static func rows(snoozes: [String: Snooze] = [:]) throws -> [InboxRow] {
+        let fixtures = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("PorchlightCoreTests/Fixtures")
+        // One real fixture session with a question, options and a suggested reply.
+        let json = try String(contentsOf: fixtures.appendingPathComponent("agents-all.json"), encoding: .utf8)
+        let enriched = JobStateSource(jobsDirectory: fixtures.appendingPathComponent("jobs")).enrich(try AgentsCLISource.decode(json).sessions)
+        let withReply = try #require(enriched.first { $0.needsHuman && $0.suggestedReply != nil })
+        let sessions = [
+            withReply,
+            session("bbbb0002", "migrate billing tables", "billing", .blocked, waited: 3 * 3600),
+            session("cccc0003", "refactor api client", "api-gateway", .working),
+            session("cccc0004", "write docs index", "docs", .working),
+            session("cccc0005", "bump dependencies", "infra", .working),
+            session("cccc0006", "tidy website css", "website", .working),
+            session("dddd0007", "old api cleanup", "api-gateway", .done),
+        ]
+        return InboxGroups(sessions: sessions, now: now, recentWindow: 10 * 365 * 86400)
+            .sections(now: now, snoozes: snoozes, overdueAfter: 7200).flatMap(\.rows)
+    }
+}
+
+@MainActor
+@Suite struct PaletteSessionsTests {
+    @Test func withNothingTypedWaitingSessionsComeFirstThenAFewWorkingThenRepositories() async throws {
+        let harness = try PaletteHarness()
+        harness.probe.rows = try PaletteSessions.rows()
+        await harness.model.begin()
+        let model = harness.model
+        #expect(model.sessions.count == 7)
+        // Both waiting ones, three of the four working ones, and not the finished one.
+        #expect(model.sessionResults.map(\.kind.needsUser) == [true, true, false, false, false])
+        #expect(model.sessionResults.count == 2 + PaletteModel.workingSessionsShown)
+        #expect(!model.sessionResults.contains { $0.kind == .done })
+        // The list is sessions, then every repository.
+        #expect(model.items.count == 5 + 10)
+        #expect(model.selectedSession?.kind.needsUser == true)
+        #expect(model.selectedRepo == nil)
+        if case .repo? = model.items.dropFirst(5).first {} else { Issue.record("repositories should follow the sessions") }
+    }
+
+    @Test func typingFiltersSessionsAndRepositoriesTogether() async throws {
+        let harness = try PaletteHarness()
+        harness.probe.rows = try PaletteSessions.rows()
+        await harness.model.begin()
+        let model = harness.model
+        model.setQuery("api")
+        // Sessions by their name or place, the finished one included now; then repositories.
+        #expect(Set(model.sessionResults.prefix(2).map(\.id)) == ["cccc0003", "dddd0007"])
+        #expect(!model.sessionResults.contains { $0.id == "bbbb0002" })
+        #expect(model.results.map(\.name) == ["api-gateway", "payments-api"])
+        #expect(model.items.count == model.sessionResults.count + 2)
+        model.setQuery("billing")
+        #expect(model.sessionResults.map(\.id) == ["bbbb0002"])
+        #expect(model.results.map(\.name) == ["billing"])
+        // A path is a folder to start in, never a session.
+        model.setQuery("~/code/docs")
+        #expect(model.sessionResults.isEmpty && model.results.map(\.name) == ["docs"])
+        model.setQuery("zzzz")
+        #expect(model.items.isEmpty && model.selectedItem == nil)
+    }
+
+    @Test func arrowsMoveFromSessionsIntoRepositoriesAndTheWindowFollows() async throws {
+        let harness = try PaletteHarness()
+        harness.probe.rows = try PaletteSessions.rows()
+        await harness.model.begin()
+        let model = harness.model
+        model.moveSelection(by: 4)
+        #expect(model.selectedSession == model.sessionResults.last)
+        model.moveSelection(by: 1)
+        #expect(model.selectedSession == nil && model.selectedRepo != nil)
+        #expect(model.visibleItems.count == PaletteModel.visibleRows)
+        model.moveSelection(by: 100)
+        #expect(model.selectedItem == model.items.last)
+        #expect(model.visibleItems.last == model.items.last)
+        model.moveSelection(by: -100)
+        #expect(model.selection == 0 && model.visibleItems.first == model.items.first)
+    }
+
+    @Test func withoutSessionsThePaletteIsTheRepositoryListItWas() async throws {
+        let harness = try PaletteHarness()
+        await harness.model.begin()
+        #expect(harness.model.sessionResults.isEmpty)
+        // "docs" has a session in the harness, which ranks it first.
+        #expect(harness.model.items.count == 10 && harness.model.selectedRepo?.name == "docs")
+    }
+
+    @Test func headingsMarkWhereTheListChangesKind() throws {
+        let rows = try PaletteSessions.rows()
+        let session = PaletteModel.Item.session(rows[0])
+        let repo = PaletteModel.Item.repo(Repo(path: "/Users/u/code/docs"))
+        #expect(PaletteView.heading(for: session, after: nil) == "Sessions")
+        #expect(PaletteView.heading(for: session, after: session) == nil)
+        #expect(PaletteView.heading(for: repo, after: session) == "Start a new session in")
+        #expect(PaletteView.heading(for: repo, after: repo) == nil)
+        #expect(PaletteView.heading(for: repo, after: nil) == "Start a new session in")
+    }
+}
+
+@MainActor
+@Suite struct PaletteSessionActionsTests {
+    final class Calls: @unchecked Sendable {
+        var opened: [String] = []
+        var copied: [String] = []
+        var snoozed: [(String, SnoozeChoice)] = []
+        var retried: [String] = []
+    }
+
+    func harness(snoozes: [String: Snooze] = [:], retryable: Bool = false) async throws -> (PaletteHarness, Calls) {
+        let harness = try PaletteHarness()
+        var rows = try PaletteSessions.rows(snoozes: snoozes)
+        if retryable {
+            // A session stopped on a rate limit, as the transient-failure patterns see it.
+            let failed = Session(
+                summary: SessionSummary(id: "eeee0008", name: "import customers", cwd: "/Users/u/code/billing", state: .blocked),
+                observedBlockedSince: PaletteSessions.now - 300)
+            let row = InboxRow(session: failed, now: PaletteSessions.now)
+            rows.insert(row, at: 0)
+        }
+        harness.probe.rows = rows
+        let calls = Calls()
+        harness.model.onOpenSession = { calls.opened.append($0) }
+        harness.model.onCopyReply = { calls.copied.append($0) }
+        harness.model.onSnooze = { id, choice in
+            calls.snoozed.append((id, choice))
+            // What the inbox does: the row comes back marked as snoozed, or not.
+            harness.probe.rows = try! PaletteSessions.rows(snoozes: choice == .wake ? [:] : [id: .until(PaletteSessions.now + 3600)])
+        }
+        harness.model.onRetry = { calls.retried.append($0) }
+        await harness.model.begin()
+        return (harness, calls)
+    }
+
+    @Test func returnOnASessionOpensItAndClosesThePalette() async throws {
+        let (harness, calls) = try await harness()
+        let model = harness.model
+        model.moveSelection(by: 1)
+        model.confirmFolder()
+        #expect(calls.opened == ["bbbb0002"])
+        #expect(harness.closed.values.count == 1)
+        // Nothing was dispatched and the palette did not move on to a prompt.
+        #expect(model.step == .folder && harness.probe.requests.isEmpty)
+    }
+
+    @Test func copyingTheReplyAlsoOpensTheSessionAndOnlyWhenThereIsAReply() async throws {
+        let (harness, calls) = try await harness()
+        let model = harness.model
+        let first = try #require(model.selectedSession)
+        #expect(first.suggestedReply != nil)
+        model.copyReplyAndOpenSelected()
+        #expect(calls.copied == [first.id] && calls.opened == [first.id])
+        #expect(harness.closed.values.count == 1)
+
+        // The next session suggests nothing: the key does nothing at all.
+        model.moveSelection(by: 1)
+        #expect(model.selectedSession?.suggestedReply == nil)
+        model.copyReplyAndOpenSelected()
+        #expect(calls.copied.count == 1 && calls.opened.count == 1)
+    }
+
+    @Test func snoozingKeepsThePaletteOpenAndTheSecondPressRemindsAgain() async throws {
+        let (harness, calls) = try await harness()
+        let model = harness.model
+        model.moveSelection(by: 1)
+        await model.snoozeSelected()
+        #expect(calls.snoozed.count == 1 && calls.snoozed[0].0 == "bbbb0002" && calls.snoozed[0].1 == .hour)
+        #expect(harness.closed.values.isEmpty)
+        // The list was read again: the row is still there, now marked.
+        #expect(model.selectedSession?.id == "bbbb0002" && model.selectedSession?.isSnoozed == true)
+        await model.snoozeSelected()
+        #expect(calls.snoozed.count == 2 && calls.snoozed[1].1 == .wake)
+        #expect(model.selectedSession?.isSnoozed == false)
+    }
+
+    @Test func aWorkingSessionOrARepositoryCannotBeSnoozedOrRetried() async throws {
+        let (harness, calls) = try await harness()
+        let model = harness.model
+        model.moveSelection(by: 2)
+        #expect(model.selectedSession?.kind == .working)
+        await model.snoozeSelected()
+        model.retrySelected()
+        model.copyReplyAndOpenSelected()
+        model.moveSelection(by: 5)
+        #expect(model.selectedRepo != nil)
+        await model.snoozeSelected()
+        model.retrySelected()
+        model.copyReplyAndOpenSelected()
+        #expect(calls.snoozed.isEmpty && calls.retried.isEmpty && calls.copied.isEmpty && calls.opened.isEmpty)
+    }
+
+    @Test func retryIsOfferedOnlyForASessionThatCanBeRetried() async throws {
+        let (harness, calls) = try await harness()
+        // No fixture session stopped on a passing failure.
+        #expect(!harness.model.sessions.contains { $0.isRetryable })
+        harness.model.retrySelected()
+        #expect(calls.retried.isEmpty)
+    }
+
+    @Test func theActionsDoNothingOnceThePaletteHasMovedOnToAPrompt() async throws {
+        let (harness, calls) = try await harness()
+        let model = harness.model
+        model.setQuery("docs")
+        model.moveSelection(by: 1)
+        model.confirmFolder()
+        #expect(model.step == .prompt)
+        model.copyReplyAndOpenSelected()
+        await model.snoozeSelected()
+        model.retrySelected()
+        #expect(calls.copied.isEmpty && calls.snoozed.isEmpty && calls.retried.isEmpty)
+    }
+}
+
+@MainActor
+@Suite struct PaletteSessionViewTests {
+    func height(_ model: PaletteModel, named name: String) throws -> Int {
+        let view = PaletteView(model: model, hover: HoverTracker(), drawsFields: false)
+        let renderer = ImageRenderer(content: view.padding(12).background(Color.white).environment(\.colorScheme, .light))
+        renderer.scale = 2
+        let image = try #require(renderer.nsImage)
+        let tiff = try #require(image.tiffRepresentation)
+        let bitmap = try #require(NSBitmapImageRep(data: tiff))
+        if let directory = ProcessInfo.processInfo.environment["PORCHLIGHT_SNAPSHOT_DIR"] {
+            let url = URL(fileURLWithPath: directory)
+            try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+            try #require(bitmap.representation(using: .png, properties: [:])).write(to: url.appendingPathComponent("\(name).png"))
+        }
+        return bitmap.pixelsHigh
+    }
+
+    @Test func sessionRowsAreTallerThanRepositoryRowsAndCarryAHeading() async throws {
+        let plain = try PaletteHarness()
+        await plain.model.begin()
+        let reposOnly = try height(plain.model, named: "palette-repos-only")
+
+        let harness = try PaletteHarness()
+        harness.probe.rows = try PaletteSessions.rows()
+        await harness.model.begin()
+        let mixed = try height(harness.model, named: "palette-sessions")
+        // Both show eight rows; five of the mixed ones are sessions, which have a second line,
+        // and the mixed list has one more heading.
+        #expect(mixed > reposOnly + 5 * 8 * 2)
+    }
+
+    @Test func aSessionSaysWhatItWantsOrWhatItIsDoing() throws {
+        let rows = try PaletteSessions.rows()
+        let hover = HoverTracker()
+        let question = try #require(rows.first { $0.suggestedReply != nil })
+        #expect(PaletteSessionRow(row: question, isSelected: false, hover: hover, open: {}).subtitle == question.detail)
+        let waiting = try #require(rows.first { $0.id == "bbbb0002" })
+        #expect(PaletteSessionRow(row: waiting, isSelected: false, hover: hover, open: {}).subtitle == "Waiting for you")
+        let working = try #require(rows.first { $0.kind == .working })
+        #expect(PaletteSessionRow(row: working, isSelected: false, hover: hover, open: {}).subtitle == "Working")
+        let done = try #require(rows.first { $0.kind == .done })
+        #expect(PaletteSessionRow(row: done, isSelected: false, hover: hover, open: {}).subtitle == "Done")
+    }
+
+    @Test func theBottomBarFollowsWhatIsSelected() async throws {
+        let harness = try PaletteHarness()
+        harness.probe.rows = try PaletteSessions.rows()
+        await harness.model.begin()
+        // A session with a reply: Open, Copy reply and open, Snooze. Then a repository: two hints.
+        let onSession = try height(harness.model, named: "palette-session-selected")
+        harness.model.moveSelection(by: 6)
+        #expect(harness.model.selectedRepo != nil)
+        let onRepo = try height(harness.model, named: "palette-repo-selected")
+        // Same rows on screen, so the same height: only the bar's content changes.
+        #expect(onSession == onRepo)
     }
 }

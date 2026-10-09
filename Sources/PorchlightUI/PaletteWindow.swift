@@ -7,6 +7,9 @@ import SwiftUI
 final class PalettePanel: NSPanel {
     var onEscape: (() -> Void)?
     var onConfirm: (() -> Void)?
+    /// ⌘Return and ⌘R when no view of its own took them: actions on the selected session.
+    var onCommandReturn: (() -> Void)?
+    var onCommandR: (() -> Void)?
 
     init() {
         super.init(
@@ -46,6 +49,14 @@ final class PalettePanel: NSPanel {
         if super.performKeyEquivalent(with: event) { return true }
         guard event.type == .keyDown else { return false }
         let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        if modifiers == .command, event.keyCode == 36 || event.keyCode == 76 {
+            onCommandReturn?()
+            return true
+        }
+        if modifiers == .command, event.charactersIgnoringModifiers?.lowercased() == "r" {
+            onCommandR?()
+            return true
+        }
         let action: Selector? =
             switch (modifiers, event.charactersIgnoringModifiers?.lowercased()) {
             case (.command, "v"): #selector(NSText.paste(_:))
@@ -101,6 +112,8 @@ public final class PaletteController {
         let panel = PalettePanel()
         panel.onEscape = { [weak self] in self?.model.escape() }
         panel.onConfirm = { [weak self] in self?.model.confirm() }
+        panel.onCommandReturn = { [weak self] in self?.model.copyReplyAndOpenSelected() }
+        panel.onCommandR = { [weak self] in self?.model.retrySelected() }
         let content = PaletteView(
             model: model, hover: hover, browse: { [weak self] in self?.chooseFolder(asRoot: false) },
             addRoot: { [weak self] in self?.chooseFolder(asRoot: true) }
@@ -162,6 +175,8 @@ struct PaletteTextField: NSViewRepresentable {
     let onChange: (String) -> Void
     var onMove: (Int) -> Void = { _ in }
     var onSubmit: () -> Void = {}
+    /// Option-Return.
+    var onAlternateSubmit: () -> Void = {}
     var onCancel: () -> Void = {}
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
@@ -206,6 +221,7 @@ struct PaletteTextField: NSViewRepresentable {
             case #selector(NSResponder.moveUp(_:)): parent.onMove(-1)
             case #selector(NSResponder.moveDown(_:)): parent.onMove(1)
             case #selector(NSResponder.insertNewline(_:)): parent.onSubmit()
+            case #selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)): parent.onAlternateSubmit()
             case #selector(NSResponder.cancelOperation(_:)): parent.onCancel()
             default: return false
             }

@@ -45,14 +45,15 @@ public struct PaletteView: View {
                 .font(.system(size: 17, weight: .medium))
                 .foregroundStyle(.secondary)
             field(
-                text: model.query, placeholder: "Repository, or a folder path", size: 20,
-                onChange: model.setQuery, onMove: model.moveSelection, onSubmit: model.confirmFolder)
+                text: model.query, placeholder: "Session, repository, or a folder path", size: 20,
+                onChange: model.setQuery, onMove: model.moveSelection, onSubmit: model.confirmFolder,
+                onAlternateSubmit: { Task { await model.snoozeSelected() } })
         }
         .padding(.horizontal, 18)
         .frame(height: 56)
         Divider()
 
-        if model.results.isEmpty {
+        if model.items.isEmpty {
             Text(emptyMessage)
                 .font(.system(size: 13))
                 .foregroundStyle(.secondary)
@@ -61,11 +62,26 @@ public struct PaletteView: View {
                 .padding(.vertical, 22)
                 .frame(maxWidth: .infinity, alignment: .leading)
         } else {
-            VStack(spacing: 0) {
-                ForEach(model.visibleResults) { repo in
-                    PaletteRepoRow(
-                        repo: repo, isSelected: repo == model.selectedRepo, home: NSHomeDirectory(), hover: hover,
-                        choose: { model.choose(repo) }, togglePin: { model.togglePin(repo) })
+            let visible = Array(model.visibleItems)
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(visible.enumerated()), id: \.element.id) { position, item in
+                    // A heading where the list turns from one kind of thing to the other.
+                    if let heading = Self.heading(for: item, after: position > 0 ? visible[position - 1] : nil) {
+                        Text(heading)
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 18)
+                            .padding(.top, position == 0 ? 2 : 8)
+                            .padding(.bottom, 3)
+                    }
+                    switch item {
+                    case .session(let row):
+                        PaletteSessionRow(row: row, isSelected: item == model.selectedItem, hover: hover) { model.open(row) }
+                    case .repo(let repo):
+                        PaletteRepoRow(
+                            repo: repo, isSelected: item == model.selectedItem, home: NSHomeDirectory(), hover: hover,
+                            choose: { model.choose(repo) }, togglePin: { model.togglePin(repo) })
+                    }
                 }
             }
             .padding(.vertical, 6)
@@ -73,22 +89,49 @@ public struct PaletteView: View {
 
         Divider()
         HStack(spacing: 2) {
-            KeyHint(keys: "↩", label: "Choose", id: "palette.hint.choose", hover: hover, action: model.confirmFolder)
-            KeyHint(keys: "esc", label: "Close", id: "palette.hint.close", hover: hover, action: model.escape)
-            Spacer()
-            if model.canRepeatLast {
-                QuietButton(title: "Same as last time", symbol: "arrow.uturn.backward", id: "palette.repeat", hover: hover, action: model.repeatLast)
+            if let row = model.selectedSession {
+                KeyHint(keys: "↩", label: "Open", id: "palette.hint.choose", hover: hover, action: model.confirmFolder)
+                if row.suggestedReply != nil {
+                    KeyHint(keys: "⌘↩", label: "Copy reply and open", id: "palette.hint.reply", hover: hover, action: model.copyReplyAndOpenSelected)
+                }
+                if row.isRetryable {
+                    KeyHint(keys: "⌘R", label: "Retry", id: "palette.hint.retry", hover: hover, action: model.retrySelected)
+                }
+                if row.kind.needsUser {
+                    KeyHint(keys: "⌥↩", label: row.isSnoozed ? "Remind again" : "Snooze an hour", id: "palette.hint.snooze", hover: hover) {
+                        Task { await model.snoozeSelected() }
+                    }
+                }
+            } else {
+                KeyHint(keys: "↩", label: "New session here", id: "palette.hint.choose", hover: hover, action: model.confirmFolder)
+                KeyHint(keys: "esc", label: "Close", id: "palette.hint.close", hover: hover, action: model.escape)
             }
-            QuietButton(title: "Add workspace folder…", symbol: "folder.badge.plus", id: "palette.root", hover: hover, action: addRoot)
-            QuietButton(title: "Browse…", symbol: nil, id: "palette.browse", hover: hover, action: browse)
+            Spacer()
+            // The folder buttons give way to a session's actions: the bar has room for one set.
+            if model.selectedSession == nil {
+                if model.canRepeatLast {
+                    QuietButton(title: "Same as last time", symbol: "arrow.uturn.backward", id: "palette.repeat", hover: hover, action: model.repeatLast)
+                }
+                QuietButton(title: "Add workspace folder…", symbol: "folder.badge.plus", id: "palette.root", hover: hover, action: addRoot)
+                QuietButton(title: "Browse…", symbol: nil, id: "palette.browse", hover: hover, action: browse)
+            }
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
     }
 
+    /// The heading above an item, when it is the first of its kind on screen.
+    static func heading(for item: PaletteModel.Item, after previous: PaletteModel.Item?) -> String? {
+        switch (item, previous) {
+        case (.session, nil): "Sessions"
+        case (.repo, nil), (.repo, .session?): "Start a new session in"
+        default: nil
+        }
+    }
+
     var emptyMessage: String {
         if !model.query.trimmingCharacters(in: .whitespaces).isEmpty {
-            return "No repository matches “\(model.query)”. Type a folder path, or Browse."
+            return "No session or repository matches “\(model.query)”. Type a folder path, or Browse."
         }
         if model.isLoading { return "Looking for repositories…" }
         return "No repositories yet. Add the folder your repositories live in and Porchlight will find them."
@@ -344,12 +387,12 @@ public struct PaletteView: View {
     @ViewBuilder
     private func field(
         text: String, placeholder: String, size: CGFloat, onChange: @escaping (String) -> Void, onMove: @escaping (Int) -> Void = { _ in },
-        onSubmit: @escaping () -> Void = {}, focuses: Bool = true
+        onSubmit: @escaping () -> Void = {}, onAlternateSubmit: @escaping () -> Void = {}, focuses: Bool = true
     ) -> some View {
         if drawsFields {
             PaletteTextField(
                 text: text, placeholder: placeholder, fontSize: size, focusRequest: focuses ? model.focusRequest : nil,
-                onChange: onChange, onMove: onMove, onSubmit: onSubmit, onCancel: model.escape)
+                onChange: onChange, onMove: onMove, onSubmit: onSubmit, onAlternateSubmit: onAlternateSubmit, onCancel: model.escape)
         } else {
             Text(text.isEmpty ? placeholder : text)
                 .font(.system(size: size))
@@ -376,6 +419,76 @@ public struct PaletteView: View {
             Text(label(selected))
                 .font(.system(size: 13))
         }
+    }
+}
+
+/// One existing session in the palette's list.
+struct PaletteSessionRow: View {
+    let row: InboxRow
+    let isSelected: Bool
+    let hover: HoverTracker
+    let open: () -> Void
+
+    private var id: String { "palette.session.\(row.id)" }
+
+    private var lamp: Color {
+        if row.isSnoozed { return Color.primary.opacity(0.25) }
+        if row.kind.needsUser { return row.isOverdue ? Lamp.ember : Lamp.light }
+        return Color.primary.opacity(0.14)
+    }
+
+    /// What the session wants, or what it is doing.
+    var subtitle: String {
+        switch row.kind {
+        case .question, .approval, .waiting: row.detail ?? "Waiting for you"
+        case .working: "Working"
+        case .done: "Done"
+        case .unknown: "State unknown"
+        }
+    }
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Circle()
+                .fill(lamp)
+                .frame(width: 7, height: 7)
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(spacing: 8) {
+                    Text(row.title)
+                        .font(.system(size: 14, weight: .medium))
+                        .lineLimit(1)
+                    Text(row.place)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                }
+                Text(subtitle)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 8)
+            if row.isRetryable {
+                Text("Can be retried")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+            if let age = row.age {
+                Text(age)
+                    .font(.system(size: 12))
+                    .foregroundStyle(row.isOverdue && !row.isSnoozed ? Lamp.ember : .secondary)
+            }
+        }
+        .padding(.horizontal, 12)
+        .frame(height: 46)
+        .background(
+            RoundedRectangle(cornerRadius: PaletteSurface.radius - 12, style: .continuous)
+                .fill(isSelected ? Lamp.light.opacity(0.24) : Color.primary.opacity(hover.hovered == id ? 0.07 : 0))
+        )
+        .contentShape(Rectangle())
+        .onTapGesture(perform: open)
+        .onHover { hover.set(id, $0) }
+        .padding(.horizontal, 6)
     }
 }
 

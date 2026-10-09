@@ -209,6 +209,12 @@ Acceptance: from any app, hotkey → type 3 letters of a repo → Enter → type
 - Pressing it shows the palette, and hides it when it is already showing.
 - Not verified: registration and the key press itself, which only exist in the running app. The tests cover the model's decisions with the registration stood in for.
 
+**Built after M3 (2026-10-09): the palette is for existing sessions too.** Asked for by the user once the palette existed: it is the keyboard way into everything, and the menu-bar panel stays the glanceable view for the mouse.
+
+- With nothing typed the list is the sessions that need the user, then up to three that are working, then the repositories. Finished sessions appear only when typed for. Typing filters sessions (by name and place) and repositories together; a path is always a folder.
+- Return on a session opens it in the terminal. On a selected session: ⌘Return copies its suggested reply and opens it, ⌥Return snoozes it for an hour (or turns reminders back on), ⌘R retries one stopped on a passing failure. Each is shown in the bottom bar only when it applies, and is a button as well.
+- Opening a session hands the keyboard to the terminal. When the terminal was already the front app, asking macOS to activate it does nothing and the terminal never learns it has the keyboard back (seen with Warp), so Porchlight becomes the active app for a moment first. The activity log records who had focus at each step.
+
 ### 6.4 Naming — v1 (at dispatch) **[PROPOSED]**
 
 **FR-NM1** Name template setting, default `{slug}`. Tokens: `{repo}`, `{branch}` (current branch of the chosen dir), `{ticket}` (first match of a user-configured regex against prompt then branch; empty by default — no ticket system assumed), `{slug}` (first 3–4 significant words of the prompt, kebab-case), `{date}`.

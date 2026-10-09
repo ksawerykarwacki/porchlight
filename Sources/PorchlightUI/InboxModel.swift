@@ -232,6 +232,13 @@ public final class InboxModel {
         Task { await store.refresh() }
     }
 
+    /// The sessions as the inbox lists them, top to bottom, for the palette.
+    public var rows: [InboxRow] {
+        InboxGroups(sessions: snapshot.sessions, now: clock())
+            .sections(now: clock(), snoozes: snoozes, overdueAfter: reminderSettings.secondStep, transientErrors: transientErrors)
+            .flatMap(\.rows)
+    }
+
     /// The folders of the sessions that exist, for the list of places to start a new one.
     public var sessionDirectories: [String] { snapshot.sessions.map(\.summary.cwd) }
 

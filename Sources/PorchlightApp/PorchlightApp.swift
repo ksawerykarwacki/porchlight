@@ -20,10 +20,15 @@ struct PorchlightApp: App {
 
         let services = PaletteServices.live(
             locator: { model.claudeLocator },
-            sessionDirectories: { await model.sessionDirectories })
+            sessionDirectories: { await model.sessionDirectories },
+            sessions: { await model.rows })
         let paletteModel = PaletteModel(services: services)
         paletteModel.onStarted = { started, open in Task { await model.sessionStarted(started, open: open) } }
         paletteModel.onOpen = { started in model.open(sessionID: started.id) }
+        paletteModel.onOpenSession = { id in model.open(sessionID: id) }
+        paletteModel.onCopyReply = { id in model.copyReply(sessionID: id) }
+        paletteModel.onSnooze = { id, choice in await model.snooze(sessionID: id, choice) }
+        paletteModel.onRetry = { id in model.retry(sessionID: id) }
         paletteModel.onTrust = { folder in model.openToTrust(folder: folder) }
         paletteModel.onCopy = { command in model.copy(command, saying: "Command copied") }
         let palette = PaletteController(model: paletteModel)
