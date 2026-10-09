@@ -103,11 +103,13 @@ public struct Settings: Sendable, Equatable, Codable {
     public var hotkey: Hotkey?
     /// True once the user hid the optional first-run steps.
     public var setupHidden: Bool?
+    /// When a session counts as stale in triage. Nil uses the defaults.
+    public var triage: TriageSettings?
 
     public init(
         terminal: String? = nil, claudePath: String? = nil, preferAgentView: Bool? = nil, reminders: ReminderSettings? = nil,
         transientErrors: TransientErrors? = nil, repos: RepoIndexSettings? = nil, naming: NamingSettings? = nil, hotkey: Hotkey? = nil,
-        setupHidden: Bool? = nil
+        setupHidden: Bool? = nil, triage: TriageSettings? = nil
     ) {
         self.transientErrors = transientErrors
         self.terminal = terminal
@@ -118,10 +120,11 @@ public struct Settings: Sendable, Equatable, Codable {
         self.naming = naming
         self.hotkey = hotkey
         self.setupHidden = setupHidden
+        self.triage = triage
     }
 
     private enum CodingKeys: String, CodingKey {
-        case terminal, claudePath, preferAgentView, reminders, transientErrors, repos, naming, hotkey, setupHidden
+        case terminal, claudePath, preferAgentView, reminders, transientErrors, repos, naming, hotkey, setupHidden, triage
     }
 
     /// Each value is read on its own, so one odd entry does not discard the rest.
@@ -136,6 +139,7 @@ public struct Settings: Sendable, Equatable, Codable {
         naming = try? c.decodeIfPresent(NamingSettings.self, forKey: .naming)
         hotkey = try? c.decodeIfPresent(Hotkey.self, forKey: .hotkey)
         setupHidden = try? c.decodeIfPresent(Bool.self, forKey: .setupHidden)
+        triage = try? c.decodeIfPresent(TriageSettings.self, forKey: .triage)
     }
 
     public static func fileURL(in stateDirectory: URL = PorchlightPaths.stateDirectory()) -> URL {

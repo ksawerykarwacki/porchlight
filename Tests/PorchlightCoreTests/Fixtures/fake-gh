@@ -1,0 +1,39 @@
+#!/bin/bash
+# Stand-in for the GitHub CLI in tests. Records how it was called and answers `pr list`.
+#
+#   FAKE_GH_LOG    file that receives the working directory and argv, NUL-separated
+#   FAKE_GH_MODE   merged | open | closed | none | fail | garbage (default: by branch name)
+#
+# Without a mode the answer follows the branch asked for (--head): a name containing "merged",
+# "open" or "closed" gets that state; anything else has no pull request.
+set -u
+
+if [ -n "${FAKE_GH_LOG:-}" ]; then
+    printf '%s\0' "$PWD" "$@" >> "$FAKE_GH_LOG"
+fi
+
+branch=""
+previous=""
+for argument in "$@"; do
+    if [ "$previous" = "--head" ]; then branch="$argument"; fi
+    previous="$argument"
+done
+
+mode="${FAKE_GH_MODE:-}"
+if [ -z "$mode" ]; then
+    case "$branch" in
+        *merged*) mode="merged" ;;
+        *open*) mode="open" ;;
+        *closed*) mode="closed" ;;
+        *) mode="none" ;;
+    esac
+fi
+
+case "$mode" in
+    merged) echo '[{"number":12,"state":"MERGED"}]' ;;
+    open) echo '[{"number":34,"state":"OPEN"}]' ;;
+    closed) echo '[{"number":56,"state":"CLOSED"}]' ;;
+    none) echo '[]' ;;
+    garbage) echo 'Welcome to GitHub CLI!' ;;
+    fail) echo "no git remotes found" >&2; exit 1 ;;
+esac
