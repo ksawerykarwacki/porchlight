@@ -11,7 +11,7 @@
 class Porchlight < Formula
   desc "Menu-bar companion for Claude Code background sessions"
   homepage "https://github.com/ksawerykarwacki/porchlight"
-  license "Apache-2.0"
+  license "GPL-3.0-or-later"
   head "https://github.com/ksawerykarwacki/porchlight.git", branch: "main"
 
   depends_on macos: :sonoma

@@ -224,4 +224,9 @@ Your use of Claude Code itself stays subject to Anthropic's terms.
 
 ## License
 
-Apache-2.0 for Porchlight's own code.
+Porchlight is free software: copyright © 2026 Ksawery Karwacki, licensed under the
+[GNU General Public License](LICENSE), version 3 or (at your option) any later version. You may use,
+study, change and share it; if you distribute it or a version you changed, you must do so under the
+same licence and make the source available. It comes with no warranty.
+
+For use under other terms, ask the copyright holder.

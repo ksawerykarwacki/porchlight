@@ -513,7 +513,7 @@ Read on 2026-10-08: Claude Code's licence line ("Use is subject to Anthropic's C
 | D1 | Audience | **[DECIDED]** Open source, for any Claude Code user. Built on a clean machine to avoid bias. |
 | D2 | v1 scope | **[DECIDED 2026-10-08]** Inbox + Nagger + Launcher + Naming-at-dispatch + Repo index + Onboarding. Triage and reply later. |
 | D3 | Tech stack | **[DECIDED 2026-10-08]** Native Swift/SwiftUI, macOS 14+, built with SwiftPM only (§9), split into core library + JSON command-line tool + app (§8.1). Tauri and a Rust core were considered for cross-platform reach and declined: macOS is the main target. |
-| D4 | License | **[DECIDED 2026-10-08]** Apache-2.0. |
+| D4 | License | **[DECIDED 2026-10-09, replacing Apache-2.0 of 2026-10-08]** GPL-3.0-or-later. The owner does not want the code turned into someone else's closed or paid product without permission. Note what the GPL does and does not do: it does not forbid selling Porchlight, but anyone who distributes it or a changed version must do so under the GPL with the source, which rules out a closed product. Other terms are the copyright holder's to grant. Changed before the repository was made public and before any outside contribution, so no one else's agreement was needed. |
 | D5 | Name | **[DECIDED 2026-10-08]** Porchlight (was "Lantern"). Bundle id `io.github.ksawerykarwacki.porchlight`. |
 | D6 | Use internal job state by default | **[PROPOSED]** Yes, behind a schema check + toggle (the question text and suggested reply are the most valuable fields). |
 | D7 | Duplicate Claude's own first notification | **[PROPOSED, built as the default 2026-10-08]** No: the ladder starts at 15 min. Adding `0` to the ladder setting turns the immediate reminder on. |

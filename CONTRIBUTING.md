@@ -124,5 +124,10 @@ Releases are made by the repository owner; the steps are in
 
 ## Licence
 
-Porchlight is licensed under the [Apache License 2.0](LICENSE). By contributing you agree that your
-contribution is licensed under the same terms (section 5 of the licence).
+Porchlight is licensed under the [GNU General Public License](LICENSE), version 3 or later
+(`GPL-3.0-or-later`). By contributing you agree that your contribution is licensed under the same
+terms.
+
+The copyright holder may also offer Porchlight under other terms to someone who asks. If you would
+not want your contribution included in such a version, say so in your pull request before it is
+merged.
