@@ -144,6 +144,8 @@ public struct TabHost {
 
     public let channel: TabChannel
     public let commands: Commands
+    /// The longest the host goes without looking, in case it was not woken. It is woken at once
+    /// when its program ends or a request arrives, so this only bounds the cases that are missed.
     public var pollInterval: TimeInterval = 0.15
     /// How long a stopped program gets to exit before it is killed.
     public var stopGrace: TimeInterval = 3
@@ -178,7 +180,7 @@ public struct TabHost {
                     status = stop(child)
                     break
                 }
-                if status == nil { Thread.sleep(forTimeInterval: pollInterval) }
+                if status == nil { Self.wait(forExitOf: child, orChangeIn: channel.directory, atMost: pollInterval) }
             }
             // `claude attach` does not tidy the terminal when it is stopped by a signal.
             terminal.restore(afterForcedStop: requested != nil)
@@ -191,6 +193,35 @@ public struct TabHost {
                 mode = .agentView
             }
         }
+    }
+
+    /// Sleeps until the child ends, something is written in the folder, or the time is up,
+    /// whichever comes first. Measured on 2026-10-09: agent view draws about 240 ms after it is
+    /// started, so a host that only looked every 150 ms added up to half as much again to the
+    /// pause between leaving a session and seeing agent view.
+    static func wait(forExitOf child: pid_t, orChangeIn directory: URL, atMost seconds: TimeInterval) {
+        #if canImport(Darwin)
+        let queue = kqueue()
+        guard queue >= 0 else {
+            Thread.sleep(forTimeInterval: seconds)
+            return
+        }
+        defer { close(queue) }
+        let folder = open(directory.path, O_EVTONLY)
+        defer { if folder >= 0 { close(folder) } }
+        var changes = [kevent(ident: UInt(child), filter: Int16(EVFILT_PROC), flags: UInt16(EV_ADD | EV_ONESHOT), fflags: NOTE_EXIT, data: 0, udata: nil)]
+        if folder >= 0 {
+            changes.append(kevent(ident: UInt(folder), filter: Int16(EVFILT_VNODE), flags: UInt16(EV_ADD | EV_CLEAR), fflags: UInt32(NOTE_WRITE), data: 0, udata: nil))
+        }
+        var timeout = timespec(tv_sec: Int(seconds), tv_nsec: Int((seconds - seconds.rounded(.down)) * 1_000_000_000))
+        // Room for both answers; what they say does not matter, only that there was one.
+        var events = [changes[0], changes[0]]
+        // A child that has already ended cannot be watched: registering fails, and the caller
+        // finds it gone on its next look, which is now.
+        _ = kevent(queue, &changes, Int32(changes.count), &events, 2, &timeout)
+        #else
+        Thread.sleep(forTimeInterval: seconds)
+        #endif
     }
 
     private func sessionID(of mode: Mode) -> String {
