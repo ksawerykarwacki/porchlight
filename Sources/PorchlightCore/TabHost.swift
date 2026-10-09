@@ -170,6 +170,7 @@ public struct TabHost {
         while true {
             let arguments = mode == .agentView ? commands.agentView : commands.attach(sessionID(of: mode))
             let child = try Self.spawn(arguments)
+            let waker = Waker(child: child, directory: channel.directory)
 
             var requested: String?
             var status: Int32?
@@ -180,7 +181,7 @@ public struct TabHost {
                     status = stop(child)
                     break
                 }
-                if status == nil { Self.wait(forExitOf: child, orChangeIn: channel.directory, atMost: pollInterval) }
+                if status == nil { waker.wait(atMost: pollInterval) }
             }
             // `claude attach` does not tidy the terminal when it is stopped by a signal.
             terminal.restore(afterForcedStop: requested != nil)
@@ -195,33 +196,60 @@ public struct TabHost {
         }
     }
 
-    /// Sleeps until the child ends, something is written in the folder, or the time is up,
-    /// whichever comes first. Measured on 2026-10-09: agent view draws about 240 ms after it is
-    /// started, so a host that only looked every 150 ms added up to half as much again to the
-    /// pause between leaving a session and seeing agent view.
-    static func wait(forExitOf child: pid_t, orChangeIn directory: URL, atMost seconds: TimeInterval) {
+    /// Wakes the host when its program ends or something is written in the channel's folder.
+    ///
+    /// Measured on 2026-10-09: agent view draws about 240 ms after it is started, so a host that
+    /// only looked every 150 ms added up to half as much again to the pause between leaving a
+    /// session and seeing agent view.
+    ///
+    /// The watch is set up once, before the host first looks, and stays until the program is
+    /// done: whatever happens after a look is then waiting in the queue at the next `wait`,
+    /// instead of being lost in the gap between looking and starting to listen.
+    final class Waker {
         #if canImport(Darwin)
-        let queue = kqueue()
-        guard queue >= 0 else {
-            Thread.sleep(forTimeInterval: seconds)
-            return
-        }
-        defer { close(queue) }
-        let folder = open(directory.path, O_EVTONLY)
-        defer { if folder >= 0 { close(folder) } }
-        var changes = [kevent(ident: UInt(child), filter: Int16(EVFILT_PROC), flags: UInt16(EV_ADD | EV_ONESHOT), fflags: NOTE_EXIT, data: 0, udata: nil)]
-        if folder >= 0 {
-            changes.append(kevent(ident: UInt(folder), filter: Int16(EVFILT_VNODE), flags: UInt16(EV_ADD | EV_CLEAR), fflags: UInt32(NOTE_WRITE), data: 0, udata: nil))
-        }
-        var timeout = timespec(tv_sec: Int(seconds), tv_nsec: Int((seconds - seconds.rounded(.down)) * 1_000_000_000))
-        // Room for both answers; what they say does not matter, only that there was one.
-        var events = [changes[0], changes[0]]
-        // A child that has already ended cannot be watched: registering fails, and the caller
-        // finds it gone on its next look, which is now.
-        _ = kevent(queue, &changes, Int32(changes.count), &events, 2, &timeout)
-        #else
-        Thread.sleep(forTimeInterval: seconds)
+        private let queue: Int32
+        private let folder: Int32
         #endif
+
+        init(child: pid_t, directory: URL) {
+            #if canImport(Darwin)
+            queue = kqueue()
+            folder = open(directory.path, O_EVTONLY)
+            guard queue >= 0 else { return }
+            var changes = [kevent(ident: UInt(child), filter: Int16(EVFILT_PROC), flags: UInt16(EV_ADD), fflags: NOTE_EXIT, data: 0, udata: nil)]
+            if folder >= 0 {
+                changes.append(kevent(ident: UInt(folder), filter: Int16(EVFILT_VNODE), flags: UInt16(EV_ADD | EV_CLEAR), fflags: UInt32(NOTE_WRITE), data: 0, udata: nil))
+            }
+            // Registered one by one: a child that has already ended cannot be watched, and that
+            // must not keep the folder from being watched.
+            for index in changes.indices {
+                _ = kevent(queue, &changes[index], 1, nil, 0, nil)
+            }
+            #endif
+        }
+
+        deinit {
+            #if canImport(Darwin)
+            if folder >= 0 { close(folder) }
+            if queue >= 0 { close(queue) }
+            #endif
+        }
+
+        /// Sleeps until one of the two happens, or the time is up. What happened is for the
+        /// caller to find out by looking.
+        func wait(atMost seconds: TimeInterval) {
+            #if canImport(Darwin)
+            guard queue >= 0 else {
+                Thread.sleep(forTimeInterval: seconds)
+                return
+            }
+            var timeout = timespec(tv_sec: Int(seconds), tv_nsec: Int((seconds - seconds.rounded(.down)) * 1_000_000_000))
+            var event = kevent(ident: 0, filter: 0, flags: 0, fflags: 0, data: 0, udata: nil)
+            _ = kevent(queue, nil, 0, &event, 1, &timeout)
+            #else
+            Thread.sleep(forTimeInterval: seconds)
+            #endif
+        }
     }
 
     private func sessionID(of mode: Mode) -> String {
