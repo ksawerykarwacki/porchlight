@@ -1,0 +1,57 @@
+name: CI
+
+# Builds, tests and bundles on every pull request and on main. Needs no secrets and gets a
+# read-only token, so it is safe for pull requests from forks.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# A newer push to the same pull request or branch makes the older run pointless. macOS minutes
+# are billed at ten times the Linux rate while the repository is private, so stop it.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: Build, test, bundle
+    # One job on one image, no matrix: see the cost note above.
+    #
+    # The image is pinned, not macos-latest, because the code needs a recent SDK: PaletteView uses
+    # glassEffect behind #available(macOS 26.0, *), which only compiles against the macOS 26 SDK or
+    # later, and the package is in Swift 6 language mode. macos-26 (arm64) ships Xcode 26.x with the
+    # macOS 26 SDKs; macos-15 and older do not have that SDK.
+    runs-on: macos-26
+    timeout-minutes: 30
+    env:
+      # Named explicitly so a change of the image's default Xcode cannot change what is built.
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Toolchain
+        run: |
+          sw_vers
+          xcodebuild -version
+          swift --version
+          xcrun --sdk macosx --show-sdk-version
+
+      # No cache of .build: the package has no dependencies to download, and a fresh checkout gives
+      # every source file a new modification time, so SwiftPM would rebuild a restored .build anyway.
+
+      - name: Build
+        run: swift build
+
+      - name: Test
+        run: swift test
+
+      - name: Bundle
+        run: |
+          ./scripts/make-app.sh
+          codesign --verify --deep --strict dist/Porchlight.app

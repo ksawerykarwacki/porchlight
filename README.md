@@ -43,6 +43,13 @@ swift run porchlight snooze <id> 1h   # pause reminders: 30m, 4h, tomorrow, chan
 open dist/Porchlight.app
 ```
 
+## Install
+
+There is no release to download yet. Build from source as above, or make a disk image with
+`./scripts/release.sh 0.1.0` (unsigned and not notarised, so for your own Mac). What a real release
+still needs, and a draft Homebrew cask, are in [`packaging/`](packaging/README.md). To work on
+Porchlight, start with [`CONTRIBUTING.md`](CONTRIBUTING.md).
+
 ## Reminders
 
 A session that keeps waiting gets a notification after 15 minutes, again with sound after 2 hours,

@@ -1,10 +1,20 @@
 #!/bin/bash
 # Assembles dist/Porchlight.app from the SwiftPM build. No Xcode needed.
 # The bundle is ad-hoc signed: good for local use, not for distribution.
+#
+#   ./scripts/make-app.sh [version]
+#
+# The version goes into the bundle's Info.plist. It is the first argument, else the VERSION
+# environment variable, else 0.0.1.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
-VERSION="${VERSION:-0.0.1}"
+VERSION="${1:-${VERSION:-0.0.1}}"
+# The version is written into XML below, so only the characters a version can hold are let through.
+if [[ ! "$VERSION" =~ ^[0-9A-Za-z][0-9A-Za-z.+-]*$ ]]; then
+    echo "make-app.sh: '$VERSION' is not a version (expected something like 0.1.0)" >&2
+    exit 2
+fi
 APP="dist/Porchlight.app"
 
 swift build -c release --product PorchlightApp
