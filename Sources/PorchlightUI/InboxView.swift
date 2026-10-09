@@ -68,7 +68,10 @@ public struct InboxActions {
     public var triage = TriageState()
     /// The clock the Triage tab's ages are measured against.
     public var triageNow = Date()
+    /// Reads the sessions again and then looks at what each idle one holds.
     public var reloadTriage: () -> Void = {}
+    /// Asks again whether this Mac has the on-device model, for the Settings page.
+    public var refreshSettings: () -> Void = {}
     public var askRemoveSafe: () -> Void = {}
     public var cancelRemoveSafe: () -> Void = {}
     public var confirmRemoveSafe: () -> Void = {}
@@ -169,7 +172,14 @@ public struct InboxView: View {
                     Task { await triage.load() }
                 }
             }
-            actions.reloadTriage = { Task { await triage.load() } }
+            actions.reloadTriage = {
+                Task {
+                    // The sessions first: a look at stale ones would judge what is no longer true.
+                    await model.reload()
+                    await triage.load()
+                }
+            }
+            actions.refreshSettings = { Task { await triage.refreshPlan() } }
             actions.askRemoveSafe = { triage.askRemoveSafe() }
             actions.cancelRemoveSafe = { triage.cancelRemoveSafe() }
             actions.confirmRemoveSafe = { Task { await triage.confirmRemoveSafe() } }
@@ -283,12 +293,10 @@ public struct InboxView: View {
                 // tallest of them and switching tabs never resizes its window. A window that
                 // gets shorter keeps its bottom edge, which would drop it away from the menu bar.
                 ZStack(alignment: .top) {
-                    // Shorter than the session list's limit: the settings scroll, so that a few
-                    // sessions do not sit in a panel as tall as the whole settings page.
-                    ScrollView { SettingsPage(actions: actions) }
-                        .frame(maxHeight: 360)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .shown(actions.showsSettings)
+                    // The settings' say in the height. Shorter than the session list's limit, so
+                    // that a few sessions do not sit in a panel as tall as the whole settings
+                    // page; the page itself is always longer than this and scrolls.
+                    Color.clear.frame(height: Self.settingsHeight)
                     ScrollView { sessionList }
                         .frame(maxHeight: 480)
                         // The menu-bar window sizes its content to the minimum it will accept, and
@@ -300,6 +308,13 @@ public struct InboxView: View {
                         .frame(maxHeight: 480)
                         .fixedSize(horizontal: false, vertical: true)
                         .shown(actions.showsTriage)
+                }
+                // Drawn over the stack rather than in it, so the settings scroll in whatever
+                // height the panel has. Inside the stack they kept their own 360 points and left
+                // a blank band below when another tab had made the panel taller.
+                .overlay {
+                    ScrollView { SettingsPage(actions: actions) }
+                        .shown(actions.showsSettings)
                 }
             } else if actions.showsTriage {
                 TriagePage(actions: actions, hover: hover)
@@ -314,6 +329,9 @@ public struct InboxView: View {
         }
         .frame(width: 400)
     }
+
+    /// How tall the panel's middle is when only the settings have a say.
+    static let settingsHeight: CGFloat = 360
 
     @ViewBuilder private var sessionList: some View {
         if !actions.setupSteps.isEmpty {
@@ -384,7 +402,10 @@ public struct InboxView: View {
             HStack(spacing: 2) {
                 QuietButton(title: "New session", symbol: "plus", id: "footer.new", hover: hover, action: actions.newSession)
                 QuietButton(title: "Agent view", symbol: "rectangle.stack", id: "footer.agents", hover: hover, action: actions.openAgentView)
-                QuietButton(title: "Refresh", symbol: "arrow.clockwise", id: "footer.refresh", hover: hover, action: actions.refresh)
+                // One button for whichever tab is showing, where the eye already expects it.
+                let refresh = FooterRefresh(actions)
+                QuietButton(title: refresh.title, symbol: "arrow.clockwise", id: "footer.refresh", hover: hover, action: refresh.action)
+                    .help(refresh.help)
                 Spacer()
                 QuietButton(title: "Quit", symbol: nil, id: "footer.quit", hover: hover, action: actions.quit)
             }
@@ -439,6 +460,33 @@ struct TabButton: View {
         .onHover { hover.set(id, $0) }
         .animation(.easeOut(duration: 0.12), value: hover.hovered == id)
         .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+/// The footer's Refresh button, which refreshes what the panel is showing.
+struct FooterRefresh {
+    let title: String
+    let help: String
+    let action: () -> Void
+
+    init(_ actions: InboxActions) {
+        if actions.showsTriage {
+            // The look takes a moment: git and GitHub are asked about each idle session.
+            title = actions.triage.isLoading ? "Looking…" : "Refresh"
+            help = "Read the sessions again and look at what each idle one holds"
+            action = actions.reloadTriage
+        } else if actions.showsSettings {
+            title = "Refresh"
+            help = "Read the sessions again, and check again what this Mac can do"
+            action = {
+                actions.refresh()
+                actions.refreshSettings()
+            }
+        } else {
+            title = "Refresh"
+            help = "Read the sessions again"
+            action = actions.refresh
+        }
     }
 }
 

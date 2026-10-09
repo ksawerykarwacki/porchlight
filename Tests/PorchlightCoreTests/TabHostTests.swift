@@ -93,8 +93,26 @@ import Testing
 
         // A child that is already gone, or a folder that is not there, never makes it wait long.
         started = Date()
-        TabHost.wait(forExitOf: 1_999_999, orChangeIn: directory.appendingPathComponent("nowhere"), atMost: 0.2)
+        TabHost.Waker(child: 1_999_999, directory: directory.appendingPathComponent("nowhere")).wait(atMost: 0.2)
         #expect(Date().timeIntervalSince(started) < 1)
+    }
+
+    /// What is written after the watch was set up but before the wait began is not lost.
+    @Test func aRequestWrittenBeforeTheWaitBeginsStillWakesIt() throws {
+        let directory = try scratch()
+        let child = try TabHost.spawn(["/bin/sleep", "30"])
+        defer { kill(child, SIGKILL) }
+        let waker = TabHost.Waker(child: child, directory: directory)
+        try Data("x".utf8).write(to: directory.appendingPathComponent("request.json"), options: .atomic)
+        var started = Date()
+        waker.wait(atMost: 10)
+        #expect(Date().timeIntervalSince(started) < 2)
+        // The same for the program ending in that gap.
+        kill(child, SIGKILL)
+        Thread.sleep(forTimeInterval: 0.2)
+        started = Date()
+        waker.wait(atMost: 10)
+        #expect(Date().timeIntervalSince(started) < 2)
     }
 
     @Test func ignoresRequestsThatAreNotPlainSessionIDs() async throws {

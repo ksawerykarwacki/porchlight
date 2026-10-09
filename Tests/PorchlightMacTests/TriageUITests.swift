@@ -316,6 +316,76 @@ final class TriageWorld {
         #expect(sessions > 300)
     }
 
+    /// When another tab makes the panel taller than the settings would be alone, the settings
+    /// scroll in all of that height instead of leaving a blank band under them.
+    @Test func theSettingsFillThePanelWhenAnotherTabMakesItTaller() async throws {
+        func scrollHeights(_ configure: (inout InboxActions) -> Void) -> [CGFloat] {
+            var actions = InboxActions()
+            configure(&actions)
+            let host = NSHostingView(rootView: InboxView(snapshot: StoreSnapshot(), now: TriageWorld.now, actions: actions))
+            host.frame = NSRect(origin: .zero, size: host.fittingSize)
+            host.layoutSubtreeIfNeeded()
+            var found: [CGFloat] = []
+            func walk(_ view: NSView) {
+                if view is NSScrollView { found.append(view.frame.height) }
+                view.subviews.forEach(walk)
+            }
+            walk(host)
+            return found.sorted()
+        }
+        // Many idle sessions: the Triage tab is at its limit, which is taller than the settings' own.
+        var tall = await state()
+        tall.items = (0..<4).flatMap { _ in tall.items }
+        let heights = scrollHeights { $0.triage = tall; $0.showsSettings = true }
+        let tallest = try #require(heights.last)
+        #expect(tallest > 400)
+        // The settings' scroll view is as tall as the tallest tab's.
+        #expect(heights.filter { abs($0 - tallest) < 1 }.count >= 2, "scroll views are \(heights)")
+
+        // With little in the other tabs the settings still get their own height, not less.
+        let alone = scrollHeights { $0.showsSettings = true }
+        #expect((alone.last ?? 0) >= 359, "scroll views are \(alone)")
+    }
+
+    @Test func theFootersRefreshDoesWhatTheShownTabNeeds() async {
+        var calls: [String] = []
+        var actions = InboxActions()
+        actions.refresh = { calls.append("sessions") }
+        actions.reloadTriage = { calls.append("triage") }
+        actions.refreshSettings = { calls.append("settings") }
+
+        // Sessions: the sessions, and nothing that asks git or GitHub.
+        FooterRefresh(actions).action()
+        #expect(calls == ["sessions"] && FooterRefresh(actions).title == "Refresh")
+
+        // Triage: one action that reads the sessions and then looks, and says so while it runs.
+        actions.showsTriage = true
+        FooterRefresh(actions).action()
+        #expect(calls == ["sessions", "triage"])
+        actions.triage.isLoading = true
+        #expect(FooterRefresh(actions).title == "Looking…")
+        actions.triage.isLoading = false
+        #expect(FooterRefresh(actions).title == "Refresh" && FooterRefresh(actions).help.contains("idle"))
+
+        // Settings: the sessions, and whether this Mac has the on-device model.
+        actions.showsTriage = false
+        actions.showsSettings = true
+        FooterRefresh(actions).action()
+        #expect(calls == ["sessions", "triage", "sessions", "settings"])
+        // A look in progress on another tab does not rename the button here.
+        actions.triage.isLoading = true
+        #expect(FooterRefresh(actions).title == "Refresh")
+
+        // The Triage tab has no button of its own for it any more: with nothing safe and no
+        // notes, its header is the one line of text.
+        var empty = InboxActions()
+        empty.showsTriage = true
+        empty.triage.hasLoaded = true
+        var withSafe = empty
+        withSafe.triage = await state()
+        #expect(try! height(withSafe) > (try! height(empty)))
+    }
+
     @Test func theTabsCallTheirActions() {
         var calls: [String] = []
         var actions = InboxActions()
