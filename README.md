@@ -99,6 +99,11 @@ opens the session in your terminal). The name is suggested from the prompt and c
 The palette also lists your sessions, the ones waiting on you first. Return opens the selected
 one; ⌘Return copies its suggested reply and opens it; ⌥Return snoozes it for an hour.
 
+To stop or remove a session, use the ⋯ menu on its row, ⌘S or ⌘D in the palette, or
+`porchlight stop <id>` and `porchlight rm <id>`. Both ask first. If Claude Code refuses to remove
+one, for example because its worktree has unpushed commits, Porchlight shows the reason and leaves
+the decision to you; it never forces a removal.
+
 To open the palette from any app, set a shortcut on the Settings tab ("Shortcut for a new
 session"): click "Use ⌃⌥⌘N", or record your own. None is set until you choose one, and Porchlight
 needs no extra permission for it.

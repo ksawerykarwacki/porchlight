@@ -87,20 +87,44 @@ public struct PaletteView: View {
             .padding(.vertical, 6)
         }
 
+        if let note = model.pendingControl?.question ?? model.controlMessage {
+            Divider()
+            // The question before a stop or removal, or what came of the last one; a refusal is
+            // Claude Code's own text.
+            Text(note)
+                .font(.system(size: 12.5))
+                .foregroundStyle(model.pendingControl == nil ? .secondary : .primary)
+                .lineLimit(6)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 18)
+                .padding(.vertical, 10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+
         Divider()
         HStack(spacing: 2) {
-            if let row = model.selectedSession {
+            if let pending = model.pendingControl {
+                KeyHint(keys: "↩", label: pending.action.verb, id: "palette.hint.choose", hover: hover, prominent: true, action: model.confirmFolder)
+                KeyHint(keys: "esc", label: "Cancel", id: "palette.hint.close", hover: hover, action: model.escape)
+            } else if let row = model.selectedSession {
                 KeyHint(keys: "↩", label: "Open", id: "palette.hint.choose", hover: hover, action: model.confirmFolder)
                 if row.suggestedReply != nil {
-                    KeyHint(keys: "⌘↩", label: "Copy reply and open", id: "palette.hint.reply", hover: hover, action: model.copyReplyAndOpenSelected)
+                    KeyHint(keys: "⌘↩", label: "Copy reply, open", id: "palette.hint.reply", hover: hover, action: model.copyReplyAndOpenSelected)
                 }
                 if row.isRetryable {
                     KeyHint(keys: "⌘R", label: "Retry", id: "palette.hint.retry", hover: hover, action: model.retrySelected)
                 }
                 if row.kind.needsUser {
-                    KeyHint(keys: "⌥↩", label: row.isSnoozed ? "Remind again" : "Snooze an hour", id: "palette.hint.snooze", hover: hover) {
+                    KeyHint(keys: "⌥↩", label: row.isSnoozed ? "Remind again" : "Snooze 1h", id: "palette.hint.snooze", hover: hover) {
                         Task { await model.snoozeSelected() }
                     }
+                }
+                if row.canStop {
+                    KeyHint(keys: "⌘S", label: "Stop", id: "palette.hint.stop", hover: hover) { model.askControlSelected(.stop) }
+                }
+                if row.canRemove {
+                    KeyHint(keys: "⌘D", label: "Remove", id: "palette.hint.remove", hover: hover) { model.askControlSelected(.remove) }
                 }
             } else {
                 KeyHint(keys: "↩", label: "New session here", id: "palette.hint.choose", hover: hover, action: model.confirmFolder)

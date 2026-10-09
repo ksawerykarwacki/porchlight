@@ -28,6 +28,10 @@ let usage = """
                                               --no-name, --model, --effort, --agent,
                                               --permission-mode, --worktree[=NAME], --json
       porchlight name [--dir DIR] PROMPT      Print the name a session started with PROMPT would get
+      porchlight stop <id>                    Stop a background session; its conversation is kept
+      porchlight rm <id>                      Remove a background session. If Claude Code refuses, for
+                                              example because of unpushed commits, its reason is printed
+                                              and nothing is forced
       porchlight settings                     Print the settings in force, as JSON
       porchlight tab                          Run agent view in this tab and let the app switch it
                                               to a session when you click one
@@ -328,6 +332,10 @@ case "new":
     #else
     fail("new is only available on macOS")
     #endif
+case "stop":
+    await control(.stop, arguments: Array(arguments.dropFirst()))
+case "rm":
+    await control(.remove, arguments: Array(arguments.dropFirst()))
 case "dispatch":
     await dispatch(arguments: Array(arguments.dropFirst()))
 case "name":

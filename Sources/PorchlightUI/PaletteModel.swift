@@ -152,6 +152,12 @@ public final class PaletteModel {
     public var onCopyReply: (String) -> Void = { _ in }
     public var onSnooze: (String, SnoozeChoice) async -> Void = { _, _ in }
     public var onRetry: (String) -> Void = { _ in }
+    /// Stops or removes a session, once the user has confirmed it here.
+    public var onControl: (PendingControl) async -> ControlOutcome = { _ in .couldNotRun("Not available") }
+
+    /// A stop or removal waiting for Return, and what the last one came to.
+    public private(set) var pendingControl: PendingControl?
+    public private(set) var controlMessage: String?
     /// Opens Claude Code in a folder so the user can accept its trust prompt.
     public var onTrust: (String) -> Void = { _ in }
     public var onCopy: (String) -> Void = { _ in }
@@ -167,6 +173,8 @@ public final class PaletteModel {
     /// time stays on screen until the new list arrives.
     public func begin() async {
         step = .folder
+        pendingControl = nil
+        controlMessage = nil
         query = ""
         selection = 0
         folder = nil
@@ -197,6 +205,7 @@ public final class PaletteModel {
 
     public func setQuery(_ text: String) {
         guard text != query else { return }
+        pendingControl = nil
         query = text
         selection = 0
         rank()
@@ -285,6 +294,8 @@ public final class PaletteModel {
     public func moveSelection(by offset: Int) {
         let count = items.count
         guard count > 0 else { return }
+        // The question was about the row that was selected.
+        pendingControl = nil
         selection = max(0, min(count - 1, selection + offset))
     }
 
@@ -296,6 +307,10 @@ public final class PaletteModel {
     /// selected folder.
     public func confirmFolder() {
         guard step == .folder else { return }
+        if pendingControl != nil {
+            Task { await confirmControl() }
+            return
+        }
         switch selectedItem {
         case .session(let row): open(row)
         case .repo(let repo): choose(repo)
@@ -323,6 +338,28 @@ public final class PaletteModel {
     public func snoozeSelected() async {
         guard step == .folder, let row = selectedSession, row.kind.needsUser else { return }
         await onSnooze(row.id, row.isSnoozed ? .wake : .hour)
+        sessions = await services.sessions()
+        rank()
+    }
+
+    /// Asks to stop or remove the selected session. Return then does it; Escape or moving on
+    /// does not.
+    public func askControlSelected(_ action: SessionAction) {
+        guard step == .folder, let row = selectedSession, action == .stop ? row.canStop : row.canRemove else { return }
+        controlMessage = nil
+        pendingControl = PendingControl(sessionID: row.id, name: row.title, action: action)
+    }
+
+    public func cancelControl() {
+        pendingControl = nil
+    }
+
+    public func confirmControl() async {
+        guard let pending = pendingControl else { return }
+        pendingControl = nil
+        let outcome = await onControl(pending)
+        // A refusal is shown in the CLI's own words.
+        controlMessage = outcome.succeeded ? pending.action.done(name: pending.name) : outcome.message
         sessions = await services.sessions()
         rank()
     }
@@ -464,7 +501,12 @@ public final class PaletteModel {
     /// Escape: one step back, and out of the palette from its first step.
     public func escape() {
         switch step {
-        case .folder: onClose()
+        case .folder:
+            if pendingControl != nil {
+                pendingControl = nil
+            } else {
+                onClose()
+            }
         case .prompt: back()
         case .starting: break
         case .started: onClose()

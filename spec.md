@@ -215,6 +215,15 @@ Acceptance: from any app, hotkey → type 3 letters of a repo → Enter → type
 - Return on a session opens it in the terminal. On a selected session: ⌘Return copies its suggested reply and opens it, ⌥Return snoozes it for an hour (or turns reminders back on), ⌘R retries one stopped on a passing failure. Each is shown in the bottom bar only when it applies, and is a button as well.
 - Opening a session hands the keyboard to the terminal. When the terminal was already the front app, asking macOS to activate it does nothing and the terminal never learns it has the keyboard back (seen with Warp), so Porchlight becomes the active app for a moment first. The activity log records who had focus at each step.
 
+**Built as M4 (2026-10-09): stop and remove.** `SessionControl` in the core, `porchlight stop <id>` and `porchlight rm <id>` in the tool, a menu on each row and ⌘S / ⌘D in the palette.
+
+- Only `claude stop <id>` and `claude rm <id>` are run, with nothing but the id. `--discard-unpushed` and `--force-remove-worktree` are never passed and cannot be passed through the tool. An id that could be read as a flag is refused before anything runs.
+- Both are offered for background sessions only (a session in a terminal of its own is ended there); stop is not offered for a finished one.
+- Both ask first, inside the row or in the palette's bottom bar, saying what will happen. Escape, moving the selection or typing drops the question.
+- When Claude Code refuses, its text is shown unchanged and stays until dismissed, with Open in terminal next to it: what to discard is for the user to decide there. The sessions are read again straight after a stop or removal.
+- **Verified against the real CLI (v2.1.294):** a throwaway session `92163bcc` started in a trusted probe repository was stopped and removed through `porchlight`; `claude stop` printed `stopped 92163bcc` and `claude rm` printed `removed 92163bcc`. The same run showed the real refusal for an untrusted folder, which matched what `DispatchFailure` expects.
+- **Not verified:** a real refusal from `claude rm` (it needs a session with unpushed commits in a worktree). The stand-in's refusal text is invented; only "non-zero exit, show what it said" is relied on.
+
 ### 6.4 Naming — v1 (at dispatch) **[PROPOSED]**
 
 **FR-NM1** Name template setting, default `{slug}`. Tokens: `{repo}`, `{branch}` (current branch of the chosen dir), `{ticket}` (first match of a user-configured regex against prompt then branch; empty by default — no ticket system assumed), `{slug}` (first 3–4 significant words of the prompt, kebab-case), `{date}`.
@@ -483,7 +492,7 @@ Read on 2026-10-08: Claude Code's licence line ("Use is subject to Anthropic's C
 2. **M1 Read-only inbox:** AgentsCLISource, SessionStore, menu bar with badge and grouped list, Open via one terminal adapter + clipboard fallback.
 3. **M2 Nagger:** notifications with actions, ladder, snooze, quiet hours, digest.
 4. **M3 Launcher:** RepoIndex, palette, dispatch with flags, naming template, frecency. **[BUILT 2026-10-09, see §6.3 to §6.5; a first real dispatch from the palette worked on 2026-10-09; the shortcut is still to be tried in the running app]**
-5. **M4 Enrichment:** JobStateSource (question, suggested reply, updatedAt) behind schema check; stop/rm with confirmations.
+5. **M4 Enrichment:** JobStateSource (question, suggested reply, updatedAt) behind schema check; stop/rm with confirmations. **[BUILT 2026-10-09: enrichment in M1; stop and remove below]**
 6. **M5 Ship:** onboarding, settings, signing/notarization, cask, README/CONTRIBUTING, CI.
 
 Each milestone ends usable; M1 alone already addresses P1 partially.

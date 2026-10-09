@@ -10,6 +10,13 @@ public struct InboxActions {
     public var openAgentView: () -> Void = {}
     /// Opens the palette that starts a new session.
     public var newSession: () -> Void = {}
+    /// A stop or removal waiting to be confirmed, and the last one that was refused.
+    public var pendingControl: PendingControl?
+    public var controlProblem: ControlProblem?
+    public var askControl: (SessionAction, String) -> Void = { _, _ in }
+    public var cancelControl: () -> Void = {}
+    public var confirmControl: () -> Void = {}
+    public var dismissControlProblem: () -> Void = {}
     /// The shortcut that opens the new-session palette from any app.
     public var hotkey: Hotkey?
     public var setHotkey: (Hotkey?) -> Void = { _ in }
@@ -94,6 +101,12 @@ public struct InboxView: View {
     public init(model: InboxModel, newSession: @escaping () -> Void = {}, quit: @escaping () -> Void) {
         var actions = InboxActions()
         actions.newSession = newSession
+        actions.pendingControl = model.pendingControl
+        actions.controlProblem = model.controlProblem
+        actions.askControl = { action, id in model.askControl(action, sessionID: id) }
+        actions.cancelControl = { model.cancelControl() }
+        actions.confirmControl = { Task { await model.confirmControl() } }
+        actions.dismissControlProblem = { model.dismissControlProblem() }
         actions.hotkey = model.hotkey
         actions.setHotkey = { model.setHotkey($0) }
         actions.open = { model.open(sessionID: $0) }
@@ -370,31 +383,60 @@ struct InboxRowView: View {
             .buttonStyle(.plain)
             .help("Open in your terminal")
             .overlay(alignment: .bottomTrailing) {
-                if waits {
-                    // Shown for the row under the pointer, and always for a snoozed one, so a
-                    // snooze can be seen and undone.
-                    Group {
-                        if drawsMenus {
-                            Menu {
-                                ForEach(row.snoozeChoices, id: \.self) { choice in
-                                    Button(choice.title) { actions.snooze(row.id, choice) }
+                HStack(spacing: 10) {
+                    if waits {
+                        // Shown for the row under the pointer, and always for a snoozed one, so
+                        // a snooze can be seen and undone.
+                        Group {
+                            if drawsMenus {
+                                Menu {
+                                    ForEach(row.snoozeChoices, id: \.self) { choice in
+                                        Button(choice.title) { actions.snooze(row.id, choice) }
+                                    }
+                                } label: {
+                                    snoozeLabel
                                 }
-                            } label: {
+                                .menuStyle(.borderlessButton)
+                                .menuIndicator(.hidden)
+                                .fixedSize()
+                            } else {
                                 snoozeLabel
+                                    .foregroundStyle(.secondary)
                             }
-                            .menuStyle(.borderlessButton)
-                            .menuIndicator(.hidden)
-                            .fixedSize()
-                        } else {
-                            snoozeLabel
-                                .foregroundStyle(.secondary)
                         }
+                        .opacity(isHovered || row.isSnoozed ? 1 : 0)
+                        .help(row.isSnoozed ? "Reminders are paused for this session" : "Pause reminders for this session")
                     }
-                    .padding(.trailing, 10)
-                    .padding(.bottom, 6)
-                    .opacity(isHovered || row.isSnoozed ? 1 : 0)
-                    .help(row.isSnoozed ? "Reminders are paused for this session" : "Pause reminders for this session")
+                    if row.canStop || row.canRemove {
+                        // Stop and remove ask before they do anything, so they sit one click away.
+                        Group {
+                            if drawsMenus {
+                                Menu {
+                                    if row.canStop {
+                                        Button("Stop…") { actions.askControl(.stop, row.id) }
+                                    }
+                                    if row.canRemove {
+                                        Button("Remove…") { actions.askControl(.remove, row.id) }
+                                    }
+                                } label: {
+                                    Image(systemName: "ellipsis")
+                                        .font(.system(size: 11.5, weight: .medium))
+                                }
+                                .menuStyle(.borderlessButton)
+                                .menuIndicator(.hidden)
+                                .fixedSize()
+                            } else {
+                                Image(systemName: "ellipsis")
+                                    .font(.system(size: 11.5, weight: .medium))
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .opacity(isHovered ? 1 : 0)
+                        .help("Stop or remove this session")
+                    }
                 }
+                .padding(.trailing, 10)
+                .padding(.bottom, 6)
             }
 
             if row.suggestedReply != nil {
@@ -437,6 +479,19 @@ struct InboxRowView: View {
                 }
                 .padding(.leading, 30)
                 .padding(.bottom, 8)
+            }
+
+            if let pending = actions.pendingControl, pending.sessionID == row.id {
+                ControlNote(
+                    title: nil, text: pending.question, monospaced: false,
+                    primary: (pending.action.verb, actions.confirmControl), secondary: ("Cancel", actions.cancelControl),
+                    id: "control.\(row.id)", hover: hover)
+            } else if let problem = actions.controlProblem, problem.sessionID == row.id {
+                // Claude Code's own words: for a removal they say what would be lost.
+                ControlNote(
+                    title: problem.title, text: problem.text, monospaced: true,
+                    primary: ("Open in terminal", { actions.open(row.id) }), secondary: ("Dismiss", actions.dismissControlProblem),
+                    id: "problem.\(row.id)", hover: hover)
             }
         }
         .background(
@@ -511,6 +566,55 @@ struct OptionChip: View {
         .padding(.vertical, 3)
         .background(Capsule().fill(recommended ? Lamp.light.opacity(0.22) : Color.primary.opacity(0.06)))
         .overlay(Capsule().strokeBorder(recommended ? Lamp.light.opacity(0.55) : Color.primary.opacity(0.10), lineWidth: 1))
+    }
+}
+
+/// A question or a refusal shown inside a row, with the two things that can be done about it.
+struct ControlNote: View {
+    let title: String?
+    let text: String
+    let monospaced: Bool
+    let primary: (title: String, action: () -> Void)
+    let secondary: (title: String, action: () -> Void)
+    let id: String
+    let hover: HoverTracker
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if let title {
+                Text(title)
+                    .font(.system(size: 12, weight: .semibold))
+            }
+            Text(text)
+                .font(monospaced ? .system(size: 11.5, design: .monospaced) : .system(size: 12))
+                .foregroundStyle(monospaced ? .secondary : .primary)
+                .lineLimit(8)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 6) {
+                button(primary.title, id: "\(id).primary", strong: true, action: primary.action)
+                button(secondary.title, id: "\(id).secondary", strong: false, action: secondary.action)
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.primary.opacity(0.06)))
+        .padding(.leading, 30)
+        .padding(.trailing, 10)
+        .padding(.bottom, 8)
+    }
+
+    private func button(_ title: String, id: String, strong: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 11.5, weight: strong ? .semibold : .medium))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .background(Capsule().fill(strong ? Lamp.ember.opacity(hover.hovered == id ? 0.30 : 0.20) : Color.primary.opacity(hover.hovered == id ? 0.16 : 0.08)))
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .onHover { hover.set(id, $0) }
     }
 }
 

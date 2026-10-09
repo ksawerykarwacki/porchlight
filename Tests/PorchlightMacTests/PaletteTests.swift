@@ -562,7 +562,7 @@ enum PaletteSessions {
 
     static func session(_ id: String, _ name: String, _ repo: String, _ state: SessionState, waited: TimeInterval = 600) -> Session {
         Session(
-            summary: SessionSummary(id: id, name: name, cwd: "/Users/u/code/\(repo)", state: state),
+            summary: SessionSummary(id: id, name: name, cwd: "/Users/u/code/\(repo)", kind: "background", state: state),
             observedBlockedSince: state == .blocked ? now - waited : nil)
     }
 

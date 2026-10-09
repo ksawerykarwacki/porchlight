@@ -99,3 +99,20 @@ func dispatch(arguments: [String]) async {
         await open(arguments: [started.id])
     }
 }
+
+/// `porchlight stop <id>` and `porchlight rm <id>`. Typing the command is the confirmation; no
+/// flag is passed on, so nothing Claude Code refuses can be forced from here.
+func control(_ action: SessionAction, arguments: [String]) async {
+    let name = action == .stop ? "stop" : "rm"
+    guard arguments.count == 1, let id = arguments.first, !id.hasPrefix("-") else {
+        fail("usage: porchlight \(name) <id>", code: 2)
+    }
+    let settings = Settings.load()
+    let locator = ClaudeLocator(override: ProcessInfo.processInfo.environment["PORCHLIGHT_CLAUDE"] ?? settings.claudePath)
+    guard let claude = locator.locate() else { fail(describe(.claudeNotFound(candidates: locator.candidates()))) }
+    switch await SessionControl(claude: claude).run(action, id: id) {
+    case .done(let text): print(text.isEmpty ? action.done(name: id) : text)
+    case .refused(let text): fail(text)
+    case .couldNotRun(let text): fail(text)
+    }
+}

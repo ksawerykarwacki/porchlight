@@ -43,6 +43,12 @@ public final class InboxModel {
     public let hover = HoverTracker()
     /// The result of the last action, shown briefly at the bottom of the inbox.
     public private(set) var notice: String?
+    /// A stop or removal waiting for the user to confirm it.
+    public private(set) var pendingControl: PendingControl?
+    /// The last stop or removal Claude Code refused, kept until it is dismissed.
+    public private(set) var controlProblem: ControlProblem?
+    /// Set only by tests; otherwise the installed `claude` is run.
+    var runControl: (@Sendable (SessionAction, String) async -> ControlOutcome)?
     /// Called just before a terminal is brought forward. The app closes the menu-bar panel here:
     /// while the panel is open it keeps the keyboard, so the terminal would come to the front
     /// without taking the typing.
@@ -255,6 +261,52 @@ public final class InboxModel {
         apply(await store.snapshot)
         show("Started \(started.name ?? "a session") (\(started.id))")
         if open { self.open(sessionID: started.id) }
+    }
+
+    /// Asks to stop or remove a session. Nothing happens until `confirmControl`.
+    public func askControl(_ action: SessionAction, sessionID: String) {
+        guard let session = snapshot.sessions.first(where: { $0.id == sessionID }), action.applies(to: session) else { return }
+        controlProblem = nil
+        pendingControl = PendingControl(sessionID: sessionID, name: session.name, action: action)
+    }
+
+    public func cancelControl() {
+        pendingControl = nil
+    }
+
+    public func dismissControlProblem() {
+        controlProblem = nil
+    }
+
+    /// Carries out the stop or removal that was asked for, and returns what happened. A refusal
+    /// is kept, in the CLI's words, until the user dismisses it.
+    @discardableResult
+    public func confirmControl() async -> ControlOutcome? {
+        guard let pending = pendingControl else { return nil }
+        pendingControl = nil
+        return await control(pending)
+    }
+
+    /// Stops or removes a session that the user has already confirmed elsewhere (the palette).
+    @discardableResult
+    public func control(_ pending: PendingControl) async -> ControlOutcome {
+        let outcome: ControlOutcome
+        if let runControl {
+            outcome = await runControl(pending.action, pending.sessionID)
+        } else if let claude = locator.locate() {
+            outcome = await SessionControl(claude: claude).run(pending.action, id: pending.sessionID)
+        } else {
+            outcome = .couldNotRun("The claude command was not found")
+        }
+        log?.record("\(pending.action.rawValue) \(pending.sessionID): \(outcome.succeeded ? "done" : "not done: \(outcome.message)")")
+        if outcome.succeeded {
+            show(pending.action.done(name: pending.name))
+            await store.refresh()
+            apply(await store.snapshot)
+        } else {
+            controlProblem = ControlProblem(sessionID: pending.sessionID, action: pending.action, text: outcome.message)
+        }
+        return outcome
     }
 
     /// Opens Claude Code in a folder it has not been used in, so the user can answer its trust

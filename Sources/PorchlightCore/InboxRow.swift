@@ -40,12 +40,17 @@ public struct InboxRow: Sendable, Equatable, Identifiable {
     /// Waiting only because of a passing failure (a limit, a sleeping laptop, an API that was
     /// down), so trying again is likely all it needs.
     public let isRetryable: Bool
+    /// Whether the session can be stopped, and whether it can be removed, from here.
+    public let canStop: Bool
+    public let canRemove: Bool
 
     public init(
         session: Session, snooze: Snooze? = nil, overdueAfter: TimeInterval = MenuBarStatus.defaultOverdueAfter,
         transientErrors: TransientErrors = TransientErrors(), now: Date = Date()
     ) {
         isRetryable = transientErrors.isTransientFailure(session)
+        canStop = SessionAction.stop.applies(to: session)
+        canRemove = SessionAction.remove.applies(to: session)
         isSnoozed = session.needsHuman && (snooze?.isActive(waitingSince: session.waitingSince, now: now) ?? false)
         id = session.id
         title = session.name

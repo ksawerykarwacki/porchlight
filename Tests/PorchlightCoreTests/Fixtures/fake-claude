@@ -2,7 +2,7 @@
 # Stand-in for the `claude` CLI in tests. Records how it was called and replays fixtures.
 #
 #   FAKE_CLAUDE_LOG    file that receives the working directory and argv, NUL-separated
-#   FAKE_CLAUDE_MODE   untrusted | broken-json | fail | hang | old-help | no-id | refuse (default: normal)
+#   FAKE_CLAUDE_MODE   untrusted | broken-json | fail | hang | old-help | no-id | refuse | stop-fail | rm-refused (default: normal)
 set -u
 here="$(cd "$(dirname "$0")" && pwd)"
 
@@ -25,6 +25,22 @@ case "${1:-}" in
             broken-json) echo "{not json" ;;
             *) cat "$here/agents-all.json" ;;
         esac
+        ;;
+    stop)
+        if [ "$mode" = "stop-fail" ]; then
+            echo "No background session matches ${2:-}" >&2
+            exit 1
+        fi
+        echo "stopped ${2:-}"
+        ;;
+    rm)
+        # "stopped <id>" and "removed <id>" are what the real CLI printed on 2.1.294. The refusal's
+        # wording is a stand-in; the real one names the value --discard-unpushed takes.
+        if [ "$mode" = "rm-refused" ]; then
+            printf 'Not removed: worktree fix-login has 2 unpushed commits.\nTo discard them: claude rm %s --discard-unpushed 1a2b3c4@wt-9\n' "${2:-}" >&2
+            exit 1
+        fi
+        echo "removed ${2:-}"
         ;;
     --help)
         if [ "$mode" = "old-help" ]; then cat "$here/claude-help-old.txt"; else cat "$here/claude-help.txt"; fi

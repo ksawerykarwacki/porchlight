@@ -10,6 +10,9 @@ final class PalettePanel: NSPanel {
     /// ⌘Return and ⌘R when no view of its own took them: actions on the selected session.
     var onCommandReturn: (() -> Void)?
     var onCommandR: (() -> Void)?
+    /// ⌘S and ⌘D: ask to stop or remove the selected session.
+    var onCommandS: (() -> Void)?
+    var onCommandD: (() -> Void)?
 
     init() {
         super.init(
@@ -53,8 +56,8 @@ final class PalettePanel: NSPanel {
             onCommandReturn?()
             return true
         }
-        if modifiers == .command, event.charactersIgnoringModifiers?.lowercased() == "r" {
-            onCommandR?()
+        if modifiers == .command, let key = event.charactersIgnoringModifiers?.lowercased(), let action = ["r": onCommandR, "s": onCommandS, "d": onCommandD][key] {
+            action?()
             return true
         }
         let action: Selector? =
@@ -114,6 +117,8 @@ public final class PaletteController {
         panel.onConfirm = { [weak self] in self?.model.confirm() }
         panel.onCommandReturn = { [weak self] in self?.model.copyReplyAndOpenSelected() }
         panel.onCommandR = { [weak self] in self?.model.retrySelected() }
+        panel.onCommandS = { [weak self] in self?.model.askControlSelected(.stop) }
+        panel.onCommandD = { [weak self] in self?.model.askControlSelected(.remove) }
         let content = PaletteView(
             model: model, hover: hover, browse: { [weak self] in self?.chooseFolder(asRoot: false) },
             addRoot: { [weak self] in self?.chooseFolder(asRoot: true) }
