@@ -1,5 +1,14 @@
 # Releasing Porchlight
 
+> **How Porchlight is installed today:** from source, through the Homebrew formula in
+> [`../Formula/porchlight.rb`](../Formula/porchlight.rb) (see the README). That needs no Apple
+> Developer ID, because an app built on the user's own Mac is never quarantined.
+>
+> **What this folder is for:** a downloadable release. An app that is *downloaded* is quarantined,
+> and macOS then refuses one that is only ad-hoc signed. So the disk image and the cask below are
+> of no use to other people until the app is signed with a Developer ID and notarised. Do not
+> publish them before that.
+
 No release of Porchlight has been made. This folder holds what a first release needs that could be
 prepared without an Apple Developer account:
 

@@ -45,10 +45,23 @@ open dist/Porchlight.app
 
 ## Install
 
-There is no release to download yet. Build from source as above, or make a disk image with
-`./scripts/release.sh 0.1.0` (unsigned and not notarised, so for your own Mac). What a real release
-still needs, and a draft Homebrew cask, are in [`packaging/`](packaging/README.md). To work on
-Porchlight, start with [`CONTRIBUTING.md`](CONTRIBUTING.md).
+With [Homebrew](https://brew.sh), which builds Porchlight from source on your Mac:
+
+```sh
+brew trust --formula ksawerykarwacki/porchlight/porchlight
+brew tap ksawerykarwacki/porchlight https://github.com/ksawerykarwacki/porchlight.git
+brew install --HEAD porchlight
+brew services start porchlight     # start now, and at every login
+```
+
+It needs the Xcode Command Line Tools and takes a few minutes to build. Because it is built on your
+Mac and not downloaded as an app, macOS does not ask for it to be notarised. To update, use
+**Update and restart** on the Settings tab, or `brew upgrade --fetch-HEAD porchlight`. To remove it:
+`brew services stop porchlight && brew uninstall porchlight`.
+
+Install it one way only: a copy built by hand with `./scripts/make-app.sh` would run alongside the
+Homebrew one. To work on Porchlight, start with [`CONTRIBUTING.md`](CONTRIBUTING.md); what a signed,
+downloadable release would still need is in [`packaging/`](packaging/README.md).
 
 ## Reminders
 

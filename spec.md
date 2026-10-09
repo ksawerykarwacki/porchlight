@@ -283,6 +283,14 @@ Acceptance: from any app, hotkey → type 3 letters of a repo → Enter → type
 - Not verified: open at login on a real restart, and whether the system accepts an ad-hoc signed app as a login item at all.
 - Still to do in M5, all needing the owner: Developer ID signing and notarisation, the time-sensitive entitlement and the Focus decision that come with it, automatic updates, publishing a release and the cask, making the repository public.
 
+**Built as distribution for v1 (2026-10-09): a source-built Homebrew formula and an Update button.** Decision D10 changes with it: no Apple Developer account is needed for a first release.
+
+- `Formula/porchlight.rb` builds from `main` on the user's machine by calling `scripts/make-app.sh` (with `--disable-sandbox` for SwiftPM, since Homebrew's own sandbox cannot be nested), installs the bundle and links the `porchlight` tool. An app built locally carries no quarantine mark, so macOS never asks for notarisation and the ad-hoc signature is enough. Verified here with Homebrew 7.0.9: installed from a throwaway tap pointing at the branch, the bundle was ad-hoc signed, not quarantined, at a path naming its commit, and `brew test` passed; it was removed again.
+- Updates: there is no version number, the commit is the version. The app reads its commit from its own Homebrew path (`…/Cellar/porchlight/HEAD-<sha>/`, after resolving the link the service starts it through), asks `git ls-remote` for `main` once an hour with `GIT_TERMINAL_PROMPT=0`, and offers "Update and restart" on the Settings tab. That runs `brew upgrade --fetch-HEAD` on the fully qualified formula, then restarts through `brew services restart` when the service is loaded, or by opening the new bundle otherwise, from a process in its own session so it survives the app quitting. A copy not installed by Homebrew says updates are off.
+- A Homebrew install is started at login by `brew services`, so the app's own "Open at login" switch is hidden there: two mechanisms would start two copies.
+- The disk image and cask in `packaging/` are kept for a later signed release. Unsigned, they must not be published: a downloaded app is quarantined and macOS refuses it.
+- Not verified: the Update button in a real Homebrew install (it needs the formula on `main`), `brew services start` surviving a logout, whether notification permission survives a rebuild, and the install on a machine other than this one. While the repository is private, the tap and the update check only work with the owner's git credentials.
+
 ### 6.7 Roadmap after v1
 
 - **v1.1** Phone webhook (FR-N7), naming hook installer (FR-NM4), transient-error retry (once spike resolved).
@@ -498,7 +506,7 @@ Read on 2026-10-08: Claude Code's licence line ("Use is subject to Anthropic's C
 | D7 | Duplicate Claude's own first notification | **[PROPOSED, built as the default 2026-10-08]** No: the ladder starts at 15 min. Adding `0` to the ladder setting turns the immediate reminder on. |
 | D8 | LLM-generated names | **[OPEN]** Off by default if built. |
 | D9 | Minimum Claude Code version | **[PROPOSED]** Provisionally 2.1.294, the only version verified. TODO: find in the changelog the version that introduced `claude agents --json --all` with `state` and lower the minimum to it. |
-| D10 | Distribution | **[PROPOSED]** GitHub releases (notarized DMG) + Homebrew cask + Sparkle. |
+| D10 | Distribution | **[DECIDED 2026-10-09 for v1]** A Homebrew formula that builds from source, with an in-app Update button (§6.6). A notarised DMG, a cask and Sparkle only if a Developer ID is obtained later. |
 
 ## 15. Milestones (for the implementation plan)
 

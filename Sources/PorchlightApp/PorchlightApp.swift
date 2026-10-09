@@ -10,10 +10,16 @@ struct PorchlightApp: App {
     // models instead.
     private let model: InboxModel
     private let palette: PaletteController
+    private let updates: UpdateModel
     private let hotkey = GlobalHotkey()
 
     init() {
-        let model = InboxModel()
+        let updates = UpdateModel()
+        self.updates = updates
+        updates.restart = { AppRestart.relaunch() }
+        Task { await updates.run() }
+        // A Homebrew install is started at login by Homebrew's service, not by the app itself.
+        let model = updates.installed == nil ? InboxModel() : InboxModel(loginItem: .unavailable)
         self.model = model
         model.willOpenTerminal = { PanelWindowObserver.closePanelAndLetGo() }
         model.pickFolder = {
@@ -60,6 +66,7 @@ struct PorchlightApp: App {
         MenuBarExtra {
             InboxView(
                 model: model,
+                updates: updates,
                 // The palette replaces the panel rather than opening beside it.
                 newSession: {
                     PanelWindowObserver.closePanel()

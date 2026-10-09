@@ -33,6 +33,15 @@ public struct InboxActions {
     public var workspaceRoots: [String] = []
     public var removeWorkspaceRoot: (String) -> Void = { _ in }
     public var notificationProblem: String?
+    /// Updates of a Homebrew install: one line of status (nil hides the section), whether there
+    /// is something to install, and whether a check or an update is running.
+    public var updateSummary: String?
+    public var canUpdate = false
+    public var updateIsBusy = false
+    /// True when Homebrew installed this copy; opening at login is then Homebrew's to arrange.
+    public var installedWithHomebrew = false
+    public var checkForUpdate: () -> Void = {}
+    public var installUpdate: () -> Void = {}
     /// The shortcut that opens the new-session palette from any app.
     public var hotkey: Hotkey?
     public var setHotkey: (Hotkey?) -> Void = { _ in }
@@ -114,8 +123,16 @@ public struct InboxView: View {
         self.scrolls = scrolls
     }
 
-    public init(model: InboxModel, newSession: @escaping () -> Void = {}, quit: @escaping () -> Void) {
+    public init(model: InboxModel, updates: UpdateModel? = nil, newSession: @escaping () -> Void = {}, quit: @escaping () -> Void) {
         var actions = InboxActions()
+        if let updates {
+            actions.updateSummary = updates.summary
+            actions.canUpdate = updates.canUpdate
+            actions.updateIsBusy = [.checking, .updating, .restarting].contains(updates.state)
+            actions.installedWithHomebrew = updates.installed != nil
+            actions.checkForUpdate = { Task { await updates.check() } }
+            actions.installUpdate = { Task { await updates.update() } }
+        }
         actions.newSession = newSession
         actions.setupSteps = model.setupSteps
         actions.performSetup = { kind in Task { await model.performSetup(kind) } }
@@ -908,6 +925,15 @@ struct SettingsPage: View {
                     }
                 }
             }
+            if actions.installedWithHomebrew {
+                // Two ways to start at login would start two copies; Homebrew's is the one.
+                Text("To open Porchlight at login, run: brew services start porchlight")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.vertical, 4)
+            }
             row("Folders searched for repositories") {
                 Button("Add a folder…") { actions.performSetup(.workspace) }
                     .buttonStyle(.link)
@@ -932,6 +958,29 @@ struct SettingsPage: View {
                         .font(.system(size: 12))
                 }
                 .padding(.vertical, 2)
+            }
+            if let summary = actions.updateSummary {
+                Divider().padding(.vertical, 10)
+                Text("Updates")
+                    .font(.system(size: 13, weight: .semibold))
+                    .padding(.bottom, 2)
+                Text(summary)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                if actions.installedWithHomebrew, !actions.updateIsBusy {
+                    HStack(spacing: 14) {
+                        if actions.canUpdate {
+                            Button("Update and restart") { actions.installUpdate() }
+                                .buttonStyle(.link)
+                        }
+                        Button("Check now") { actions.checkForUpdate() }
+                            .buttonStyle(.link)
+                    }
+                    .font(.system(size: 12))
+                    .padding(.top, 4)
+                }
             }
             if let problem = actions.notificationProblem {
                 Divider().padding(.vertical, 10)
