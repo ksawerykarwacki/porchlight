@@ -351,6 +351,18 @@ import Testing
         window.close()
     }
 
+    @Test func thePanelCanBeClosedFromItsOwnButtons() {
+        let window = NSWindow(contentRect: NSRect(x: 200, y: 300, width: 400, height: 300), styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView?.addSubview(PanelWindowObserver.ObserverView())
+        window.orderFront(nil)
+        #expect(window.isVisible)
+        PanelWindowObserver.closePanel()
+        #expect(!window.isVisible)
+        // With no panel there is nothing to close, and nothing goes wrong.
+        PanelWindowObserver.closePanel()
+    }
+
     @Test func closingThePanelReturnsToTheSessionsTab() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("porchlight-panel-\(UUID().uuidString)")
         let model = InboxModel(settingsURL: Settings.fileURL(in: directory), remindersURL: ReminderState.fileURL(in: directory))

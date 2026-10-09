@@ -79,6 +79,12 @@ and the skipped names are under `repos` in `settings.json`.
 
 ## Starting a session
 
+Click **New session** in the menu-bar panel, or run `porchlight new`, for the palette: type a few
+letters of a repository, press Return, write what Claude should do, and press ⌘Return (⇧⌘Return also
+opens the session in your terminal). The name is suggested from the prompt and can be changed.
+
+The same from a terminal or a script:
+
 ```sh
 porchlight dispatch --repo api "Fix the rounding of invoice totals"
 ```

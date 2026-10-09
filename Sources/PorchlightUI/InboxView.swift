@@ -8,6 +8,8 @@ public struct InboxActions {
     public var copyReply: (String) -> Void = { _ in }
     public var snooze: (String, SnoozeChoice) -> Void = { _, _ in }
     public var openAgentView: () -> Void = {}
+    /// Opens the palette that starts a new session.
+    public var newSession: () -> Void = {}
     public var refresh: () -> Void = {}
     public var quit: () -> Void = {}
     /// Terminals the user can pick, as (identifier, name). Empty hides the chooser.
@@ -82,8 +84,9 @@ public struct InboxView: View {
         self.scrolls = scrolls
     }
 
-    public init(model: InboxModel, quit: @escaping () -> Void) {
+    public init(model: InboxModel, newSession: @escaping () -> Void = {}, quit: @escaping () -> Void) {
         var actions = InboxActions()
+        actions.newSession = newSession
         actions.open = { model.open(sessionID: $0) }
         actions.copyReply = { model.copyReply(sessionID: $0) }
         actions.snooze = { id, choice in Task { await model.snooze(sessionID: id, choice) } }
@@ -213,6 +216,7 @@ public struct InboxView: View {
                     .padding(.horizontal, 8)
             }
             HStack(spacing: 2) {
+                QuietButton(title: "New session", symbol: "plus", id: "footer.new", hover: hover, action: actions.newSession)
                 QuietButton(title: "Agent view", symbol: "rectangle.stack", id: "footer.agents", hover: hover, action: actions.openAgentView)
                 QuietButton(title: "Refresh", symbol: "arrow.clockwise", id: "footer.refresh", hover: hover, action: actions.refresh)
                 Spacer()

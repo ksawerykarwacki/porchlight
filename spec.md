@@ -154,6 +154,16 @@ Acceptance: from any app, hotkey → type 3 letters of a repo → Enter → type
 - Ranking: with nothing typed, pinned, then most used, then by name. Use is one point per dispatch, halved for every week since, plus a quarter point for having sessions at all. With text typed, match quality comes first and use or a pin only decides between matches that are about as good.
 - Not built here: the toast with Open (FR-L4) and "repeat last" (FR-L6) belong to the palette.
 
+**Built in M3 layer 4 (2026-10-09): the palette.** `PaletteModel`, `PaletteView` and `PaletteController` in the UI library.
+
+- A floating panel that takes the keyboard without making Porchlight the active app, so closing it returns the user to where they were. It opens from "New session" in the inbox and from `porchlight new`, which signals the running app (so any launcher or shortcut tool can open it too).
+- Step 1: type to search the repositories (ranking as in layer 3), arrows to move, Return to choose. Text that is a path to a folder offers that folder. "Browse…" picks any folder; "Add workspace folder…" adds a root and searches it; a row can be pinned; "Same as last time" picks the last folder and model (FR-L6).
+- Step 2: the prompt (Return is a new line, ⌘Return starts, ⇧⌘Return starts and opens), the name from the template, editable (FR-NM2), and options collapsed by default. Only options the installed CLI lists are shown. With `acceptEdits` the palette says that shell commands still stop and ask.
+- Result: "Started <name>" with the id and Open; the inbox reads the sessions at once, so the new one is there without waiting for a poll. Failure: the CLI's words, "Copy command", and for an untrusted folder "Open Claude Code there", which runs plain `claude` in that folder for the user to answer the trust prompt.
+- Design: the card is the system's glass material on macOS 26 and later (a blurred panel before that), with corners, rows and capsule controls sized to sit concentric. The menu-bar panel takes the system's own chrome.
+- The repositories are read again each time the palette opens instead of every few minutes in the background (FR-R4): the result is as fresh and costs nothing while the palette is closed.
+- Not verified: the panel in the running app (keyboard focus, glass, paste) is for the user to try; the tests cover the model and offscreen drawing.
+
 ### 6.4 Naming — v1 (at dispatch) **[PROPOSED]**
 
 **FR-NM1** Name template setting, default `{slug}`. Tokens: `{repo}`, `{branch}` (current branch of the chosen dir), `{ticket}` (first match of a user-configured regex against prompt then branch; empty by default — no ticket system assumed), `{slug}` (first 3–4 significant words of the prompt, kebab-case), `{date}`.

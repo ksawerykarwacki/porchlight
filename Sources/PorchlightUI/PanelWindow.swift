@@ -37,6 +37,16 @@ public struct PanelWindowObserver: NSViewRepresentable {
         (view as? ObserverView)?.onClose = onClose
     }
 
+    /// The menu-bar panel's window, while it exists.
+    @MainActor private(set) static weak var panel: NSWindow?
+
+    /// Closes the menu-bar panel, as clicking outside it would. For actions that put something
+    /// else on screen, which the panel would otherwise sit on top of.
+    @MainActor
+    public static func closePanel() {
+        panel?.close()
+    }
+
     final class ObserverView: NSView {
         var onClose: (() -> Void)?
         /// The top edge where the system last placed the window.
@@ -51,6 +61,7 @@ public struct PanelWindowObserver: NSViewRepresentable {
             observers.forEach(center.removeObserver)
             observers = []
             guard let window else { return }
+            PanelWindowObserver.panel = window
             // If the window is already on screen, where it is now is where the system put it.
             if window.isVisible { top = window.frame.maxY }
 

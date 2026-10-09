@@ -21,6 +21,7 @@ let usage = """
                                               ones matching TEXT
       porchlight repos root add|remove DIR    Choose the folders that are searched for repositories
       porchlight repos pin|unpin DIR          Keep a repository at the top of the list
+      porchlight new                          Show the app's palette for starting a session (macOS)
       porchlight dispatch [--dir DIR | --repo TEXT] [--open] PROMPT
                                               Start a background session in a folder (default: this
                                               one), named from the prompt. More options: --name,
@@ -318,6 +319,13 @@ case "status":
     await status(arguments: Array(arguments.dropFirst()))
 case "settings":
     settings()
+case "new":
+    #if canImport(PorchlightMac)
+    guard AppSignal.isAppRunning else { fail("Porchlight is not running. Start the app, or use: porchlight dispatch") }
+    AppSignal.newSession.post()
+    #else
+    fail("new is only available on macOS")
+    #endif
 case "dispatch":
     await dispatch(arguments: Array(arguments.dropFirst()))
 case "name":

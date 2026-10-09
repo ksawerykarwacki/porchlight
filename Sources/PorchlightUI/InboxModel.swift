@@ -12,8 +12,9 @@ public final class InboxModel {
     /// Set only by tests; otherwise a launcher is made for the chosen terminal on each open.
     private let injectedLauncher: (any TerminalLauncher)?
     private let locator: ClaudeLocator
+    private nonisolated let injectedLocator: ClaudeLocator?
     private let clock: @Sendable () -> Date
-    private let settingsURL: URL
+    private nonisolated let settingsURL: URL
     private let engine: ReminderEngine
     private var delivery: UserNotificationDelivery?
     private var log: ActivityLog?
@@ -64,6 +65,7 @@ public final class InboxModel {
         self.store = store
         self.injectedLauncher = launcher
         self.locator = locator ?? ClaudeLocator(override: settings.claudePath)
+        self.injectedLocator = locator
         self.settingsURL = settingsURL
         self.clock = clock
         self.installedTerminals = TerminalApp.allCases.filter { $0.installedPath() != nil }
@@ -189,6 +191,37 @@ public final class InboxModel {
 
     public func refresh() {
         Task { await store.refresh() }
+    }
+
+    /// The folders of the sessions that exist, for the list of places to start a new one.
+    public var sessionDirectories: [String] { snapshot.sessions.map(\.summary.cwd) }
+
+    /// Where `claude` is looked for, with the path from the settings as they are now.
+    public nonisolated var claudeLocator: ClaudeLocator {
+        injectedLocator ?? ClaudeLocator(override: Settings.load(from: settingsURL).claudePath)
+    }
+
+    /// Called when the palette started a session: reads the sessions straight away, so the new
+    /// one is in the inbox without waiting for the next poll, and opens it if asked.
+    public func sessionStarted(_ started: Dispatched, open: Bool) async {
+        log?.record("dispatched \(started.id) in \(started.directory)")
+        await store.refresh()
+        apply(await store.snapshot)
+        show("Started \(started.name ?? "a session") (\(started.id))")
+        if open { self.open(sessionID: started.id) }
+    }
+
+    /// Opens Claude Code in a folder it has not been used in, so the user can answer its trust
+    /// prompt. Porchlight never answers it for them.
+    public func openToTrust(folder: String) {
+        launch { claude in TerminalCommand(arguments: [claude], cwd: folder, title: "Claude Code") }
+    }
+
+    public func copy(_ text: String, saying message: String) {
+        Task {
+            let copied = (try? await CLIRunner().run(URL(fileURLWithPath: "/usr/bin/pbcopy"), [], input: text))?.succeeded ?? false
+            show(copied ? message : "Could not copy")
+        }
     }
 
     public func open(sessionID: String) {
