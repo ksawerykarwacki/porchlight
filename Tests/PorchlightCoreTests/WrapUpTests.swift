@@ -152,6 +152,15 @@ private func real(_ url: URL) -> URL {
         #expect((try? failed.get()) == nil && other.all().isEmpty)
     }
 
+    /// What haiku really answered for a throwaway session (lantern-probe, 2026-10-09): bold
+    /// headings although plain text was asked for.
+    @Test func theAnswerIsShownAsPlainText() {
+        let real = "**Doing:** Creating `hello.txt` in a git worktree.\n\n**Stopped at:** The file is committed.\n\n\n**Worth keeping:** The rename decision is open.\n"
+        #expect(WrapUp.tidy(real) == "Doing: Creating `hello.txt` in a git worktree.\n\nStopped at: The file is committed.\n\nWorth keeping: The rename decision is open.")
+        #expect(WrapUp.tidy(" \n ") == "")
+        #expect(WrapUp.prompt.contains("without Markdown"))
+    }
+
     @Test func theModelSettingFallsBackToASmallOne() throws {
         #expect(WrapUpSettings().model == "haiku")
         let decode = { (json: String) in try JSONDecoder().decode(WrapUpSettings.self, from: Data(json.utf8)) }

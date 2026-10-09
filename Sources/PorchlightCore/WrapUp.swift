@@ -147,10 +147,18 @@ public enum WrapUp {
 
     public static let prompt = """
         Summarise this session for its owner, who is deciding whether to answer it, keep it or delete it. \
-        Do not use any tools and do not continue the work. Plain text, under 120 words, in three short parts: \
+        Do not use any tools and do not continue the work. Plain text without Markdown, under 120 words, in three short parts: \
         "Doing:" what the session was working on; "Stopped at:" where it stands and what, if anything, it is waiting for; \
         "Worth keeping:" anything unfinished, undecided or learned that would be lost if it were deleted, or "nothing" if there is none.
         """
+
+    /// The answer as plain text. Asked for plain, the model was still seen to write
+    /// `**Doing:**` (haiku, 2026-10-09), and the row shows text as it is.
+    public static func tidy(_ answer: String) -> String {
+        ANSI.strip(answer).replacingOccurrences(of: "**", with: "")
+            .replacingOccurrences(of: "\n{3,}", with: "\n\n", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
 
     /// The flags from `requiredFlags` that the help text does not list.
     public static func missingFlags(help: String) -> [String] {
@@ -230,7 +238,7 @@ public struct SessionSummariser: Sendable {
                 let words = ANSI.strip(result.stderr).trimmingCharacters(in: .whitespacesAndNewlines)
                 return .failure(.failed(words.isEmpty ? ANSI.strip(result.stdout).trimmingCharacters(in: .whitespacesAndNewlines) : words))
             }
-            let summary = ANSI.strip(result.stdout).trimmingCharacters(in: .whitespacesAndNewlines)
+            let summary = WrapUp.tidy(result.stdout)
             return summary.isEmpty ? .failure(.empty) : .success(summary)
         } catch CLIError.timedOut(let seconds) {
             return .failure(.couldNotRun("no answer after \(Int(seconds)) seconds"))
