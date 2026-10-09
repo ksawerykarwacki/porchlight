@@ -187,6 +187,7 @@ session in agent view yourself, because nothing outside it can select a row ther
 |---|---|---|
 | Warp | a tab config plus `warp://tab_config/porchlight` | Opens a tab. Writes one file, `~/.warp/tab_configs/porchlight.toml`, which also appears in Warp's "+" menu. |
 | WezTerm | `wezterm start --cwd … -- …` | Opens a window. |
+| iTerm2 | a `.command` file | Opens a tab, or a window when none is open. No Automation permission needed. |
 | Terminal | a `.command` file | Opens a window. No Automation permission needed. |
 | Ghostty | `open -na Ghostty.app --args -e …` | Ghostty asks for confirmation every time; that is its own safeguard and cannot be turned off. |
 

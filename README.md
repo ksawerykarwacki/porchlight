@@ -136,7 +136,7 @@ To update, use **Update and restart** on the Settings tab. To remove it:
   what the session's worktree still holds.
 - **It is local.** No account, no server, no telemetry. See [Privacy](docs/guide.md#privacy) for
   exactly which files it reads.
-- **Your terminal, your way.** Warp, Terminal, WezTerm and Ghostty are supported; with anything
+- **Your terminal, your way.** Warp, iTerm2, Terminal, WezTerm and Ghostty are supported; with anything
   else the command is put on your clipboard. `porchlight tab` gives you one terminal tab that
   follows your clicks.
 - **There is a command line too.** `porchlight status`, `dispatch`, `triage`, `wrap-up`, `notes`

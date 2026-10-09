@@ -444,7 +444,7 @@ Goal: open a new tab/window in the user's terminal running `claude attach <id>` 
 | WezTerm | `open -na WezTerm.app --args start --cwd <dir> -- <command>` | Live |
 | Terminal.app | An executable `.command` file opened with `open -a Terminal`. No AppleScript, so no Automation prompt. | Live |
 | Ghostty | `open -na Ghostty.app --args --working-directory=<dir> -e <command>` | **Not checked.** Ghostty 1.2.3 shows "Allow Ghostty to execute …?" on every such launch, a deliberate safeguard with no setting to disable it. The user confirms once per open. |
-| iTerm2 | Not built: not installed on the development machine, and no adapter ships unseen. | — |
+| iTerm2 | The same executable `.command` file as Terminal, opened with `open -a iTerm`. No AppleScript, so no Automation prompt. Opens a tab in the window in front, or a window when there is none; the tab closes when the command ends. | Live on 3.7.4 (2026-10-09): ran the command at once and without asking, in the folder asked for (iTerm2 itself starts the file in the home folder; the script changes folder). A session open in it is found in the process table: its shell hangs off `iTermServer` in Application Support, and the `login … /Applications/iTerm.app/…/ShellLauncher` line above it names the app. A second open then brought iTerm2 forward instead of opening a tab. Not checked: a first launch with iTerm2's own first-run dialogs, and versions before 3.7. |
 | Fallback | The command on the clipboard (`pbcopy`), with a message saying so. | Test |
 
 **Opening where the user already is (M1, 2026-10-08).** In order:
