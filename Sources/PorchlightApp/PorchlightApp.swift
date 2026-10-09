@@ -15,6 +15,9 @@ struct PorchlightApp: App {
     private let hotkey = GlobalHotkey()
 
     init() {
+        // Before anything is started: an app opened at login has almost no PATH, and Claude Code
+        // hands the environment of whoever starts its supervisor to every session.
+        ShellEnvironment.adopt()
         let updates = UpdateModel()
         self.updates = updates
         updates.restart = { AppRestart.relaunch() }
