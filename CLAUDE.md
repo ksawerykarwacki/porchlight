@@ -37,7 +37,7 @@ Every side effect is passed in as a closure or protocol (the `claude` runner, th
 ## Fixed values
 
 - Bundle id `io.github.ksawerykarwacki.porchlight`; state in `~/Library/Application Support/Porchlight/` (`settings.json`, `reminders.json`, `dispatches.json`, `activity.log`); `PORCHLIGHT_STATE_DIR` overrides the folder.
-- `PORCHLIGHT_CLAUDE` overrides where `claude` is found; `PORCHLIGHT_NO_NOTIFICATIONS` turns delivery off; `PORCHLIGHT_KEEP_ENVIRONMENT` stops the app taking on the login shell's environment at launch; `PORCHLIGHT_FM` and `PORCHLIGHT_CONVERSATIONS_DIR` point at a stand-in `fm` and a made-up conversations folder.
+- `PORCHLIGHT_CLAUDE` overrides where `claude` is found; The app listens for the companion mod on `companion.sock` there (mode 0600; under `/tmp/porchlight-<uid>/` when the path is too long for a socket) and writes `companion.json` with the socket's path and a secret that is new at every launch. `PORCHLIGHT_NO_NOTIFICATIONS` turns delivery off; `PORCHLIGHT_KEEP_ENVIRONMENT` stops the app taking on the login shell's environment at launch; `PORCHLIGHT_FM` and `PORCHLIGHT_CONVERSATIONS_DIR` point at a stand-in `fm` and a made-up conversations folder.
 - The CLI contract Porchlight relies on is Appendix A of `spec.md`: `claude agents --json --all`, `claude --bg … -- <prompt>`, `claude attach`, `claude stop`, `claude rm`. Minimum version 2.1.294 (provisional).
 - Homebrew formula `Formula/porchlight.rb`, fully qualified `ksawerykarwacki/porchlight/porchlight`; it calls `scripts/make-app.sh`, so keep the two in step.
 
@@ -50,6 +50,8 @@ Every side effect is passed in as a closure or protocol (the `claude` runner, th
 - **Claude Code's own files are read, never written,** and only two kinds: a job's `state.json` and, for an on-device summary the user asked for, a conversation's `.jsonl` (`ConversationReader`). Of a conversation only what was said is taken: no commands, no tool output. Both formats are undocumented, so every reader skips what it cannot read.
 - **Nothing that destroys work happens without the user's explicit answer.** `claude rm` is run plain; `--discard-unpushed` and `--force-remove-worktree` are passed only with the value Claude Code printed in its own refusal, after a second confirmation.
 - **The login shell's environment is passed on, never kept.** The app takes it on at launch (`ShellEnvironment`) so that what it starts has the user's `PATH`. It holds secrets: do not log it, write it to disk, or print values in a test or a pull request.
+- **The companion's secret is never logged or printed**, and nothing is named after "session token": the credentials test reads every source file for such words.
+- **Never change a process-wide setting to get a file's mode right** (`umask`): other threads make files meanwhile. Close the folder, then set the file's mode.
 - **No attribution lines**: no `Co-Authored-By` trailers, no "Generated with" in pull requests.
 - The product's name never contains "Claude".
 

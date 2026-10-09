@@ -58,6 +58,8 @@ public actor SessionStore {
 
     private let fetch: Fetch
     private let enrich: Enrich
+    /// The companion mod's facts by conversation id; empty without the mod.
+    private let companion: @Sendable () -> [String: CompanionFacts]
     private let now: @Sendable () -> Date
     private let blockedSinceFile: URL?
     private var blockedSince: [String: Date]
@@ -73,10 +75,12 @@ public actor SessionStore {
         fetch: @escaping Fetch,
         enrich: @escaping Enrich = { $0.map { Session(summary: $0) } },
         blockedSinceFile: URL? = nil,
+        companion: @escaping @Sendable () -> [String: CompanionFacts] = { [:] },
         now: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.fetch = fetch
         self.enrich = enrich
+        self.companion = companion
         self.now = now
         self.blockedSinceFile = blockedSinceFile
         self.blockedSince = blockedSinceFile.flatMap(Self.load) ?? [:]
@@ -86,7 +90,8 @@ public actor SessionStore {
     public static func live(
         locator: ClaudeLocator = ClaudeLocator(),
         jobs: JobStateSource = JobStateSource(),
-        stateDirectory: URL = PorchlightPaths.stateDirectory()
+        stateDirectory: URL = PorchlightPaths.stateDirectory(),
+        companion: CompanionHub? = nil
     ) -> SessionStore {
         SessionStore(
             fetch: {
@@ -97,7 +102,8 @@ public actor SessionStore {
                 return try await AgentsCLISource(executable: claude).snapshot()
             },
             enrich: { jobs.enrich($0) },
-            blockedSinceFile: stateDirectory.appendingPathComponent("blocked-since.json")
+            blockedSinceFile: stateDirectory.appendingPathComponent("blocked-since.json"),
+            companion: { companion?.snapshot() ?? [:] }
         )
     }
 
@@ -135,6 +141,13 @@ public actor SessionStore {
             let previous = snapshot.sessions
             let timestamp = now()
             var sessions = enrich(agents.sessions)
+            // The list decides which sessions there are; the mod only adds to the ones on it.
+            let reported = companion()
+            if !reported.isEmpty {
+                for index in sessions.indices {
+                    sessions[index].companion = sessions[index].summary.sessionId.flatMap { reported[$0.lowercased()] }
+                }
+            }
             recordBlocked(in: &sessions, at: timestamp)
             snapshot.sessions = sessions
             snapshot.skippedRows = agents.skipped
