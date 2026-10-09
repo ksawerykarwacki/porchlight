@@ -35,6 +35,8 @@ public struct StatusReport: Sendable, Encodable {
         public let waitingSince: Date?
         /// Present while reminders for this session are snoozed.
         public let snooze: SnoozeReport?
+        /// "pinned", or "quiet" when its reminders are off too; absent when not pinned.
+        public let pin: String?
         public let enriched: Bool
     }
 
@@ -44,11 +46,13 @@ public struct StatusReport: Sendable, Encodable {
     public let skippedRows: Int
     public let sessions: [Row]
 
-    public init(sessions: [Session], skippedRows: Int = 0, snoozes: [String: Snooze] = [:], generatedAt: Date = Date()) {
+    public init(
+        sessions: [Session], skippedRows: Int = 0, snoozes: [String: Snooze] = [:], pins: Pins = Pins(), generatedAt: Date = Date()
+    ) {
         self.generatedAt = generatedAt
         self.skippedRows = skippedRows
         self.waiting = sessions.filter(\.needsHuman).count
-        self.sessions = sessions.map { Row(session: $0, snooze: snoozes[$0.id], now: generatedAt) }
+        self.sessions = sessions.map { Row(session: $0, snooze: snoozes[$0.id], pin: pins.sessions[$0.id], now: generatedAt) }
     }
 
     public func json() throws -> String {
@@ -60,7 +64,8 @@ public struct StatusReport: Sendable, Encodable {
 }
 
 extension StatusReport.Row {
-    init(session: Session, snooze: Snooze? = nil, now: Date = Date()) {
+    init(session: Session, snooze: Snooze? = nil, pin: Pin? = nil, now: Date = Date()) {
+        self.pin = pin.map { $0.quiet ? "quiet" : "pinned" }
         switch snooze {
         case .until(let end) where end > now && session.needsHuman:
             self.snooze = SnoozeReport(kind: "until", until: end)

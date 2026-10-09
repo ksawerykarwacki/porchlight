@@ -13,6 +13,8 @@ final class PalettePanel: NSPanel {
     /// ⌘S and ⌘D: ask to stop or remove the selected session.
     var onCommandS: (() -> Void)?
     var onCommandD: (() -> Void)?
+    /// ⌘P: pin or unpin the selected session.
+    var onCommandP: (() -> Void)?
 
     init() {
         super.init(
@@ -56,7 +58,7 @@ final class PalettePanel: NSPanel {
             onCommandReturn?()
             return true
         }
-        if modifiers == .command, let key = event.charactersIgnoringModifiers?.lowercased(), let action = ["r": onCommandR, "s": onCommandS, "d": onCommandD][key] {
+        if modifiers == .command, let key = event.charactersIgnoringModifiers?.lowercased(), let action = ["r": onCommandR, "s": onCommandS, "d": onCommandD, "p": onCommandP][key] {
             action?()
             return true
         }
@@ -119,6 +121,7 @@ public final class PaletteController {
         panel.onCommandR = { [weak self] in self?.model.retrySelected() }
         panel.onCommandS = { [weak self] in self?.model.askControlSelected(.stop) }
         panel.onCommandD = { [weak self] in self?.model.askControlSelected(.remove) }
+        panel.onCommandP = { [weak self] in Task { await self?.model.togglePinSelected() } }
         let content = PaletteView(
             model: model, hover: hover, browse: { [weak self] in self?.chooseFolder(asRoot: false) },
             addRoot: { [weak self] in self?.chooseFolder(asRoot: true) }

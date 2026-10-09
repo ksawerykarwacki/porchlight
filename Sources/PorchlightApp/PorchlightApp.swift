@@ -50,6 +50,7 @@ struct PorchlightApp: App {
         paletteModel.onCopyReply = { id in model.copyReply(sessionID: id) }
         paletteModel.onSnooze = { id, choice in await model.snooze(sessionID: id, choice) }
         paletteModel.onRetry = { id in model.retry(sessionID: id) }
+        paletteModel.onTogglePin = { id in model.togglePin(sessionID: id) }
         paletteModel.onControl = { pending in await model.control(pending) }
         paletteModel.onTrust = { folder in model.openToTrust(folder: folder) }
         paletteModel.onCopy = { command in model.copy(command, saying: "Command copied") }
@@ -57,6 +58,8 @@ struct PorchlightApp: App {
         self.palette = palette
         // `porchlight new` asks the running app for the palette; so can any launcher or shortcut tool.
         AppSignal.observe(.newSession) { palette.show() }
+        // A click on the daily summary: the palette lists what is waiting.
+        model.showInbox = { palette.show() }
         let hotkey = hotkey
         model.registerHotkey = { shortcut in hotkey.set(shortcut) { palette.toggle() } }
         model.registerSavedHotkey()

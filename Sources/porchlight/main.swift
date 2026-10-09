@@ -28,6 +28,9 @@ let usage = """
                                               --no-name, --model, --effort, --agent,
                                               --permission-mode, --worktree[=NAME], --json
       porchlight name [--dir DIR] PROMPT      Print the name a session started with PROMPT would get
+      porchlight pin <id> [--quiet]           Keep a session: it is grouped at the top and never
+                                              offered for removal; --quiet also turns its reminders off
+      porchlight unpin <id>
       porchlight stop <id>                    Stop a background session; its conversation is kept
       porchlight rm <id>                      Remove a background session. If Claude Code refuses, for
                                               example because of unpushed commits, its reason is printed
@@ -49,6 +52,17 @@ func fail(_ message: String, code: Int32 = 1) -> Never {
     exit(code)
 }
 
+/// Where `claude` is looked for by every command: the PORCHLIGHT_CLAUDE variable, else the path
+/// in the settings, else the usual places.
+func claudeLocator() -> ClaudeLocator {
+    ClaudeLocator(override: ProcessInfo.processInfo.environment["PORCHLIGHT_CLAUDE"] ?? Settings.load().claudePath)
+}
+
+/// The sessions, read through that same `claude`.
+func liveStore() -> SessionStore {
+    SessionStore.live(locator: claudeLocator())
+}
+
 func locateClaude() -> URL {
     let locator = ClaudeLocator(override: ProcessInfo.processInfo.environment["PORCHLIGHT_CLAUDE"])
     guard let url = locator.locate() else {
@@ -58,7 +72,7 @@ func locateClaude() -> URL {
 }
 
 func status(arguments: [String]) async {
-    let store = SessionStore.live()
+    let store = liveStore()
     await store.refresh()
     let snapshot = await store.snapshot
     if let problem = snapshot.problem {
@@ -71,7 +85,7 @@ func status(arguments: [String]) async {
 
     if arguments.contains("--json") {
         do {
-            print(try StatusReport(sessions: sessions, skippedRows: snapshot.skippedRows, snoozes: ReminderState.load().snoozes).json())
+            print(try StatusReport(sessions: sessions, skippedRows: snapshot.skippedRows, snoozes: ReminderState.load().snoozes, pins: Pins.load()).json())
         } catch {
             fail("could not encode status: \(error)")
         }
@@ -99,7 +113,7 @@ func status(arguments: [String]) async {
 
 /// Prints the current status as one JSON line, then one more line whenever something changes.
 func watch(arguments: [String]) async {
-    let store = SessionStore.live()
+    let store = liveStore()
     let updates = await store.updates()
     let once = arguments.contains("--once")
     let loop = Task { await RefreshLoop().run(store: store, triggers: once ? [] : [PollingChangeWatcher()]) }
@@ -228,7 +242,7 @@ func tab() -> Never {
 /// Pauses or resumes reminders for one session.
 func snooze(arguments: [String]) async {
     guard arguments.count == 2 else { fail("usage: porchlight snooze <id> 1h|4h|tomorrow|change|off", code: 2) }
-    let store = SessionStore.live()
+    let store = liveStore()
     await store.refresh()
     let snapshot = await store.snapshot
     if let problem = snapshot.problem { fail(describe(problem)) }
@@ -339,6 +353,8 @@ case "new":
     #else
     fail("new is only available on macOS")
     #endif
+case "pin", "unpin":
+    await pin(arguments: arguments)
 case "stop":
     await control(.stop, arguments: Array(arguments.dropFirst()))
 case "rm":

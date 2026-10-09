@@ -4,7 +4,7 @@ import PorchlightCore
 /// The folders of the sessions that exist, or none when claude cannot be asked: the list of
 /// repositories is still useful without them.
 func sessionDirectories() async -> [String] {
-    let store = SessionStore.live(locator: ClaudeLocator(override: ProcessInfo.processInfo.environment["PORCHLIGHT_CLAUDE"]))
+    let store = liveStore()
     await store.refresh()
     return await store.snapshot.sessions.map(\.summary.cwd)
 }

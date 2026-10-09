@@ -43,14 +43,20 @@ public struct InboxRow: Sendable, Equatable, Identifiable {
     /// Whether the session can be stopped, and whether it can be removed, from here.
     public let canStop: Bool
     public let canRemove: Bool
+    /// Kept on purpose by the user; `isQuiet` when its reminders are off as well.
+    public let isPinned: Bool
+    public let isQuiet: Bool
 
     public init(
-        session: Session, snooze: Snooze? = nil, overdueAfter: TimeInterval = MenuBarStatus.defaultOverdueAfter,
+        session: Session, snooze: Snooze? = nil, pin: Pin? = nil, overdueAfter: TimeInterval = MenuBarStatus.defaultOverdueAfter,
         transientErrors: TransientErrors = TransientErrors(), now: Date = Date()
     ) {
+        isPinned = pin != nil
+        isQuiet = pin?.quiet ?? false
         isRetryable = transientErrors.isTransientFailure(session)
         canStop = SessionAction.stop.applies(to: session)
-        canRemove = SessionAction.remove.applies(to: session)
+        // A pinned session is one the user said to keep: it has to be unpinned before it can go.
+        canRemove = pin == nil && SessionAction.remove.applies(to: session)
         isSnoozed = session.needsHuman && (snooze?.isActive(waitingSince: session.waitingSince, now: now) ?? false)
         id = session.id
         title = session.name
@@ -116,17 +122,26 @@ public struct InboxRow: Sendable, Equatable, Identifiable {
 
 extension InboxGroups {
     /// The groups as titled sections of rows, leaving out empty ones.
+    ///
+    /// Pinned sessions come first in a section of their own, whatever their state, and appear in
+    /// no other: they are the ones the user keeps, not ones to work through.
+    /// - Parameter pinned: every pinned session, including finished ones that the groups leave
+    ///   out once they are no longer recent.
     public func sections(
         now: Date = Date(), snoozes: [String: Snooze] = [:], overdueAfter: TimeInterval = MenuBarStatus.defaultOverdueAfter,
-        transientErrors: TransientErrors = TransientErrors()
+        transientErrors: TransientErrors = TransientErrors(), pins: Pins = Pins(), pinned: [Session] = []
     ) -> [(title: String, rows: [InboxRow])] {
-        [("Needs you", needsYou), ("Working", working), ("Recently done", recentlyDone), ("Other", other)]
+        func row(_ session: Session) -> InboxRow {
+            InboxRow(
+                session: session, snooze: snoozes[session.id], pin: pins.sessions[session.id], overdueAfter: overdueAfter,
+                transientErrors: transientErrors, now: now)
+        }
+        let kept = pinned.filter { pins.isPinned($0.id) }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        let rest = [("Needs you", needsYou), ("Working", working), ("Recently done", recentlyDone), ("Other", other)]
+            .map { ($0.0, $0.1.filter { !pins.isPinned($0.id) }) }
+        return ([("Pinned", kept)] + rest)
             .filter { !$0.1.isEmpty }
-            .map { section in
-                (title: section.0, rows: section.1.map {
-                    InboxRow(session: $0, snooze: snoozes[$0.id], overdueAfter: overdueAfter, transientErrors: transientErrors, now: now)
-                })
-            }
+            .map { (title: $0.0, rows: $0.1.map(row)) }
     }
 }
 
@@ -162,12 +177,14 @@ public enum MenuBarStatus: Sendable, Equatable {
 
     /// Snoozed sessions are left out: the user has already answered "not now" for them, so they
     /// neither light the lantern nor count.
+    /// So are sessions pinned as quiet: waiting is their normal state.
     public init(
-        snapshot: StoreSnapshot, snoozes: [String: Snooze] = [:],
+        snapshot: StoreSnapshot, snoozes: [String: Snooze] = [:], quiet: Set<String> = [],
         overdueAfter: TimeInterval = MenuBarStatus.defaultOverdueAfter, now: Date = Date()
     ) {
         let waiting = snapshot.sessions.filter { session in
-            session.needsHuman && !(snoozes[session.id]?.isActive(waitingSince: session.waitingSince, now: now) ?? false)
+            session.needsHuman && !quiet.contains(session.id)
+                && !(snoozes[session.id]?.isActive(waitingSince: session.waitingSince, now: now) ?? false)
         }
         guard !waiting.isEmpty else {
             self = .idle

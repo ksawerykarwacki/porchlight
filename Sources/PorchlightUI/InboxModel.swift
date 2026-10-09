@@ -57,6 +57,13 @@ public final class InboxModel {
         return CLIVersion(parsing: result.stdout)
     }
 
+    /// The sessions the user keeps on purpose.
+    public private(set) var pins = Pins()
+    private let pinsURL: URL
+    /// Shows the list of sessions after a click on the daily summary. Set by the app: the
+    /// menu-bar panel cannot be opened from code, the palette can.
+    public var showInbox: () -> Void = {}
+
     /// A stop or removal waiting for the user to confirm it.
     public private(set) var pendingControl: PendingControl?
     /// The last stop or removal Claude Code refused, kept until it is dismissed.
@@ -78,7 +85,7 @@ public final class InboxModel {
     public var waitingCount: Int { snapshot.waitingCount }
     /// "Waited long" means as long as the second, louder reminder step.
     public var status: MenuBarStatus {
-        MenuBarStatus(snapshot: snapshot, snoozes: snoozes, overdueAfter: reminderSettings.secondStep, now: clock())
+        MenuBarStatus(snapshot: snapshot, snoozes: snoozes, quiet: pins.quiet, overdueAfter: reminderSettings.secondStep, now: clock())
     }
     /// Sessions whose reminders are paused, as last read from the saved state.
     public private(set) var snoozes: [String: Snooze] = [:]
@@ -96,11 +103,16 @@ public final class InboxModel {
         locator: ClaudeLocator? = nil,
         settingsURL: URL = Settings.fileURL(),
         remindersURL: URL = ReminderState.fileURL(),
+        pinsURL: URL? = nil,
         loginItem: LoginItem = .live(),
         clock: @escaping @Sendable () -> Date = { Date() }
     ) {
         let settings = Settings.load(from: settingsURL)
         self.store = store
+        // Next to the reminders file, so a test that passes its own folder never touches the real pins.
+        let pinsURL = pinsURL ?? remindersURL.deletingLastPathComponent().appendingPathComponent("pins.json")
+        self.pinsURL = pinsURL
+        self.pins = Pins.load(from: pinsURL)
         self.loginItem = loginItem
         self.injectedLauncher = launcher
         self.locator = locator ?? ClaudeLocator(override: settings.claudePath)
@@ -124,6 +136,8 @@ public final class InboxModel {
             delivery: delivery, stateURL: remindersURL,
             // Read from the file each time, so a change here or by hand applies at the next refresh.
             settings: { Settings.load(from: settingsURL).reminders ?? ReminderSettings() },
+            // Read from the file each time, so a pin set with `porchlight pin` applies too.
+            muted: { Pins.load(from: pinsURL).quiet },
             now: clock)
         self.snoozes = ReminderState.load(from: remindersURL).snoozes
         relay.handler = { [weak self] action in
@@ -234,6 +248,7 @@ public final class InboxModel {
             apply(update.snapshot)
             await engine.process(update.snapshot)
             snoozes = await engine.snoozes()
+            pins = Pins.load(from: pinsURL)
             notificationProblem = delivery?.problem
             await refreshSetup()
         }
@@ -252,8 +267,7 @@ public final class InboxModel {
                 snoozes = await engine.snoozes()
             }
         case .showInbox:
-            // The panel cannot be opened from here; bringing the app forward is the nearest thing.
-            break
+            showInbox()
         }
     }
 
@@ -264,7 +278,9 @@ public final class InboxModel {
     /// The sessions as the inbox lists them, top to bottom, for the palette.
     public var rows: [InboxRow] {
         InboxGroups(sessions: snapshot.sessions, now: clock())
-            .sections(now: clock(), snoozes: snoozes, overdueAfter: reminderSettings.secondStep, transientErrors: transientErrors)
+            .sections(
+                now: clock(), snoozes: snoozes, overdueAfter: reminderSettings.secondStep, transientErrors: transientErrors,
+                pins: pins, pinned: snapshot.sessions)
             .flatMap(\.rows)
     }
 
@@ -357,9 +373,44 @@ public final class InboxModel {
         setupFacts.hidden = true
     }
 
+    /// Pins or unpins a session. A new pin is not quiet.
+    public func togglePin(sessionID: String) {
+        guard let session = snapshot.sessions.first(where: { $0.id == sessionID }) else { return }
+        if pins.isPinned(sessionID) {
+            pins.unpin(sessionID)
+            show("Unpinned \(session.name)")
+        } else {
+            pins.pin(sessionID, now: clock())
+            show("Pinned \(session.name)")
+        }
+        savePins()
+    }
+
+    /// Turns a pinned session's reminders off or back on.
+    public func setPinQuiet(sessionID: String, _ quiet: Bool) {
+        guard pins.isPinned(sessionID), let session = snapshot.sessions.first(where: { $0.id == sessionID }) else { return }
+        pins.pin(sessionID, quiet: quiet, now: clock())
+        show(quiet ? "\(session.name) will not remind you while it is pinned" : "Reminders are back on for \(session.name)")
+        savePins()
+    }
+
+    private func savePins() {
+        do {
+            try pins.save(to: pinsURL)
+        } catch {
+            show("Could not save the pin")
+        }
+        // A removal asked for before the pin no longer applies.
+        if let pending = pendingControl, pending.action == .remove, pins.isPinned(pending.sessionID) { pendingControl = nil }
+        // Withdraw or restore reminders straight away rather than at the next poll.
+        Task { await engine.process(snapshot) }
+    }
+
     /// Asks to stop or remove a session. Nothing happens until `confirmControl`.
     public func askControl(_ action: SessionAction, sessionID: String) {
         guard let session = snapshot.sessions.first(where: { $0.id == sessionID }), action.applies(to: session) else { return }
+        // A pinned session is kept until it is unpinned.
+        if action == .remove, pins.isPinned(sessionID) { return }
         controlProblem = nil
         pendingControl = PendingControl(sessionID: sessionID, name: session.name, action: action)
         guard action == .remove else { return }

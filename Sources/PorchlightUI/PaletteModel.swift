@@ -152,6 +152,8 @@ public final class PaletteModel {
     public var onCopyReply: (String) -> Void = { _ in }
     public var onSnooze: (String, SnoozeChoice) async -> Void = { _, _ in }
     public var onRetry: (String) -> Void = { _ in }
+    /// Pins or unpins a session.
+    public var onTogglePin: (String) -> Void = { _ in }
     /// Stops or removes a session, once the user has confirmed it here.
     public var onControl: (PendingControl) async -> ControlOutcome = { _ in .couldNotRun("Not available") }
 
@@ -240,9 +242,12 @@ public final class PaletteModel {
     static func sessions(_ sessions: [InboxRow], matching query: String) -> [InboxRow] {
         let query = query.trimmingCharacters(in: .whitespaces)
         guard !query.isEmpty else {
-            let waiting = sessions.filter { $0.kind.needsUser }
-            let working = sessions.filter { $0.kind == .working }.prefix(workingSessionsShown)
-            return waiting + working
+            // The ones the user keeps come first, whatever they are doing; then the rest as before.
+            let pinned = sessions.filter(\.isPinned)
+            let others = sessions.filter { !$0.isPinned }
+            let waiting = others.filter { $0.kind.needsUser }
+            let working = others.filter { $0.kind == .working }.prefix(workingSessionsShown)
+            return pinned + waiting + working
         }
         // A path is a folder to start in, never a session.
         guard !query.hasPrefix("/"), !query.hasPrefix("~") else { return [] }
@@ -379,6 +384,16 @@ public final class PaletteModel {
         }
         sessions = await services.sessions()
         rank()
+    }
+
+    /// Pins the selected session, or unpins it. The palette stays open on the same session.
+    public func togglePinSelected() async {
+        guard step == .folder, let row = selectedSession else { return }
+        pendingControl = nil
+        onTogglePin(row.id)
+        sessions = await services.sessions()
+        rank()
+        if let position = items.firstIndex(where: { $0.id == "session:\(row.id)" }) { selection = position }
     }
 
     public func retrySelected() {

@@ -10,6 +10,10 @@ public struct InboxActions {
     public var openAgentView: () -> Void = {}
     /// Opens the palette that starts a new session.
     public var newSession: () -> Void = {}
+    /// The sessions the user keeps on purpose.
+    public var pins = Pins()
+    public var togglePin: (String) -> Void = { _ in }
+    public var setPinQuiet: (String, Bool) -> Void = { _, _ in }
     /// What is left to set up, for the first-run card.
     public var setupSteps: [SetupStep] = []
     public var performSetup: (SetupStep.Kind) -> Void = { _ in }
@@ -134,6 +138,9 @@ public struct InboxView: View {
             actions.installUpdate = { Task { await updates.update() } }
         }
         actions.newSession = newSession
+        actions.pins = model.pins
+        actions.togglePin = { model.togglePin(sessionID: $0) }
+        actions.setPinQuiet = { id, quiet in model.setPinQuiet(sessionID: id, quiet) }
         actions.setupSteps = model.setupSteps
         actions.performSetup = { kind in Task { await model.performSetup(kind) } }
         actions.hideSetup = { model.hideSetup() }
@@ -245,7 +252,9 @@ public struct InboxView: View {
                 .padding(.top, 8)
         }
         let sections = InboxGroups(sessions: snapshot.sessions, now: now)
-            .sections(now: now, snoozes: snoozes, overdueAfter: actions.reminders.secondStep, transientErrors: actions.transientErrors)
+            .sections(
+                now: now, snoozes: snoozes, overdueAfter: actions.reminders.secondStep, transientErrors: actions.transientErrors,
+                pins: actions.pins, pinned: snapshot.sessions)
         VStack(alignment: .leading, spacing: 0) {
             if sections.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
@@ -376,7 +385,8 @@ struct InboxRowView: View {
     }
     /// Room kept at the end of the title line for the row's controls, so they never cover text.
     private var controlsWidth: CGFloat {
-        (waits ? 22 : 0) + (row.canStop || row.canRemove ? 22 : 0)
+        // The menu is on every row: any session can be pinned.
+        (waits ? 22 : 0) + 22
     }
     private var waits: Bool { row.kind == .question || row.kind == .approval || row.kind == .waiting }
 
@@ -393,6 +403,12 @@ struct InboxRowView: View {
                             Text(row.title)
                                 .font(.system(size: 13, weight: .semibold))
                                 .lineLimit(1)
+                            if row.isPinned {
+                                Image(systemName: row.isQuiet ? "pin.slash.fill" : "pin.fill")
+                                    .font(.system(size: 9.5))
+                                    .foregroundStyle(.secondary)
+                                    .help(row.isQuiet ? "Pinned, with reminders off" : "Pinned")
+                            }
                             Spacer(minLength: 8)
                             if let age = row.age {
                                 Text(age)
@@ -468,11 +484,18 @@ struct InboxRowView: View {
                         .opacity(isHovered || row.isSnoozed ? 1 : 0)
                         .help(row.isSnoozed ? "Reminders are paused for this session" : "Pause reminders for this session")
                     }
-                    if row.canStop || row.canRemove {
+                    do {
                         // Stop and remove ask before they do anything, so they sit one click away.
                         Group {
                             if drawsMenus {
                                 Menu {
+                                    Button(row.isPinned ? "Unpin" : "Pin") { actions.togglePin(row.id) }
+                                    if row.isPinned {
+                                        Button(row.isQuiet ? "Turn its reminders back on" : "Turn its reminders off") {
+                                            actions.setPinQuiet(row.id, !row.isQuiet)
+                                        }
+                                    }
+                                    if row.canStop || row.canRemove { Divider() }
                                     if row.canStop {
                                         Button("Stop…") { actions.askControl(.stop, row.id) }
                                     }
@@ -493,7 +516,7 @@ struct InboxRowView: View {
                             }
                         }
                         .opacity(isHovered ? 1 : 0)
-                        .help("Stop or remove this session")
+                        .help(row.isPinned ? "Unpin, or stop this session" : "Pin, stop or remove this session")
                     }
                 }
                 .padding(.trailing, 10)

@@ -116,3 +116,32 @@ func control(_ action: SessionAction, arguments: [String]) async {
     case .couldNotRun(let text): fail(text)
     }
 }
+
+/// `porchlight pin <id> [--quiet]` and `porchlight unpin <id>`. The id must be a session that
+/// exists, so a typo does not leave a pin on nothing.
+func pin(arguments: [String]) async {
+    let pinning = arguments.first == "pin"
+    var rest = Array(arguments.dropFirst())
+    let quiet = rest.contains("--quiet")
+    rest.removeAll { $0 == "--quiet" }
+    guard rest.count == 1, let id = rest.first, !id.hasPrefix("-"), pinning || !quiet else {
+        fail("usage: porchlight pin <id> [--quiet]\n       porchlight unpin <id>", code: 2)
+    }
+    let store = liveStore()
+    await store.refresh()
+    let snapshot = await store.snapshot
+    if let problem = snapshot.problem { fail(describe(problem)) }
+    guard let session = snapshot.sessions.first(where: { $0.id == id }) else { fail("no session has the id \(id)") }
+    var pins = Pins.load()
+    if pinning {
+        pins.pin(id, quiet: quiet)
+    } else {
+        pins.unpin(id)
+    }
+    do {
+        try pins.save()
+    } catch {
+        fail("could not save the pins: \(error.localizedDescription)")
+    }
+    print(pinning ? "Pinned \(session.name)" + (quiet ? "; its reminders are off" : "") : "Unpinned \(session.name)")
+}

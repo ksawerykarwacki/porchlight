@@ -120,6 +120,9 @@ public struct PaletteView: View {
                         Task { await model.snoozeSelected() }
                     }
                 }
+                KeyHint(keys: "⌘P", label: row.isPinned ? "Unpin" : "Pin", id: "palette.hint.pin", hover: hover) {
+                    Task { await model.togglePinSelected() }
+                }
                 if row.canStop {
                     KeyHint(keys: "⌘S", label: "Stop", id: "palette.hint.stop", hover: hover) { model.askControlSelected(.stop) }
                 }
@@ -456,7 +459,7 @@ struct PaletteSessionRow: View {
     private var id: String { "palette.session.\(row.id)" }
 
     private var lamp: Color {
-        if row.isSnoozed { return Color.primary.opacity(0.25) }
+        if row.isSnoozed || row.isQuiet { return Color.primary.opacity(0.25) }
         if row.kind.needsUser { return row.isOverdue ? Lamp.ember : Lamp.light }
         return Color.primary.opacity(0.14)
     }
@@ -481,6 +484,11 @@ struct PaletteSessionRow: View {
                     Text(row.title)
                         .font(.system(size: 14, weight: .medium))
                         .lineLimit(1)
+                    if row.isPinned {
+                        Image(systemName: row.isQuiet ? "pin.slash.fill" : "pin.fill")
+                            .font(.system(size: 9.5))
+                            .foregroundStyle(.secondary)
+                    }
                     Text(row.place)
                         .font(.system(size: 12))
                         .foregroundStyle(.tertiary)

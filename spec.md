@@ -291,6 +291,19 @@ Acceptance: from any app, hotkey → type 3 letters of a repo → Enter → type
 - The disk image and cask in `packaging/` are kept for a later signed release. Unsigned, they must not be published: a downloaded app is quarantined and macOS refuses it.
 - Not verified: the Update button in a real Homebrew install (it needs the formula on `main`), `brew services start` surviving a logout, whether notification permission survives a rebuild, and the install on a machine other than this one. While the repository is private, `brew tap` works with the owner's git credentials but `brew install` does not: Homebrew fetches inside a sandbox without the keychain (found when the owner tried it, 2026-10-09). The formula therefore reads `HOMEBREW_GITHUB_API_TOKEN` and puts it into the clone address; tried with `brew fetch`, that works, a request header passed through git's environment does not, and the variable alone does not. The token stays in Homebrew's cached clone. To be removed when the repository is public.
 
+### 6.8 Triage **[IN PROGRESS, asked for by the user 2026-10-09]**
+
+The problem: sessions pile up, many stalled for weeks, and it is not clear which can go. The plan, in layers: pins, then a Triage tab with a verdict per session (safe to remove, needs a decision, stale, keep), then "wrap up" for stale ones (a summary by a small model before removal, on click only).
+
+**Built, layer 1 (2026-10-09): pins.** For sessions that are long-lived on purpose, such as a debugging thread kept across days or one used to manage something continuously.
+
+- A pin is Porchlight's own (`pins.json`); `claude agents --json` reports no pin. Agent view's own pin (Ctrl+T), which keeps a session's process running, is separate and not visible to Porchlight.
+- Pinned sessions are the first section of the panel and the first sessions in the palette, whatever their state, including finished ones that would otherwise have dropped out of "Recently done". They appear in no other section.
+- A pinned session is never offered for removal: it has to be unpinned first. It can still be stopped.
+- A pin can be quiet: its reminders are off and it neither lights the lantern nor counts, because waiting is its normal state. Making a pin quiet withdraws a reminder already on screen.
+- From the row's ⋯ menu (Pin, Unpin, Turn its reminders off), ⌘P in the palette, or `porchlight pin <id> [--quiet]` and `porchlight unpin <id>`. `porchlight status --json` reports `pin` as `pinned` or `quiet`.
+- Also in this layer: a click on the daily summary notification now opens the palette, which lists what is waiting. Before, it did nothing, because the menu-bar panel cannot be opened from code.
+
 ### 6.7 Roadmap after v1
 
 - **v1.1** Phone webhook (FR-N7), naming hook installer (FR-NM4), transient-error retry (once spike resolved).

@@ -21,6 +21,8 @@ public actor ReminderEngine {
     private let planner: ReminderPlanner
     /// Read before every run, so a changed setting applies without a restart.
     private let settings: (@Sendable () -> ReminderSettings)?
+    /// Sessions that are not reminded about at all, read before every run: the quiet pins.
+    private let muted: (@Sendable () -> Set<String>)?
     private let delivery: any ReminderDelivery
     private let stateURL: URL
     private let now: @Sendable () -> Date
@@ -32,8 +34,10 @@ public actor ReminderEngine {
         delivery: any ReminderDelivery,
         stateURL: URL = ReminderState.fileURL(),
         settings: (@Sendable () -> ReminderSettings)? = nil,
+        muted: (@Sendable () -> Set<String>)? = nil,
         now: @escaping @Sendable () -> Date = { Date() }
     ) {
+        self.muted = muted
         self.settings = settings
         self.planner = planner
         self.delivery = delivery
@@ -51,10 +55,14 @@ public actor ReminderEngine {
         let before = state
         var planner = planner
         if let settings { planner.settings = settings() }
-        let due = planner.due(sessions: snapshot.sessions, state: &state, now: now())
+        // A muted session is left out as if it were not waiting: no reminder now, and one that is
+        // already on screen is withdrawn below.
+        let silent = muted?() ?? []
+        let sessions = snapshot.sessions.filter { !silent.contains($0.id) }
+        let due = planner.due(sessions: sessions, state: &state, now: now())
         if state != before { try? state.save(to: stateURL) }
 
-        let waiting = Set(snapshot.sessions.filter(\.needsHuman).map(\.id))
+        let waiting = Set(sessions.filter(\.needsHuman).map(\.id))
         let finished = reminded.subtracting(waiting)
         if !finished.isEmpty {
             await delivery.withdraw(reminderIDs: finished.map { "session-\($0)" }.sorted())

@@ -133,6 +133,11 @@ opens the session in your terminal). The name is suggested from the prompt and c
 The palette also lists your sessions, the ones waiting on you first. Return opens the selected
 one; ⌘Return copies its suggested reply and opens it; ⌥Return snoozes it for an hour.
 
+**Pin** a session you keep on purpose (⋯ → Pin, ⌘P in the palette, or `porchlight pin <id>`).
+Pinned sessions are grouped at the top and are never offered for removal. "Turn its reminders off"
+is for one whose normal state is waiting for you: it then stops reminding and stops lighting the
+lantern.
+
 To stop or remove a session, use the ⋯ menu on its row, ⌘S or ⌘D in the palette, or
 `porchlight stop <id>` and `porchlight rm <id>`. Both ask first. If Claude Code refuses to remove
 one, for example because its worktree has unpushed commits, Porchlight shows the reason. If that
