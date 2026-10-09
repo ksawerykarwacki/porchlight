@@ -26,6 +26,11 @@ public final class InboxModel {
     public let installedTerminals: [TerminalApp]
     /// Switch to an agent view that is already open instead of attaching in a new tab.
     public private(set) var prefersAgentView = false
+    /// The shortcut that opens the new-session palette from any app.
+    public private(set) var hotkey: Hotkey?
+    /// Registers a shortcut with the system, or removes it for nil. Returns false when the
+    /// system refused it. Set by the app; the model only decides and remembers.
+    public var registerHotkey: (Hotkey?) -> Bool = { _ in true }
 
     public private(set) var snapshot = StoreSnapshot()
     /// When and how to remind, as last saved.
@@ -71,6 +76,7 @@ public final class InboxModel {
         self.installedTerminals = TerminalApp.allCases.filter { $0.installedPath() != nil }
         self.chosenTerminal = settings.terminal.flatMap { TerminalApp(rawValue: $0.lowercased()) }
         self.prefersAgentView = settings.preferAgentView ?? false
+        self.hotkey = settings.hotkey
         // Only the real app keeps a log; tests and bare executables leave the user's folder alone.
         self.log = Bundle.main.bundleURL.pathExtension == "app" ? ActivityLog() : nil
         // Created now, not when polling starts: macOS hands a clicked notification to the
@@ -140,6 +146,32 @@ public final class InboxModel {
         } catch {
             show("Could not save the setting")
         }
+    }
+
+    /// Changes the shortcut for the new-session palette. Nil removes it. A shortcut the system
+    /// refuses, because another app holds it, is not saved and the old one stays.
+    public func setHotkey(_ new: Hotkey?) {
+        guard new != hotkey else { return }
+        guard registerHotkey(new) else {
+            _ = registerHotkey(hotkey)
+            show("\(new?.display ?? "That shortcut") is already used by another app")
+            return
+        }
+        hotkey = new
+        var settings = Settings.load(from: settingsURL)
+        settings.hotkey = new
+        do {
+            try settings.save(to: settingsURL)
+            show(new.map { "\($0.display) opens a new session from any app" } ?? "Shortcut removed")
+        } catch {
+            show("Could not save the shortcut")
+        }
+    }
+
+    /// Registers the saved shortcut when the app starts. Says so if it is no longer available.
+    public func registerSavedHotkey() {
+        guard let hotkey else { return }
+        if !registerHotkey(hotkey) { show("\(hotkey.display) is already used by another app") }
     }
 
     /// Remembers which terminal "Open" uses. Nil goes back to picking the one that is running.

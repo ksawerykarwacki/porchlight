@@ -270,13 +270,15 @@ func settings() {
         let reminders: ReminderSettings
         let repos: RepoIndexSettings
         let naming: NamingSettings
+        let hotkey: String?
     }
     let url = Settings.fileURL()
     let loaded = Settings.load(from: url)
     let report = Report(
         file: url.path, terminal: loaded.terminal, claudePath: loaded.claudePath,
         preferAgentView: loaded.preferAgentView ?? false, reminders: loaded.reminders ?? ReminderSettings(),
-        repos: loaded.repos ?? RepoIndexSettings(), naming: loaded.naming ?? NamingSettings())
+        repos: loaded.repos ?? RepoIndexSettings(), naming: loaded.naming ?? NamingSettings(),
+        hotkey: loaded.hotkey?.display)
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
     guard let data = try? encoder.encode(report) else { fail("could not encode the settings") }

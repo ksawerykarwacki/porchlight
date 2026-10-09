@@ -84,16 +84,17 @@ import Testing
     }
 
     @Test func theLivePanelGrowsWithItsRowsUntilItHasToScroll() throws {
-        let empty = livePanelHeight(blocked(0))
-        let six = livePanelHeight(blocked(6))
-        let eight = livePanelHeight(blocked(8))
+        let heights = (0...14).map { livePanelHeight(blocked($0)) }
         let many = livePanelHeight(blocked(60))
 
-        // Rows take real space: each one adds height once the list is the taller tab.
-        #expect(six > empty + 20)
-        #expect(eight > six + 40)
+        // A short list leaves the panel at the height of the settings; after that every row
+        // takes real space. Nothing here depends on how tall the settings page happens to be.
+        #expect(heights == heights.sorted())
+        let steps = zip(heights.dropFirst(), heights).map { $0 - $1 }
+        #expect(steps.contains { $0 > 30 })
+        #expect(many > heights[0])
         // A long list stops growing and scrolls instead of running off the screen.
-        #expect(many > eight)
+        #expect(heights[14] == many)
         #expect(many < 620)
         #expect(livePanelHeight(blocked(120)) == many)
         // The fixture has six detailed rows: taller than the cap, so it sits at the cap too.

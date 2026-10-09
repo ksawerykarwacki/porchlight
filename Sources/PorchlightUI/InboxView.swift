@@ -10,6 +10,9 @@ public struct InboxActions {
     public var openAgentView: () -> Void = {}
     /// Opens the palette that starts a new session.
     public var newSession: () -> Void = {}
+    /// The shortcut that opens the new-session palette from any app.
+    public var hotkey: Hotkey?
+    public var setHotkey: (Hotkey?) -> Void = { _ in }
     public var refresh: () -> Void = {}
     public var quit: () -> Void = {}
     /// Terminals the user can pick, as (identifier, name). Empty hides the chooser.
@@ -87,6 +90,8 @@ public struct InboxView: View {
     public init(model: InboxModel, newSession: @escaping () -> Void = {}, quit: @escaping () -> Void) {
         var actions = InboxActions()
         actions.newSession = newSession
+        actions.hotkey = model.hotkey
+        actions.setHotkey = { model.setHotkey($0) }
         actions.open = { model.open(sessionID: $0) }
         actions.copyReply = { model.copyReply(sessionID: $0) }
         actions.snooze = { id, choice in Task { await model.snooze(sessionID: id, choice) } }
@@ -592,6 +597,28 @@ struct SettingsPage: View {
                     choice([false, true], selected: actions.prefersAgentView, label: { $0 ? "Switch to it" : "Open a new tab" }) { value in
                         actions.setPrefersAgentView(value)
                     }
+                }
+            }
+
+            Divider().padding(.vertical, 10)
+            row("Shortcut for a new session") {
+                if drawsMenus {
+                    if actions.hotkey != nil {
+                        Button("Remove") { actions.setHotkey(nil) }
+                            .buttonStyle(.link)
+                            .font(.system(size: 12))
+                    } else {
+                        // One click instead of recording. Nothing is registered until it is clicked.
+                        Button("Use \(Hotkey.suggested.display)") { actions.setHotkey(.suggested) }
+                            .buttonStyle(.link)
+                            .font(.system(size: 12))
+                    }
+                    HotkeyRecorder(hotkey: actions.hotkey, onChange: actions.setHotkey)
+                        .fixedSize()
+                } else {
+                    // Offscreen, an AppKit button is drawn as its title.
+                    Text(HotkeyRecorder.RecorderButton.title(for: actions.hotkey, recording: false))
+                        .foregroundStyle(.secondary)
                 }
             }
         }

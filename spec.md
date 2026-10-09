@@ -147,7 +147,7 @@ Acceptance: from any app, hotkey → type 3 letters of a repo → Enter → type
 **Built in M3 layer 3 (2026-10-09): dispatch, without the palette.** `Dispatcher`, `DispatchCapabilities`, `DispatchHistory` and `RepoRanking` in the core, `porchlight dispatch` in the tool.
 
 - The command is `claude --bg [--name …] [--model …] [--effort …] [--agent …] [--permission-mode …] [--worktree[=name]] -- <prompt>`, run as an argument array in the chosen folder. The prompt comes after `--`, so a prompt that starts with a dash cannot be read as a flag.
-- **Not verified against the real CLI:** that `claude` accepts `--` before the prompt and `--worktree=name` as one argument. Both are standard for the option parser its help output comes from, and the stand-in CLI in the tests accepts them, but no real session has been started this way yet. The first real dispatch settles it; if it fails, the fallback is to refuse prompts that start with a dash.
+- **Verified against the real CLI (2026-10-09, v2.1.294):** a session started from the palette in the running app (`70f65f2e`, named `new-named-session-porchlight`) ran and finished, so `claude --bg --name … -- <prompt>` is accepted and the name is applied. **Still not verified:** `--worktree=name` as one argument, and `--model`, `--effort`, `--agent` and `--permission-mode` through the palette; those are standard for the option parser the help output comes from, and the stand-in CLI in the tests accepts them.
 - Flags are only passed when `claude --help` lists them. Effort levels and permission modes are read from the help text too, and a value it does not list is refused before anything starts. `bypassPermissions` is never offered.
 - Failures show the CLI's own words and the command as a line that can be pasted into a terminal. An untrusted folder is recognised and reported with the folder to open.
 - The last 20 dispatches are kept in `dispatches.json` (folder, name, model, time; never the prompt).
@@ -163,6 +163,14 @@ Acceptance: from any app, hotkey → type 3 letters of a repo → Enter → type
 - Design: the card is the system's glass material on macOS 26 and later (a blurred panel before that), with corners, rows and capsule controls sized to sit concentric. The menu-bar panel takes the system's own chrome.
 - The repositories are read again each time the palette opens instead of every few minutes in the background (FR-R4): the result is as fresh and costs nothing while the palette is closed.
 - Not verified: the panel in the running app (keyboard focus, glass, paste) is for the user to try; the tests cover the model and offscreen drawing.
+
+**Built in M3 layer 5 (2026-10-09): the global shortcut.** `Hotkey` in the core, `GlobalHotkey` in the macOS library, a recorder on the Settings tab.
+
+- Unset by default (FR-L1), and never registered without being asked. While none is set the Settings tab offers "Use ⌃⌥⌘N" as a one-click choice (decided 2026-10-09: a silent default could take a key away from another app; three modifiers and a letter is rarely used elsewhere). Recorded on the Settings tab: click, press the keys; Escape leaves it, Delete or "Remove" clears it. Stored under `hotkey` in `settings.json` with the modifiers by name.
+- A shortcut needs Control, Option or Command, or is a function key: a plain key would be taken away from every app.
+- Registered with the system's hot-key service (`RegisterEventHotKey`). That needs no Accessibility or Input Monitoring permission, because the app is told only about its own shortcut. If the system refuses a shortcut, usually because another app holds it, it is not saved, the previous one stays, and the inbox says so.
+- Pressing it shows the palette, and hides it when it is already showing.
+- Not verified: registration and the key press itself, which only exist in the running app. The tests cover the model's decisions with the registration stood in for.
 
 ### 6.4 Naming — v1 (at dispatch) **[PROPOSED]**
 
@@ -424,7 +432,7 @@ Read on 2026-10-08: Claude Code's licence line ("Use is subject to Anthropic's C
 1. **M0 Skeleton:** Swift package `PorchlightCore` + app target; CLIRunner with PATH resolution; fake-`claude` test harness.
 2. **M1 Read-only inbox:** AgentsCLISource, SessionStore, menu bar with badge and grouped list, Open via one terminal adapter + clipboard fallback.
 3. **M2 Nagger:** notifications with actions, ladder, snooze, quiet hours, digest.
-4. **M3 Launcher:** RepoIndex, palette, dispatch with flags, naming template, frecency.
+4. **M3 Launcher:** RepoIndex, palette, dispatch with flags, naming template, frecency. **[BUILT 2026-10-09, see §6.3 to §6.5; a first real dispatch from the palette worked on 2026-10-09; the shortcut is still to be tried in the running app]**
 5. **M4 Enrichment:** JobStateSource (question, suggested reply, updatedAt) behind schema check; stop/rm with confirmations.
 6. **M5 Ship:** onboarding, settings, signing/notarization, cask, README/CONTRIBUTING, CI.
 

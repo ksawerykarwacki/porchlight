@@ -97,10 +97,12 @@ public struct Settings: Sendable, Equatable, Codable {
     public var repos: RepoIndexSettings?
     /// How new sessions are named. Nil uses the defaults.
     public var naming: NamingSettings?
+    /// The shortcut that opens the new-session palette from any app. Nil means none.
+    public var hotkey: Hotkey?
 
     public init(
         terminal: String? = nil, claudePath: String? = nil, preferAgentView: Bool? = nil, reminders: ReminderSettings? = nil,
-        repos: RepoIndexSettings? = nil, naming: NamingSettings? = nil
+        repos: RepoIndexSettings? = nil, naming: NamingSettings? = nil, hotkey: Hotkey? = nil
     ) {
         self.terminal = terminal
         self.claudePath = claudePath
@@ -108,10 +110,11 @@ public struct Settings: Sendable, Equatable, Codable {
         self.reminders = reminders
         self.repos = repos
         self.naming = naming
+        self.hotkey = hotkey
     }
 
     private enum CodingKeys: String, CodingKey {
-        case terminal, claudePath, preferAgentView, reminders, repos, naming
+        case terminal, claudePath, preferAgentView, reminders, repos, naming, hotkey
     }
 
     /// Each value is read on its own, so one odd entry does not discard the rest.
@@ -123,6 +126,7 @@ public struct Settings: Sendable, Equatable, Codable {
         reminders = try? c.decodeIfPresent(ReminderSettings.self, forKey: .reminders)
         repos = try? c.decodeIfPresent(RepoIndexSettings.self, forKey: .repos)
         naming = try? c.decodeIfPresent(NamingSettings.self, forKey: .naming)
+        hotkey = try? c.decodeIfPresent(Hotkey.self, forKey: .hotkey)
     }
 
     public static func fileURL(in stateDirectory: URL = PorchlightPaths.stateDirectory()) -> URL {

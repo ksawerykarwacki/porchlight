@@ -10,6 +10,7 @@ struct PorchlightApp: App {
     // models instead.
     private let model: InboxModel
     private let palette: PaletteController
+    private let hotkey = GlobalHotkey()
 
     init() {
         let model = InboxModel()
@@ -28,6 +29,9 @@ struct PorchlightApp: App {
         self.palette = palette
         // `porchlight new` asks the running app for the palette; so can any launcher or shortcut tool.
         AppSignal.observe(.newSession) { palette.show() }
+        let hotkey = hotkey
+        model.registerHotkey = { shortcut in hotkey.set(shortcut) { palette.toggle() } }
+        model.registerSavedHotkey()
     }
 
     var body: some Scene {
