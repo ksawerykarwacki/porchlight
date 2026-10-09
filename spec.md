@@ -324,6 +324,7 @@ The problem: sessions pile up, many stalled for weeks, and it is not clear which
 - **The folder matters:** Claude Code finds a conversation by the folder it ran in. A stopped session reports the repository as its folder, so the worktree named in its details comes first, then the reported folder, then the repository. If the worktree is gone and the conversation is not found, Claude Code's own words are shown.
 - **The note** (`notes/<session id>.json` in Porchlight's state folder): the summary, the session's name, repository, folder, branch and pull request, the model, the time, and the conversation id, from which the row offers the command to open it again. Removing a session does not touch its note. Wrapping up again replaces it.
 - **The model** is `haiku`, or `wrapUp.model` in `settings.json`; a value that could be read as a flag falls back to the default.
+- **Old conversations may be gone.** Claude Code removes transcripts after `cleanupPeriodDays` (30 by default). A session older than that may have nothing to resume; the CLI's words are shown and no note is written. The same limit applies to the command a note offers for opening the conversation again.
 - Not built: notes in the palette's search, a Notes view in the panel (the notes of removed sessions are reachable through `porchlight notes` only), deleting a note from the app.
 
 ### 6.7 Roadmap after v1

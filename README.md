@@ -148,7 +148,9 @@ some of your Claude usage. The session itself is not changed: Claude Code reads 
 every tool off and nothing saved. The summary is kept as a note in Porchlight's own folder, also
 after the session is removed, together with the command that opens the conversation again;
 `porchlight notes [TEXT]` lists or searches the notes. The model is `haiku` unless `wrapUp.model`
-in `settings.json` names another.
+in `settings.json` names another. Claude Code deletes old conversations by itself
+(`cleanupPeriodDays`, 30 days unless you changed it), so a very old session may have nothing left
+to summarise; Porchlight then shows what Claude Code said.
 
 To stop or remove a session, use the ⋯ menu on its row, ⌘S or ⌘D in the palette, or
 `porchlight stop <id>` and `porchlight rm <id>`. Both ask first. If Claude Code refuses to remove
