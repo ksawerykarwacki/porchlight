@@ -155,9 +155,13 @@ There are two ways, chosen under Settings, "Wrapping up":
   conversation as a copy, with every tool off and nothing saved. More thorough, and it uses some of
   your Claude usage. Each question on this Mac also offers it for that one session.
 
-The summary is kept as a note in Porchlight's own folder, also after the session is removed,
-together with the command that opens the conversation again; `porchlight notes [TEXT]` lists or
-searches the notes. Claude Code deletes old conversations by itself (`cleanupPeriodDays`, 30 days
+The summary is kept as a note in Porchlight's own folder, also after the session is removed.
+To read the notes, press **Tab** in the palette: it turns into a list of them, searched as you
+type, with the selected note shown in full below, so the arrow keys are all it takes to read
+through them. Return opens the session if it is still there, resumes its conversation in a
+terminal if it was removed, and copies the summary when that is all that is left; ⌘Return copies
+the summary, ⌘D deletes the note, Tab goes back. The Triage tab links there too, and
+`porchlight notes [TEXT]` lists or searches them on the command line. Claude Code deletes old conversations by itself (`cleanupPeriodDays`, 30 days
 unless you changed it), so a very old session may have nothing left to summarise.
 
 To stop or remove a session, use the ⋯ menu on its row, ⌘S or ⌘D in the palette, or

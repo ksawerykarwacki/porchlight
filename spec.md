@@ -336,7 +336,12 @@ The problem: sessions pile up, many stalled for weeks, and it is not clear which
   - **Private Cloud Compute** (32,768 tokens, macOS 27) was tried from an unsigned command-line program and refused every request with `ModelManagerError 1046`; the cause is not known. Not used.
   - **Before Apple's terms are accepted** `fm` prints "YOU HAVE NOT AGREED TO THE APPLE FOUNDATION MODELS CLI LEGAL NOTICE & TERMS." and that agreeing applies to every user of the machine, so it needs `sudo fm license` (seen by the owner on macOS 27.0, 2026-10-09). Porchlight recognises the words "not agreed" in either stream, whatever the exit code, and says in its own words which command to run. `fm license --status` is asked first: on a fresh machine it answers "Not agreed. run 'sudo fm license' to review and agree." with blank space around it, and after agreeing "Agreed to license FM1 version 1.0 on …" (both seen on 27.0).
   - Not verified: a Mac without the model, and which stream and exit code `fm` uses for that refusal (only its words were seen).
-- Not built: notes in the palette's search, a Notes view in the panel (the notes of removed sessions are reachable through `porchlight notes` only), deleting a note from the app.
+- **Notes in the palette (2026-10-09).** A mode, not a tab and not rows among the results: starting or opening a session is what the palette is for many times a day, recalling a note is rare, so it costs the ordinary list nothing but one quiet line ("3 notes match ⇥").
+  - **Tab** switches between the two with what was typed. The list is one line per note (name, repository, where its session stands, age); the selected note's summary is shown in full under the list, so reading takes the arrow keys only. Nothing typed lists them newest first.
+  - **Return does the most that can still be done** (`NoteReach`): open the session if it is still listed; resume the conversation in a terminal, in its folder, if the session was removed and both Claude Code's conversation file and the folder are still there (`claude --resume <id>`, the id validated as a UUID); otherwise copy the summary. The hint names which.
+  - ⌘Return copies the summary with its name, repository and branch. ⌘D asks, then deletes the note only. Escape goes back to the list, or closes the palette when it was opened on its notes from the Triage tab's link.
+  - Not verified: resuming a removed session's conversation for real (no such session existed), and the keys in the live panel.
+- Not built: a Notes view in the menu-bar panel itself (the palette is where the keyboard is).
 
 ### 6.7 Roadmap after v1
 

@@ -110,6 +110,10 @@ struct TriagePage: View {
                             action: actions.askRemoveSafe)
                     }
                     QuietButton(title: state.isLoading ? "Looking…" : "Look again", symbol: "arrow.clockwise", id: "triage.reload", hover: hover, action: actions.reloadTriage)
+                    if !state.notes.isEmpty {
+                        QuietButton(title: TriagePage.notesLink(state.notes.count), symbol: "note.text", id: "triage.notes", hover: hover, action: actions.showNotes)
+                            .help("Read and search the summaries kept from wrapped-up sessions, also of sessions since removed")
+                    }
                     Spacer()
                 }
                 .padding(.leading, -8)
@@ -117,6 +121,10 @@ struct TriagePage: View {
         }
         .padding(.horizontal, 16)
         .padding(.top, 12)
+    }
+
+    static func notesLink(_ count: Int) -> String {
+        "\(count) \(count == 1 ? "note" : "notes")"
     }
 
     static func headline(_ state: TriageState) -> String {

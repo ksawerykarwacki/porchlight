@@ -543,6 +543,15 @@ public final class InboxModel {
         }
     }
 
+    /// Opens a terminal on the conversation of a session that was removed, from its note.
+    public func resume(_ note: SessionNote) {
+        guard TerminalCommand.resume(note, claude: "claude") != nil else {
+            show("That note does not say which conversation it was")
+            return
+        }
+        launch { claude in TerminalCommand.resume(note, claude: claude) ?? TerminalCommand(arguments: [claude], cwd: note.directory, title: note.name) }
+    }
+
     public func open(sessionID: String) {
         if let session = snapshot.sessions.first(where: { $0.id == sessionID }) {
             launch { claude in .attach(to: session, claude: claude) }
