@@ -91,7 +91,7 @@ public protocol TerminalLauncher: Sendable {
 
 /// User settings. Unknown keys are ignored and a missing or broken file means defaults.
 public struct Settings: Sendable, Equatable, Codable {
-    /// Which terminal "Open" uses, by name ("warp", "ghostty", "wezterm", "terminal"). Nil picks one.
+    /// Which terminal "Open" uses, by name ("warp", "ghostty", "wezterm", "iterm2", "terminal"). Nil picks one.
     public var terminal: String?
     /// Path to the claude executable, overriding the search.
     public var claudePath: String?

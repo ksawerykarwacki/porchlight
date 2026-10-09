@@ -36,6 +36,82 @@ import Testing
         ])
     }
 
+    @Test func iTerm2GetsTheSameCommandFileAsTerminal() {
+        let script = "/Users/u/Library/Application Support/Porchlight/run/porchlight-open.command"
+        let steps = plan(.iterm2)
+        #expect(steps.count == 2 && steps[1] == .run(executable: "/usr/bin/open", arguments: ["-a", "/Applications/iTerm.app", script]))
+        // The same file as for Terminal, which changes folder itself: iTerm2 starts it in the home folder.
+        #expect(steps[0] == plan(.terminal)[0])
+        #expect(TerminalApp.iterm2.bundleName == "iTerm.app" && TerminalApp.iterm2.displayName == "iTerm2")
+        #expect(TerminalApp.iterm2.opensTab && !TerminalApp.iterm2.asksBeforeRunning)
+        #expect(TerminalApp(rawValue: "iterm2") == .iterm2)
+        #expect(TerminalApp.iterm2.installedPath(home: "/Users/u", exists: { $0 == "/Applications/iTerm.app" }) == "/Applications/iTerm.app")
+        // Still running, it is preferred over the Terminal that is always installed.
+        #expect(TerminalApp.detect(running: ["iTerm.app"], installed: { $0 == .iterm2 || $0 == .terminal }) == .iterm2)
+    }
+
+    /// The process chain as `ps` really showed it under iTerm2 3.7.4 (2026-10-09): the shell hangs
+    /// off a helper kept in Application Support, and only `login`'s arguments name the app.
+    @Test func findsASessionAttachedInITerm2() {
+        let table = ProcessTable(psOutput: """
+            36239     1 /Applications/iTerm.app/Contents/MacOS/iTerm2
+            36364 36239 /Users/u/Library/Application Support/iTerm2/iTermServer-3.7.4 /Users/u/Library/Application Support/iTerm2/iterm2-daemon-1.socket
+            36367 36364 /usr/bin/login -fqpl u /Applications/iTerm.app/Contents/MacOS/ShellLauncher --launch_shell
+            36368 36367 -zsh
+            36839 36368 /Users/u/.local/bin/claude attach 4cb41c2a
+            36900 36368 claude agents
+            """)
+        #expect(table.terminalAttached(to: "4cb41c2a") == .iterm2)
+        #expect(table.terminalRunningAgentView() == .iterm2)
+        #expect(table.terminalAttached(to: "99999999") == nil)
+        // The helper outliving the app, re-parented to launchd: the login line still says whose it is.
+        let orphaned = ProcessTable(psOutput: """
+            36364     1 /Users/u/Library/Application Support/iTerm2/iTermServer-3.7.4 /Users/u/Library/Application Support/iTerm2/iterm2-daemon-1.socket
+            36367 36364 /usr/bin/login -fqpl u /Applications/iTerm.app/Contents/MacOS/ShellLauncher --launch_shell
+            36368 36367 -zsh
+            36839 36368 claude attach 4cb41c2a
+            """)
+        #expect(orphaned.terminalAttached(to: "4cb41c2a") == .iterm2)
+    }
+
+    /// Opens a real iTerm2 tab and checks that a session open in it is found, so a second click
+    /// brings iTerm2 forward instead of opening another tab. Only when asked, on a Mac with iTerm2:
+    ///
+    ///   PORCHLIGHT_LIVE_ITERM2=1 swift test --filter aSessionOpenInARealITerm2IsFound
+    ///
+    /// That the command runs at all, and in the right folder, is `LiveTerminalTests` with
+    /// PORCHLIGHT_LIVE_TERMINALS=iterm2.
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["PORCHLIGHT_LIVE_ITERM2"] == "1"))
+    func aSessionOpenInARealITerm2IsFound() async throws {
+        // No spaces here: the process table is read word by word.
+        let scratch = FileManager.default.temporaryDirectory.resolvingSymlinksInPath().appendingPathComponent("porchlight-iterm-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: scratch) }
+        // A stand-in that `ps` shows as "…/claude attach itermlive" and that stays for a while,
+        // like a session being looked at: a few lines of C, built here. (A copy of a system
+        // program will not do: macOS does not let those run from another place.)
+        let standIn = scratch.appendingPathComponent("claude")
+        let built = try await CLIRunner().run(
+            URL(fileURLWithPath: "/usr/bin/cc"), ["-x", "c", "-", "-o", standIn.path],
+            input: "#include <unistd.h>\nint main(void) { sleep(25); return 0; }\n", timeout: 60)
+        try #require(built.succeeded, "could not build the stand-in: \(built.stderr)")
+
+        var launcher = MacTerminalLauncher(preferred: .iterm2)
+        launcher.scratch = scratch.appendingPathComponent("run").path
+        launcher.tabChannel = TabChannel(directory: scratch.appendingPathComponent("tab"))
+        let command = TerminalCommand(arguments: [standIn.path, "attach", "itermlive"], cwd: scratch.path, title: "live check", sessionID: "itermlive")
+
+        #expect(await launcher.open(command) == .opened(terminal: "iTerm2"))
+        var found: TerminalApp?
+        let deadline = Date().addingTimeInterval(20)
+        while Date() < deadline, found == nil {
+            try await Task.sleep(for: .milliseconds(300))
+            found = await launcher.processTable()?.terminalAttached(to: "itermlive")
+        }
+        #expect(found == .iterm2)
+        #expect(await launcher.open(command) == .alreadyOpen(terminal: "iTerm2"))
+    }
+
     @Test func warpGetsATabConfigAndItsURI() {
         let steps = plan(.warp)
         #expect(steps.count == 2)

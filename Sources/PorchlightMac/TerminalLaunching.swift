@@ -7,6 +7,7 @@ public enum TerminalApp: String, CaseIterable, Sendable {
     case warp
     case ghostty
     case wezterm
+    case iterm2
     case terminal
 
     public var bundleName: String {
@@ -14,14 +15,16 @@ public enum TerminalApp: String, CaseIterable, Sendable {
         case .warp: "Warp.app"
         case .ghostty: "Ghostty.app"
         case .wezterm: "WezTerm.app"
+        case .iterm2: "iTerm.app"
         case .terminal: "Terminal.app"
         }
     }
 
-    public var displayName: String { String(bundleName.dropLast(4)) }
+    /// The name people know it by: iTerm2's bundle is still called iTerm.
+    public var displayName: String { self == .iterm2 ? "iTerm2" : String(bundleName.dropLast(4)) }
 
     /// Whether the command opens as a tab in the current window rather than a new window.
-    public var opensTab: Bool { self == .warp }
+    public var opensTab: Bool { self == .warp || self == .iterm2 }
 
     /// Ghostty asks "Allow Ghostty to execute …?" every time it is started with a command. That
     /// is a deliberate safeguard of theirs with no setting to turn it off, so the user confirms
@@ -63,8 +66,12 @@ public enum TerminalPlanner {
             return [.run(executable: "/usr/bin/open", arguments: ["-na", appPath, "--args", "--working-directory=\(cwd)", "-e"] + wrapped)]
         case .wezterm:
             return [.run(executable: "/usr/bin/open", arguments: ["-na", appPath, "--args", "start", "--cwd", cwd, "--"] + wrapped)]
-        case .terminal:
+        case .terminal, .iterm2:
             // A .command file is opened by Terminal without AppleScript, so no Automation prompt.
+            // iTerm2 takes the same file (seen on 3.7.4, 2026-10-09): it ran it at once, without
+            // asking, as a tab of the window in front or a new window when there was none, and
+            // closed the tab when the command ended. It starts in the home folder, which is why
+            // the script changes folder itself.
             let script = "\(scratch)/porchlight-open.command"
             let body = "#!/bin/sh\ncd \(ShellQuote.quote(cwd)) || exit 1\nexec \(ShellQuote.line(wrapped))\n"
             return [
