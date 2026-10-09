@@ -1,0 +1,12 @@
+{
+  "name": "porchlight",
+  "description": "Small Claude Code mods from the Porchlight project, each optional and independent of the app.",
+  "owner": { "name": "Ksawery Karwacki" },
+  "plugins": [
+    {
+      "name": "porchlight-wake",
+      "source": "./mods/wake",
+      "description": "Wakes a background session that is not running before another session's message is sent to it."
+    }
+  ]
+}

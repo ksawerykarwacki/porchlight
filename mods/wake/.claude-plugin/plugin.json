@@ -1,0 +1,8 @@
+{
+  "name": "porchlight-wake",
+  "version": "0.1.0",
+  "description": "Wakes a background session that is not running before another session's message is sent to it, so the message arrives instead of failing.",
+  "author": { "name": "Ksawery Karwacki" },
+  "license": "GPL-3.0-or-later",
+  "homepage": "https://github.com/ksawerykarwacki/porchlight"
+}
