@@ -28,6 +28,14 @@ public struct NotificationPlan: Sendable, Equatable {
         }
     }
 
+    /// How hard the notification may interrupt.
+    public enum Level: String, Sendable, CaseIterable {
+        /// An ordinary notification: a Focus holds it back.
+        case active
+        /// May be shown during a Focus, if macOS allows the app that level.
+        case timeSensitive
+    }
+
     /// Reused for the same session, so a newer reminder replaces the older one.
     public let identifier: String
     public let category: Category
@@ -35,6 +43,7 @@ public struct NotificationPlan: Sendable, Equatable {
     public let subtitle: String
     public let body: String
     public let playsSound: Bool
+    public let level: Level
     public let sessionID: String?
 
     public init(_ reminder: Reminder) {
@@ -47,10 +56,29 @@ public struct NotificationPlan: Sendable, Equatable {
         case .session(let id):
             sessionID = id
             category = reminder.offersReply ? .sessionWithReply : .session
+            level = reminder.timeSensitive ? .timeSensitive : .active
         case .digest:
             sessionID = nil
             category = .digest
+            // A summary is never urgent, whatever the reminder says.
+            level = .active
         }
+    }
+
+    /// The notification as macOS takes it. Building it posts nothing. Pass `false` when macOS
+    /// has said the app may not use the time-sensitive level: the reminder then goes out as an
+    /// ordinary one rather than asking for something the app was refused.
+    public func content(timeSensitiveAllowed: Bool = true) -> UNMutableNotificationContent {
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.subtitle = subtitle
+        content.body = body
+        content.categoryIdentifier = category.rawValue
+        content.threadIdentifier = identifier
+        if playsSound { content.sound = .default }
+        content.interruptionLevel = level == .timeSensitive && timeSensitiveAllowed ? .timeSensitive : .active
+        if let sessionID { content.userInfo = ["sessionID": sessionID] }
+        return content
     }
 
     public static func buttons(for category: Category) -> [Button] {
@@ -80,6 +108,48 @@ public struct NotificationPlan: Sendable, Equatable {
     }
 }
 
+/// Whether macOS lets this copy of the app send time-sensitive notifications, as it reports it.
+public enum TimeSensitiveSupport: String, Sendable, CaseIterable {
+    /// Not asked yet, or not running as an app.
+    case unknown
+    /// The app may not use the level at all: it was not signed with the entitlement for it.
+    case notSupported
+    /// The app may, and the user has turned it off in System Settings.
+    case disabled
+    case enabled
+
+    public init(_ setting: UNNotificationSetting) {
+        switch setting {
+        case .notSupported: self = .notSupported
+        case .disabled: self = .disabled
+        case .enabled: self = .enabled
+        @unknown default: self = .unknown
+        }
+    }
+
+    /// What to tell someone who has asked for time-sensitive reminders, or nil when they will
+    /// get them (or nothing is known yet).
+    public var note: String? {
+        switch self {
+        case .unknown, .enabled: nil
+        case .notSupported:
+            "This build cannot send time-sensitive notifications: macOS only allows them from a signed release. Until then these reminders arrive as ordinary ones."
+        case .disabled:
+            "Time-sensitive notifications are turned off for Porchlight. Turn them on in System Settings > Notifications."
+        }
+    }
+
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var stored = TimeSensitiveSupport.unknown
+
+    /// What macOS last reported to this process. Kept here, not passed along, because the
+    /// settings page that shows it and the delivery that learns it do not know each other.
+    public static var current: TimeSensitiveSupport {
+        get { lock.withLock { stored } }
+        set { lock.withLock { stored = newValue } }
+    }
+}
+
 /// Delivers reminders as macOS notifications.
 ///
 /// Notifications need an app bundle, so this does nothing when run as a bare executable, and
@@ -90,6 +160,7 @@ public final class UserNotificationDelivery: NSObject, ReminderDelivery, UNUserN
     private let lock = NSLock()
     private var askedForPermission = false
     private var storedProblem: String?
+    private var recordedLevel: String?
 
     public init(onAction: @escaping @Sendable (ReminderAction) -> Void) {
         self.onAction = onAction
@@ -118,6 +189,39 @@ public final class UserNotificationDelivery: NSObject, ReminderDelivery, UNUserN
                 },
                 intentIdentifiers: [])
         }))
+        // Reading the settings never prompts, so it is safe at launch: the settings page can say
+        // at once whether time-sensitive reminders will work.
+        Task { [weak self] in
+            let settings = await center.notificationSettings()
+            self?.record(settings)
+        }
+    }
+
+    /// Notes what macOS allows this app, in memory for the settings page and on disk for a bug
+    /// report. Only ever called inside the app bundle.
+    private func record(_ settings: UNNotificationSettings) {
+        let support = TimeSensitiveSupport(settings.timeSensitiveSetting)
+        TimeSensitiveSupport.current = support
+        let url = PorchlightPaths.stateDirectory().appendingPathComponent("notification-level.txt")
+        let text = "timeSensitive: \(support.rawValue)\nauthorization: \(Self.name(settings.authorizationStatus))\n"
+        // Asked again before every reminder; written only when the answer changes.
+        let changed = lock.withLock {
+            defer { recordedLevel = text }
+            return recordedLevel != text
+        }
+        guard changed else { return }
+        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? Data(text.utf8).write(to: url, options: .atomic)
+    }
+
+    private static func name(_ status: UNAuthorizationStatus) -> String {
+        switch status {
+        case .notDetermined: "notDetermined"
+        case .denied: "denied"
+        case .authorized: "authorized"
+        case .provisional: "provisional"
+        @unknown default: "unknown (\(status.rawValue))"
+        }
     }
 
     public var isEnabled: Bool { enabled }
@@ -140,6 +244,7 @@ public final class UserNotificationDelivery: NSObject, ReminderDelivery, UNUserN
     private func permissionGranted() async -> Bool {
         let center = UNUserNotificationCenter.current()
         let settings = await center.notificationSettings()
+        record(settings)
         switch settings.authorizationStatus {
         case .authorized, .provisional:
             problem = nil
@@ -167,14 +272,8 @@ public final class UserNotificationDelivery: NSObject, ReminderDelivery, UNUserN
     public func deliver(_ reminder: Reminder) async {
         guard enabled, await permissionGranted() else { return }
         let plan = NotificationPlan(reminder)
-        let content = UNMutableNotificationContent()
-        content.title = plan.title
-        content.subtitle = plan.subtitle
-        content.body = plan.body
-        content.categoryIdentifier = plan.category.rawValue
-        content.threadIdentifier = plan.identifier
-        if plan.playsSound { content.sound = .default }
-        if let sessionID = plan.sessionID { content.userInfo = ["sessionID": sessionID] }
+        // What macOS allows was read a moment ago, with the permission.
+        let content = plan.content(timeSensitiveAllowed: TimeSensitiveSupport.current != .notSupported)
         do {
             try await UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: plan.identifier, content: content, trigger: nil))
         } catch {

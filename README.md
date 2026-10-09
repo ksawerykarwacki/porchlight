@@ -55,6 +55,14 @@ the session came with one. A daily summary arrives at 09:00.
 - **Change the times** in the panel's Settings tab: the two steps, the repeat, the daily
   summary, quiet hours, and whether the question text appears in notifications. They are kept in
   `settings.json`; `porchlight settings` prints the ones in force.
+- **Time-sensitive reminders** are off by default. "Mark as time-sensitive after" in the Settings
+  tab marks the reminders of a session that has waited that long, so macOS may show them during a
+  Focus. macOS only allows this level from a signed release: a build made with
+  `./scripts/make-app.sh` keeps the setting but is not given the level, and the Settings tab
+  says so.
+- **During a Focus** macOS holds ordinary reminders back: no banner, no sound, and they wait in
+  Notification Centre. Porchlight cannot see that a Focus is on, so its ladder does not pause.
+  Add Porchlight to the Focus's allowed apps if you want its reminders to come through.
 - **The menu-bar lantern** is unlit when nothing waits, amber when a session waits, and red with
   rays once one has waited as long as the second step. The number appears from two sessions up.
 

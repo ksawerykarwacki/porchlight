@@ -518,6 +518,8 @@ struct SettingsPage: View {
     let actions: InboxActions
     /// Off for offscreen rendering, which draws system pickers as placeholder blocks.
     var drawsMenus = true
+    /// Whether macOS lets this copy of the app send time-sensitive notifications.
+    var timeSensitive = TimeSensitiveSupport.current
 
     private var settings: ReminderSettings { actions.reminders }
     private var update: ((inout ReminderSettings) -> Void) -> Void { actions.updateReminders }
@@ -546,6 +548,21 @@ struct SettingsPage: View {
                 choice(ReminderOptions.repeats, selected: settings.repeatEvery, label: { $0.map(ReminderOptions.duration) ?? "Never" }) { value in
                     update { $0.repeatEvery = value }
                 }
+            }
+            row("Mark as time-sensitive after") {
+                choice(ReminderOptions.timeSensitiveAfter, selected: settings.timeSensitiveAfter, label: { $0.map(ReminderOptions.duration) ?? "Off" }) { value in
+                    update { $0.timeSensitiveAfter = value }
+                }
+            }
+            // Said under the row rather than by hiding it: the choice is kept and starts to
+            // work once macOS allows the level.
+            if settings.timeSensitiveAfter != nil, let note = timeSensitive.note {
+                Text(note)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 2)
+                    .padding(.bottom, 4)
             }
 
             Divider().padding(.vertical, 10)

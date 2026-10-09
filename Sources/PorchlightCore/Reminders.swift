@@ -29,6 +29,9 @@ public struct ReminderSettings: Codable, Sendable, Equatable {
     public var repeatEvery: TimeInterval?
     /// Reminders for sessions that have waited at least this long also play a sound.
     public var soundAfter: TimeInterval
+    /// Reminders for sessions that have waited at least this long are marked time-sensitive, the
+    /// level macOS may show during a Focus. Nil, the default, leaves every reminder ordinary.
+    public var timeSensitiveAfter: TimeInterval?
     public var quietHours: QuietHours?
     /// Minutes after midnight for the daily "N sessions waiting" summary. Nil turns it off.
     public var digestMinute: Int?
@@ -39,6 +42,7 @@ public struct ReminderSettings: Codable, Sendable, Equatable {
         ladder: [TimeInterval] = [15 * 60, 2 * 3600],
         repeatEvery: TimeInterval? = 4 * 3600,
         soundAfter: TimeInterval = 2 * 3600,
+        timeSensitiveAfter: TimeInterval? = nil,
         quietHours: QuietHours? = nil,
         digestMinute: Int? = 9 * 60,
         hideDetails: Bool = false
@@ -46,13 +50,15 @@ public struct ReminderSettings: Codable, Sendable, Equatable {
         self.ladder = ladder.filter { $0 >= 0 }.sorted()
         self.repeatEvery = repeatEvery.flatMap { $0 > 0 ? $0 : nil }
         self.soundAfter = soundAfter
+        // Zero, a negative number or anything that is not a number of seconds means off.
+        self.timeSensitiveAfter = timeSensitiveAfter.flatMap { $0 > 0 && $0.isFinite ? $0 : nil }
         self.quietHours = quietHours
         self.digestMinute = digestMinute
         self.hideDetails = hideDetails
     }
 
     private enum CodingKeys: String, CodingKey {
-        case ladder, repeatEvery, soundAfter, quietHours, digestMinute, hideDetails
+        case ladder, repeatEvery, soundAfter, timeSensitiveAfter, quietHours, digestMinute, hideDetails
     }
 
     /// Missing or mistyped values fall back to the defaults one by one, so a hand-edited or older
@@ -69,10 +75,13 @@ public struct ReminderSettings: Codable, Sendable, Equatable {
         }
         let repeatEvery: TimeInterval? = optional(.repeatEvery, default: defaults.repeatEvery)
         let digestMinute: Int? = optional(.digestMinute, default: defaults.digestMinute)
+        // Off by default, so a missing or odd value is off too.
+        let timeSensitiveAfter: TimeInterval? = optional(.timeSensitiveAfter, default: defaults.timeSensitiveAfter)
         self.init(
             ladder: ladder,
             repeatEvery: repeatEvery,
             soundAfter: (try? c.decode(TimeInterval.self, forKey: .soundAfter)) ?? defaults.soundAfter,
+            timeSensitiveAfter: timeSensitiveAfter,
             quietHours: try? c.decodeIfPresent(QuietHours.self, forKey: .quietHours),
             digestMinute: digestMinute.flatMap { (0..<1440).contains($0) ? $0 : defaults.digestMinute },
             hideDetails: (try? c.decode(Bool.self, forKey: .hideDetails)) ?? defaults.hideDetails)
@@ -84,6 +93,7 @@ public struct ReminderSettings: Codable, Sendable, Equatable {
         // Written even when nil, so "off" is not mistaken for "missing" on the way back in.
         try c.encode(repeatEvery, forKey: .repeatEvery)
         try c.encode(soundAfter, forKey: .soundAfter)
+        try c.encode(timeSensitiveAfter, forKey: .timeSensitiveAfter)
         try c.encodeIfPresent(quietHours, forKey: .quietHours)
         try c.encode(digestMinute, forKey: .digestMinute)
         try c.encode(hideDetails, forKey: .hideDetails)
@@ -120,6 +130,7 @@ public enum ReminderOptions {
     public static let secondSteps: [TimeInterval] = [3600, 2 * 3600, 4 * 3600, 8 * 3600]
     public static let repeats: [TimeInterval?] = [nil, 2 * 3600, 4 * 3600, 8 * 3600, 24 * 3600]
     public static let digestHours: [Int?] = [nil, 7, 8, 9, 10, 12]
+    public static let timeSensitiveAfter: [TimeInterval?] = [nil, 3600, 2 * 3600, 4 * 3600, 8 * 3600, 24 * 3600]
 
     public static func duration(_ seconds: TimeInterval) -> String {
         let minutes = Int((seconds / 60).rounded())
@@ -251,14 +262,21 @@ public struct Reminder: Sendable, Equatable, Identifiable {
     public let withSound: Bool
     /// The session came with a reply Claude suggested, which the user can copy.
     public var offersReply = false
+    /// The session has waited long enough to be shown at the time-sensitive level, if macOS
+    /// allows the app that level. Never set for the digest.
+    public var timeSensitive = false
 
-    public init(kind: Kind, title: String, subtitle: String = "", body: String, withSound: Bool, offersReply: Bool = false) {
+    public init(
+        kind: Kind, title: String, subtitle: String = "", body: String, withSound: Bool, offersReply: Bool = false,
+        timeSensitive: Bool = false
+    ) {
         self.kind = kind
         self.title = title
         self.subtitle = subtitle
         self.body = body
         self.withSound = withSound
         self.offersReply = offersReply
+        self.timeSensitive = timeSensitive
     }
 
     /// Stable per session, so a newer reminder replaces the older one instead of stacking.
@@ -354,7 +372,10 @@ public struct ReminderPlanner: Sendable {
             subtitle: row.place,
             body: body,
             withSound: waited >= settings.soundAfter,
-            offersReply: session.suggestedReply != nil)
+            offersReply: session.suggestedReply != nil,
+            // Judged by the wait, not by the step: a reminder sent late, after quiet hours or a
+            // snooze, carries the level its wait has earned by then.
+            timeSensitive: settings.timeSensitiveAfter.map { waited >= $0 } ?? false)
     }
 
     private func digest(waiting: [Session], state: inout ReminderState, now: Date, quiet: Bool) -> Reminder? {
