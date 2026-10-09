@@ -62,6 +62,17 @@ public struct InboxActions {
     public var setPrefersAgentView: (Bool) -> Void = { _ in }
     /// Whether the panel shows the reminder settings instead of the sessions.
     public var showsSettings = false
+    /// Whether the panel shows the Triage tab. Never true together with `showsSettings`.
+    public var showsTriage = false
+    public var setShowsTriage: (Bool) -> Void = { _ in }
+    public var triage = TriageState()
+    /// The clock the Triage tab's ages are measured against.
+    public var triageNow = Date()
+    public var reloadTriage: () -> Void = {}
+    public var askRemoveSafe: () -> Void = {}
+    public var cancelRemoveSafe: () -> Void = {}
+    public var confirmRemoveSafe: () -> Void = {}
+    public var dismissTriageResult: () -> Void = {}
     public var setShowsSettings: (Bool) -> Void = { _ in }
     public var reminders = ReminderSettings()
     public var updateReminders: ((inout ReminderSettings) -> Void) -> Void = { _ in }
@@ -127,8 +138,29 @@ public struct InboxView: View {
         self.scrolls = scrolls
     }
 
-    public init(model: InboxModel, updates: UpdateModel? = nil, newSession: @escaping () -> Void = {}, quit: @escaping () -> Void) {
+    public init(
+        model: InboxModel, updates: UpdateModel? = nil, triage: TriageModel? = nil, newSession: @escaping () -> Void = {},
+        quit: @escaping () -> Void
+    ) {
         var actions = InboxActions()
+        actions.showsTriage = model.showsTriage
+        actions.triageNow = model.now
+        if let triage {
+            actions.triage = TriageState(triage)
+            actions.setShowsTriage = { shows in
+                model.showsTriage = shows
+                if shows {
+                    model.showsSettings = false
+                    // Looked at afresh each time the tab is opened: it reads the disk and asks gh.
+                    Task { await triage.load() }
+                }
+            }
+            actions.reloadTriage = { Task { await triage.load() } }
+            actions.askRemoveSafe = { triage.askRemoveSafe() }
+            actions.cancelRemoveSafe = { triage.cancelRemoveSafe() }
+            actions.confirmRemoveSafe = { Task { await triage.confirmRemoveSafe() } }
+            actions.dismissTriageResult = { triage.dismissResult() }
+        }
         if let updates {
             actions.updateSummary = updates.summary
             actions.canUpdate = updates.canUpdate
@@ -173,7 +205,10 @@ public struct InboxView: View {
         actions.prefersAgentView = model.prefersAgentView
         actions.setPrefersAgentView = { model.setPrefersAgentView($0) }
         actions.showsSettings = model.showsSettings
-        actions.setShowsSettings = { model.showsSettings = $0 }
+        actions.setShowsSettings = { shows in
+            model.showsSettings = shows
+            if shows { model.showsTriage = false }
+        }
         actions.reminders = model.reminderSettings
         actions.updateReminders = { model.updateReminders($0) }
         actions.retry = { model.retry(sessionID: $0) }
@@ -186,8 +221,12 @@ public struct InboxView: View {
     public var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 2) {
-                TabButton(title: "Sessions", selected: !actions.showsSettings, id: "tab.sessions", hover: hover) {
+                TabButton(title: "Sessions", selected: !actions.showsSettings && !actions.showsTriage, id: "tab.sessions", hover: hover) {
                     actions.setShowsSettings(false)
+                    actions.setShowsTriage(false)
+                }
+                TabButton(title: "Triage", selected: actions.showsTriage, id: "tab.triage", hover: hover) {
+                    actions.setShowsTriage(true)
                 }
                 TabButton(title: "Settings", selected: actions.showsSettings, id: "tab.settings", hover: hover) {
                     actions.setShowsSettings(true)
@@ -210,8 +249,8 @@ public struct InboxView: View {
             }
 
             if scrolls {
-                // Both tabs are laid out and only one is shown, so the panel is as tall as the
-                // taller of the two and switching tabs never resizes its window. A window that
+                // Every tab is laid out and only one is shown, so the panel is as tall as the
+                // tallest of them and switching tabs never resizes its window. A window that
                 // gets shorter keeps its bottom edge, which would drop it away from the menu bar.
                 ZStack(alignment: .top) {
                     // Shorter than the session list's limit: the settings scroll, so that a few
@@ -226,8 +265,14 @@ public struct InboxView: View {
                         // a scroll view accepts almost nothing. Fixing it at its ideal height (the
                         // list's height, up to the limit above) is what keeps the rows visible.
                         .fixedSize(horizontal: false, vertical: true)
-                        .shown(!actions.showsSettings)
+                        .shown(!actions.showsSettings && !actions.showsTriage)
+                    ScrollView { TriagePage(actions: actions, hover: hover) }
+                        .frame(maxHeight: 480)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .shown(actions.showsTriage)
                 }
+            } else if actions.showsTriage {
+                TriagePage(actions: actions, hover: hover)
             } else if actions.showsSettings {
                 SettingsPage(actions: actions, drawsMenus: false)
             } else {

@@ -39,6 +39,8 @@ public final class InboxModel {
     public private(set) var transientErrors = TransientErrors()
     /// Whether the panel shows the reminder settings instead of the sessions.
     public var showsSettings = false
+    /// Whether the panel shows the Triage tab instead of the sessions.
+    public var showsTriage = false
     /// Which row or button the pointer is over.
     public let hover = HoverTracker()
     /// The result of the last action, shown briefly at the bottom of the inbox.
@@ -404,6 +406,31 @@ public final class InboxModel {
         if let pending = pendingControl, pending.action == .remove, pins.isPinned(pending.sessionID) { pendingControl = nil }
         // Withdraw or restore reminders straight away rather than at the next poll.
         Task { await engine.process(snapshot) }
+    }
+
+    /// Removes one session with plain `claude rm`, for the Triage tab's bulk removal. Nothing is
+    /// forced, nothing is shown: the tab reports the outcomes together and reads the sessions
+    /// again once at the end.
+    public func removePlainly(sessionID: String) async -> ControlOutcome {
+        guard let session = snapshot.sessions.first(where: { $0.id == sessionID }), SessionAction.remove.applies(to: session), !pins.isPinned(sessionID) else {
+            return .couldNotRun("That session can no longer be removed from here.")
+        }
+        let outcome: ControlOutcome
+        if let runControl {
+            outcome = await runControl(.remove, sessionID, [])
+        } else if let claude = locator.locate() {
+            outcome = await SessionControl(claude: claude).run(.remove, id: sessionID)
+        } else {
+            outcome = .couldNotRun("The claude command was not found")
+        }
+        log?.record("remove \(sessionID) (triage): \(outcome.succeeded ? "done" : "not done: \(outcome.message)")")
+        return outcome
+    }
+
+    /// Reads the sessions now and shows the result.
+    public func reload() async {
+        await store.refresh()
+        apply(await store.snapshot)
     }
 
     /// Asks to stop or remove a session. Nothing happens until `confirmControl`.

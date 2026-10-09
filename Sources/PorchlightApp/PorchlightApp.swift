@@ -11,6 +11,7 @@ struct PorchlightApp: App {
     private let model: InboxModel
     private let palette: PaletteController
     private let updates: UpdateModel
+    private let triage: TriageModel
     private let hotkey = GlobalHotkey()
 
     init() {
@@ -22,6 +23,12 @@ struct PorchlightApp: App {
         let model = updates.installed == nil ? InboxModel() : InboxModel(loginItem: .unavailable)
         self.model = model
         model.willOpenTerminal = { PanelWindowObserver.closePanelAndLetGo() }
+        let settingsURL = Settings.fileURL()
+        self.triage = TriageModel(services: TriageModel.Services(
+            sessions: { model.snapshot.sessions }, pins: { model.pins },
+            settings: { Settings.load(from: settingsURL).triage ?? TriageSettings() },
+            remove: { id in await model.removePlainly(sessionID: id) },
+            reload: { await model.reload() }))
         model.pickFolder = {
             let dialog = NSOpenPanel()
             dialog.canChooseDirectories = true
@@ -70,6 +77,7 @@ struct PorchlightApp: App {
             InboxView(
                 model: model,
                 updates: updates,
+                triage: triage,
                 // The palette replaces the panel rather than opening beside it.
                 newSession: {
                     PanelWindowObserver.closePanel()
@@ -78,7 +86,10 @@ struct PorchlightApp: App {
                 quit: { NSApplication.shared.terminate(nil) })
                 // Keeps the panel attached to the menu bar when its height changes, and brings
                 // it back to the sessions the next time it opens.
-                .background(PanelWindowObserver { model.showsSettings = false })
+                .background(PanelWindowObserver {
+                    model.showsSettings = false
+                    model.showsTriage = false
+                })
         } label: {
             StatusLabel(status: model.status)
         }
