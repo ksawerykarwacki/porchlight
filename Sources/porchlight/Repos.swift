@@ -100,3 +100,17 @@ func repos(arguments: [String]) async {
         print("\(repo.name.padding(toLength: width, withPad: " ", startingAt: 0))  \(repo.displayPath())\(note)")
     }
 }
+
+/// `porchlight name`: the name the template gives a prompt, for a folder (default: this one).
+func name(arguments: [String]) {
+    var arguments = arguments
+    var directory = FileManager.default.currentDirectoryPath
+    if let flag = arguments.firstIndex(of: "--dir") {
+        guard flag + 1 < arguments.count else { fail("usage: porchlight name [--dir DIR] PROMPT", code: 2) }
+        directory = RepoPath.normalized(arguments[flag + 1])
+        arguments.removeSubrange(flag...(flag + 1))
+    }
+    guard !arguments.isEmpty else { fail("usage: porchlight name [--dir DIR] PROMPT", code: 2) }
+    let template = NameTemplate(settings: Settings.load().naming ?? NamingSettings())
+    print(template.name(prompt: arguments.joined(separator: " "), directory: directory, branch: GitBranch.current(in: directory)))
+}

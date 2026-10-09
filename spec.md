@@ -154,6 +154,15 @@ Acceptance: from any app, hotkey → type 3 letters of a repo → Enter → type
 
 **FR-NM4** **[v1.1]** Optional installer for a Claude Code hook (`UserPromptSubmit`/`SessionStart` returning `hookSpecificOutput.sessionTitle`) so sessions started *outside* Porchlight also get template names. Must be opt-in, show the exact settings diff, and be removable.
 
+**Built in M3 layer 2 (2026-10-09): the template, without the palette.** `NameTemplate`, `Slug` and `GitBranch` in the core, `porchlight name` in the tool.
+
+- Template and ticket pattern live under `naming` in `settings.json`. A ticket pattern with a capture group yields the group.
+- The slug is the first four words of the prompt's first line that are not filler ("the", "please", "can you"), lowercased and joined with hyphens. Letters of any language are kept.
+- A token that comes out empty takes the separator after it along, so `{ticket}-{slug}` without a ticket is just the slug. A template that comes out empty falls back to the slug; with no prompt either, the name is empty and Claude Code names the session.
+- Names are cut at 60 characters, at a word boundary where there is one. Unknown tokens are left as written so a typo is visible.
+- The branch is read from the repository's `HEAD` file (following the `.git` file of a linked worktree), without running git.
+- Not built: LLM-generated names (FR-NM3, D8), the naming hook (FR-NM4, v1.1). The editable preview (FR-NM2) comes with the palette.
+
 ### 6.5 Repo index — v1
 
 **FR-R1** Settings: list of **workspace roots** (default: none → onboarding asks; suggest `~/` subfolders that contain git repos). Max scan depth (default 3). Exclude globs (default: `node_modules`, `.git`, `.claude/worktrees`, `Library`).

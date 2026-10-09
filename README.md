@@ -77,6 +77,14 @@ A folder is a repository if it holds `.git`. Folders of sessions that already ex
 wherever they are. `node_modules`, `Library` and Claude Code's own worktrees are skipped; the depth
 and the skipped names are under `repos` in `settings.json`.
 
+## Names
+
+A session started from Porchlight is named from its prompt: "Fix the flaky settings test in CI"
+becomes `fix-flaky-settings-test`. To change that, set a template under `naming` in `settings.json`,
+for example `"template": "{repo}-{slug}"`. The tokens are `{repo}`, `{branch}`, `{ticket}`, `{slug}`
+and `{date}`; `{ticket}` needs a `ticketPattern` (a regular expression such as `[A-Z]+-\\d+`) and is
+looked for in the prompt, then in the branch. `porchlight name "your prompt"` shows the result.
+
 ## Terminals
 
 Clicking a session runs `claude attach <id>` in your terminal. Pick the terminal in the panel's

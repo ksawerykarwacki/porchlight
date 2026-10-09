@@ -21,6 +21,7 @@ let usage = """
                                               ones matching TEXT
       porchlight repos root add|remove DIR    Choose the folders that are searched for repositories
       porchlight repos pin|unpin DIR          Keep a repository at the top of the list
+      porchlight name [--dir DIR] PROMPT      Print the name a session started with PROMPT would get
       porchlight settings                     Print the settings in force, as JSON
       porchlight tab                          Run agent view in this tab and let the app switch it
                                               to a session when you click one
@@ -262,13 +263,14 @@ func settings() {
         let preferAgentView: Bool
         let reminders: ReminderSettings
         let repos: RepoIndexSettings
+        let naming: NamingSettings
     }
     let url = Settings.fileURL()
     let loaded = Settings.load(from: url)
     let report = Report(
         file: url.path, terminal: loaded.terminal, claudePath: loaded.claudePath,
         preferAgentView: loaded.preferAgentView ?? false, reminders: loaded.reminders ?? ReminderSettings(),
-        repos: loaded.repos ?? RepoIndexSettings())
+        repos: loaded.repos ?? RepoIndexSettings(), naming: loaded.naming ?? NamingSettings())
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
     guard let data = try? encoder.encode(report) else { fail("could not encode the settings") }
@@ -311,6 +313,8 @@ case "status":
     await status(arguments: Array(arguments.dropFirst()))
 case "settings":
     settings()
+case "name":
+    name(arguments: Array(arguments.dropFirst()))
 case "repos":
     await repos(arguments: Array(arguments.dropFirst()))
 case "snooze":
