@@ -29,15 +29,29 @@ Options:
                                         an alias for the latest model (e.g.
                                         'opus' or 'sonnet') or a model's full
                                         name.
+  --fork-session                        When resuming, create a new session ID
+                                        instead of reusing the original (use
+                                        with --resume or --continue)
   -n, --name <name>                     Set a display name for this session
                                         (shown in the prompt box, /resume
                                         picker, and terminal title)
+  --no-session-persistence              Disable session persistence - sessions
+                                        will not be saved to disk and cannot be
+                                        resumed (only works with --print)
   --permission-mode <mode>              Permission mode to use for the session
                                         (choices: "acceptEdits", "auto",
                                         "bypassPermissions", "manual",
                                         "dontAsk", "plan")
   -p, --print                           Print response and exit (useful for
                                         pipes).
+  -r, --resume [value]                  Resume a conversation by session ID, or
+                                        open interactive picker with optional
+                                        search term
+  --tools <tools...>                    Specify the list of available tools from
+                                        the built-in set. Use "" to disable all
+                                        tools, "default" to use all tools, or
+                                        specify tool names (e.g.
+                                        "Bash,Edit,Read").
   -v, --version                         Output the version number
   -w, --worktree [name]                 Create a new git worktree for this
                                         session (optionally specify a name)

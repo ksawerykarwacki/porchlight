@@ -28,7 +28,17 @@ struct PorchlightApp: App {
             sessions: { model.snapshot.sessions }, pins: { model.pins },
             settings: { Settings.load(from: settingsURL).triage ?? TriageSettings() },
             remove: { id in await model.removePlainly(sessionID: id) },
-            reload: { await model.reload() }))
+            reload: { await model.reload() },
+            // Only reached after the question in the Triage row has been answered with yes.
+            wrapUp: { item, name in
+                let settings = Settings.load(from: settingsURL)
+                guard let claude = ClaudeLocator(override: settings.claudePath).locate() else { return .failure(.couldNotRun("claude was not found")) }
+                return await SessionSummariser(claude: claude).wrapUp(
+                    item.session, model: name, archive: NotesArchive(), branch: item.facts.branch,
+                    pullRequest: item.facts.branch == nil ? nil : item.facts.pullRequest.summary)
+            },
+            notes: { NotesArchive().all() },
+            wrapUpModel: { (Settings.load(from: settingsURL).wrapUp ?? WrapUpSettings()).model }))
         model.pickFolder = {
             let dialog = NSOpenPanel()
             dialog.canChooseDirectories = true

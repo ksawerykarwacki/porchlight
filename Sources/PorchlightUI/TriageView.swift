@@ -10,6 +10,11 @@ public struct TriageState {
     public var removing: String?
     public var summary: String?
     public var refusals: [TriageModel.Refusal] = []
+    public var pendingWrapUp: String?
+    public var summarising: String?
+    public var notes: [String: SessionNote] = [:]
+    public var wrapUpProblem: TriageModel.WrapUpProblem?
+    public var wrapUpModel = WrapUpSettings.defaultModel
 
     public init() {}
 
@@ -22,6 +27,11 @@ public struct TriageState {
         removing = model.removing
         summary = model.summary
         refusals = model.refusals
+        pendingWrapUp = model.pendingWrapUp
+        summarising = model.summarising
+        notes = model.notes
+        wrapUpProblem = model.wrapUpProblem
+        wrapUpModel = model.wrapUpModel
     }
 
     var safe: [TriageItem] { items.filter { $0.verdict == .safeToRemove } }
@@ -65,7 +75,7 @@ struct TriagePage: View {
                     .padding(.top, 12)
                     .padding(.bottom, 4)
                     ForEach(group) { item in
-                        TriageRow(item: item, actions: actions, hover: hover, isBeingRemoved: state.removing == item.id)
+                        TriageRow(item: item, actions: actions, hover: hover, isBeingRemoved: state.removing == item.id, state: state)
                     }
                 }
             }
@@ -125,7 +135,9 @@ struct TriageRow: View {
     let actions: InboxActions
     let hover: HoverTracker
     let isBeingRemoved: Bool
+    var state = TriageState()
 
+    private var note: SessionNote? { state.notes[item.id] }
     private var id: String { "triage.\(item.id)" }
     private var isHovered: Bool { hover.hovered == id }
 
@@ -171,13 +183,37 @@ struct TriageRow: View {
                         QuietButton(title: "Remove…", symbol: nil, id: "\(id).remove", hover: hover) { actions.askControl(.remove, item.id) }
                         QuietButton(title: "Keep (pin)", symbol: nil, id: "\(id).pin", hover: hover) { actions.keepFromTriage(item.id) }
                             .help("Pin this session: it moves to Pinned on the Sessions tab and is no longer suggested for removal")
+                        if state.summarising == nil {
+                            QuietButton(title: note == nil ? "Wrap up…" : "Wrap up again…", symbol: nil, id: "\(id).wrap", hover: hover) { actions.askWrapUp(item.id) }
+                                .help("Have a small model summarise what this session did and where it stopped, and keep the summary")
+                        }
                     }
                     .padding(.leading, -8)
                     .opacity(isBeingRemoved ? 0.4 : 1)
+                    if state.summarising == item.id {
+                        Text("Summarising with \(state.wrapUpModel)… a long conversation can take a minute.")
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
+
+            if state.pendingWrapUp == item.id {
+                ControlNote(
+                    title: nil, text: TriageRow.wrapUpQuestion(model: state.wrapUpModel), monospaced: false,
+                    primary: ("Summarise", actions.confirmWrapUp), secondary: ("Cancel", actions.cancelWrapUp), danger: nil,
+                    id: "triage.wrap.\(item.id)", hover: hover)
+            } else if let problem = state.wrapUpProblem, problem.id == item.id {
+                ControlNote(
+                    title: "Not summarised", text: problem.text, monospaced: true,
+                    primary: ("OK", actions.dismissWrapUpProblem), secondary: nil, danger: nil, id: "triage.wrapProblem.\(item.id)", hover: hover)
+            }
+            if let note, state.summarising != item.id {
+                TriageNote(note: note, now: actions.triageNow, copy: { actions.copyResumeCommand(note) }, id: "\(id).note", hover: hover)
+            }
 
             if let pending = actions.pendingControl, pending.sessionID == item.id {
                 ControlNote(
@@ -195,5 +231,46 @@ struct TriageRow: View {
         .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.primary.opacity(isHovered ? 0.07 : 0)))
         .onHover { hover.set(id, $0) }
         .padding(.horizontal, 6)
+    }
+
+    static func wrapUpQuestion(model: String) -> String {
+        "Summarise this session with \(model)? Claude Code reads the whole conversation as a copy, with every tool off, so the session itself is not changed. "
+            + "It uses some of your Claude usage. The summary is kept, also after the session is removed."
+    }
+}
+
+/// A session's kept summary, under its row.
+struct TriageNote: View {
+    let note: SessionNote
+    let now: Date
+    let copy: () -> Void
+    let id: String
+    let hover: HoverTracker
+
+    static func caption(_ note: SessionNote, now: Date) -> String {
+        let age = Age.short(since: note.createdAt, now: now).map { $0 == "just now" ? $0 : "\($0) ago" } ?? "just now"
+        return "Summarised \(age) with \(note.model). Kept after the session is removed."
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(note.summary)
+                .font(.system(size: 12))
+                .lineLimit(14)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(Self.caption(note, now: now))
+                .font(.system(size: 11))
+                .foregroundStyle(.tertiary)
+                .fixedSize(horizontal: false, vertical: true)
+            QuietButton(title: "Copy the command to resume it", symbol: "doc.on.doc", id: "\(id).copy", hover: hover, action: copy)
+                .padding(.leading, -8)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.primary.opacity(0.06)))
+        .padding(.leading, 30)
+        .padding(.trailing, 10)
+        .padding(.bottom, 6)
     }
 }

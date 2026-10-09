@@ -75,6 +75,13 @@ public struct InboxActions {
     public var dismissTriageResult: () -> Void = {}
     /// Pins a session from its Triage row and takes the row away.
     public var keepFromTriage: (String) -> Void = { _ in }
+    /// Asks whether to summarise a session; nothing is read until `confirmWrapUp`.
+    public var askWrapUp: (String) -> Void = { _ in }
+    public var confirmWrapUp: () -> Void = {}
+    public var cancelWrapUp: () -> Void = {}
+    public var dismissWrapUpProblem: () -> Void = {}
+    /// Copies the command that opens a summarised conversation again.
+    public var copyResumeCommand: (SessionNote) -> Void = { _ in }
     public var setShowsSettings: (Bool) -> Void = { _ in }
     public var reminders = ReminderSettings()
     public var updateReminders: ((inout ReminderSettings) -> Void) -> Void = { _ in }
@@ -162,6 +169,11 @@ public struct InboxView: View {
             actions.cancelRemoveSafe = { triage.cancelRemoveSafe() }
             actions.confirmRemoveSafe = { Task { await triage.confirmRemoveSafe() } }
             actions.dismissTriageResult = { triage.dismissResult() }
+            actions.askWrapUp = { triage.askWrapUp($0) }
+            actions.confirmWrapUp = { Task { await triage.confirmWrapUp() } }
+            actions.cancelWrapUp = { triage.cancelWrapUp() }
+            actions.dismissWrapUpProblem = { triage.dismissWrapUpProblem() }
+            actions.copyResumeCommand = { model.copy($0.resumeCommand, saying: "Command copied: paste it in a terminal to open that conversation") }
             actions.keepFromTriage = { id in
                 model.keep(sessionID: id)
                 triage.exclude(id)

@@ -31,6 +31,11 @@ let usage = """
       porchlight triage [--json]              List sessions that are finished, stopped or long waiting,
                                               each with a verdict: safe to remove, needs a decision,
                                               stale, or keep
+      porchlight wrap-up <id> [--model MODEL] [--json]
+                                              Summarise a session with a small model and keep the
+                                              summary as a note. The session is not changed: it is
+                                              read as a copy, with every tool off. Uses Claude usage
+      porchlight notes [--json] [TEXT]        Show the notes kept so far, or the ones containing TEXT
       porchlight pin <id> [--quiet]           Keep a session: it is grouped at the top and never
                                               offered for removal; --quiet also turns its reminders off
       porchlight unpin <id>
@@ -358,6 +363,10 @@ case "new":
     #endif
 case "triage":
     await triage(arguments: Array(arguments.dropFirst()))
+case "wrap-up":
+    await wrapUp(arguments: Array(arguments.dropFirst()))
+case "notes":
+    notes(arguments: Array(arguments.dropFirst()))
 case "pin", "unpin":
     await pin(arguments: arguments)
 case "stop":

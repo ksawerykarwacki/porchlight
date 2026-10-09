@@ -141,6 +141,15 @@ request is open). "Remove the safe ones" clears the first group in one go; Claud
 each one and refuses if anything would be lost. Pull requests are looked up with the GitHub CLI
 (`gh`), if you have it.
 
+Not sure what an old session was about? **Wrap up…** on its Triage row (or
+`porchlight wrap-up <id>`) has a small model summarise it: what it was doing, where it stopped, and
+whether anything would be lost. It asks first, because it reads the whole conversation and uses
+some of your Claude usage. The session itself is not changed: Claude Code reads it as a copy, with
+every tool off and nothing saved. The summary is kept as a note in Porchlight's own folder, also
+after the session is removed, together with the command that opens the conversation again;
+`porchlight notes [TEXT]` lists or searches the notes. The model is `haiku` unless `wrapUp.model`
+in `settings.json` names another.
+
 To stop or remove a session, use the ⋯ menu on its row, ⌘S or ⌘D in the palette, or
 `porchlight stop <id>` and `porchlight rm <id>`. Both ask first. If Claude Code refuses to remove
 one, for example because its worktree has unpushed commits, Porchlight shows the reason. If that

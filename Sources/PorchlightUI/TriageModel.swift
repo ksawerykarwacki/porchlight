@@ -19,12 +19,21 @@ public final class TriageModel {
         /// Reads the sessions again after removals.
         public var reload: @MainActor () async -> Void
         public var now: @Sendable () -> Date
+        /// Summarises one session with the named model and keeps the result as a note. Only ever
+        /// called after the user has said yes: it spends usage.
+        public var wrapUp: @MainActor (TriageItem, String) async -> Result<SessionNote, WrapUpFailure>
+        /// The notes kept so far.
+        public var notes: @Sendable () -> [SessionNote]
+        public var wrapUpModel: @Sendable () -> String
 
         public init(
             sessions: @escaping @MainActor () -> [Session], pins: @escaping @MainActor () -> Pins,
             settings: @escaping @Sendable () -> TriageSettings = { TriageSettings() }, gatherer: TriageGatherer = TriageGatherer(),
             remove: @escaping @MainActor (String) async -> ControlOutcome, reload: @escaping @MainActor () async -> Void = {},
-            now: @escaping @Sendable () -> Date = { Date() }
+            now: @escaping @Sendable () -> Date = { Date() },
+            wrapUp: @escaping @MainActor (TriageItem, String) async -> Result<SessionNote, WrapUpFailure> = { _, _ in .failure(.couldNotRun("not set up")) },
+            notes: @escaping @Sendable () -> [SessionNote] = { [] },
+            wrapUpModel: @escaping @Sendable () -> String = { WrapUpSettings.defaultModel }
         ) {
             self.sessions = sessions
             self.pins = pins
@@ -33,6 +42,20 @@ public final class TriageModel {
             self.remove = remove
             self.reload = reload
             self.now = now
+            self.wrapUp = wrapUp
+            self.notes = notes
+            self.wrapUpModel = wrapUpModel
+        }
+    }
+
+    /// A summary that could not be made, with the reason.
+    public struct WrapUpProblem: Equatable {
+        public let id: String
+        public let text: String
+
+        public init(id: String, text: String) {
+            self.id = id
+            self.text = text
         }
     }
 
@@ -56,6 +79,13 @@ public final class TriageModel {
     /// What the last bulk removal came to.
     public private(set) var summary: String?
     public private(set) var refusals: [Refusal] = []
+    /// The session whose "summarise this?" question is up.
+    public private(set) var pendingWrapUp: String?
+    /// The session being summarised right now. One at a time: each is a whole conversation read.
+    public private(set) var summarising: String?
+    /// The notes kept so far, by session id. They are Porchlight's own and outlive the sessions.
+    public private(set) var notes: [String: SessionNote] = [:]
+    public private(set) var wrapUpProblem: WrapUpProblem?
     private var generation = 0
 
     public init(services: Services) {
@@ -76,6 +106,7 @@ public final class TriageModel {
             sessions: services.sessions(), pins: services.pins(), settings: services.settings(), now: services.now())
         guard mine == generation else { return }
         items = found
+        notes = Dictionary(services.notes().map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         isLoading = false
         hasLoaded = true
     }
@@ -84,6 +115,7 @@ public final class TriageModel {
     /// look would leave it out anyway; this spares the wait.
     public func exclude(_ id: String) {
         items.removeAll { $0.id == id }
+        if pendingWrapUp == id { pendingWrapUp = nil }
         if safe.isEmpty { isConfirmingBulk = false }
     }
 
@@ -127,6 +159,38 @@ public final class TriageModel {
     static func summary(removed: Int, refused: Int) -> String {
         let done = "\(removed) \(removed == 1 ? "session" : "sessions") removed"
         return refused == 0 ? "\(done)." : "\(done); Claude Code refused \(refused), listed below."
+    }
+
+    public var wrapUpModel: String { services.wrapUpModel() }
+
+    /// Puts up the question for one session. Nothing is read or spent until it is answered.
+    public func askWrapUp(_ id: String) {
+        guard summarising == nil, items.contains(where: { $0.id == id }) else { return }
+        pendingWrapUp = id
+        wrapUpProblem = nil
+    }
+
+    public func cancelWrapUp() {
+        pendingWrapUp = nil
+    }
+
+    /// Summarises the session the question was about. The session itself is left as it is; the
+    /// summary is kept as a note, also after the session has been removed.
+    public func confirmWrapUp() async {
+        guard let id = pendingWrapUp, summarising == nil else { return }
+        pendingWrapUp = nil
+        guard let item = items.first(where: { $0.id == id }) else { return }
+        summarising = id
+        let result = await services.wrapUp(item, services.wrapUpModel())
+        summarising = nil
+        switch result {
+        case .success(let note): notes[id] = note
+        case .failure(let failure): wrapUpProblem = WrapUpProblem(id: id, text: failure.message)
+        }
+    }
+
+    public func dismissWrapUpProblem() {
+        wrapUpProblem = nil
     }
 
     public func dismissResult() {

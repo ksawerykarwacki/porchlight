@@ -44,7 +44,8 @@ Every side effect is passed in as a closure or protocol (the `claude` runner, th
 
 - **Run the unmodified `claude` through documented interfaces only.** No reverse engineering, no reading the binary, no undocumented sockets.
 - **Never read, store or forward Claude credentials.** A test fails if a source file names where they live.
-- **Never send input into a session.** No typing into terminals, no cross-session messages as if they were the user. Replies stay "copy and open".
+- **Never send input into a session.** No typing into terminals, no cross-session messages as if they were the user. Replies stay "copy and open". Wrap-up is not an exception: it reads a fork of the conversation with every tool off and nothing saved (`WrapUp.arguments`), and is not run at all if the CLI lacks one of those flags.
+- **Nothing spends the user's Claude usage unasked.** A summary runs only after the user's answer to a question that says so, one at a time.
 - **Nothing that destroys work happens without the user's explicit answer.** `claude rm` is run plain; `--discard-unpushed` and `--force-remove-worktree` are passed only with the value Claude Code printed in its own refusal, after a second confirmation.
 - **No attribution lines**: no `Co-Authored-By` trailers, no "Generated with" in pull requests.
 - The product's name never contains "Claude".

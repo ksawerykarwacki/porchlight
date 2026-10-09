@@ -312,8 +312,19 @@ The problem: sessions pile up, many stalled for weeks, and it is not clear which
 - **A pull request that could not be looked up** (no `gh`, not signed in, not GitHub) is said in the reason and does not block: with a clean worktree nothing local would be lost. It is never reported as "no pull request".
 - **Removing the safe ones together** asks once, listing them, then runs plain `claude rm` on each in turn. The verdict is advice: Claude Code checks each again, and what it refuses is listed in its own words and never overridden. A session pinned in the meantime is skipped.
 - Each row also has Open, Remove… (the same question and refusal handling as on the Sessions tab, including discard-and-remove) and Pin.
-- Not built: wrap-up of stale sessions (layer 3), other hosts than GitHub, and "its branch is already in the default branch" as a fact of its own (a merged pull request stands in for it).
+- Not built: other hosts than GitHub, and "its branch is already in the default branch" as a fact of its own (a merged pull request stands in for it).
 - Not verified: the tab on screen and on the user's real sessions; the day this was built none of them was old enough to be listed.
+
+**Built, layer 3 (2026-10-09): wrap-up.** `WrapUp`, `SessionSummariser`, `SessionNote` and `NotesArchive` in the core, `porchlight wrap-up <id>` and `porchlight notes [TEXT]` in the tool, "Wrap up…" on every Triage row.
+
+- **The command, and nothing else:** `claude --print --resume <conversation id> --fork-session --no-session-persistence --tools "" --model <model> -- <prompt>`, run in the session's folder. Each flag is there for a reason: the fork means the session itself gets no new turn, nothing saved means no new session appears, and the empty tool list means the summariser can only read and answer. All six are in `claude --help` on 2.1.294.
+- **If the installed CLI's help lacks any of those flags, the command is not run.** Without one of them the session could be changed, so there is no weaker fallback.
+- **This is not input into a session.** The rule in 12.1 stands: the session never receives anything. A copy of its conversation is read once and discarded.
+- **Only when asked.** It reads a whole conversation and spends the user's usage, so the row asks first, naming the model, and one summary runs at a time. Nothing is summarised automatically, in bulk, or on a timer.
+- **The folder matters:** Claude Code finds a conversation by the folder it ran in. A stopped session reports the repository as its folder, so the worktree named in its details comes first, then the reported folder, then the repository. If the worktree is gone and the conversation is not found, Claude Code's own words are shown.
+- **The note** (`notes/<session id>.json` in Porchlight's state folder): the summary, the session's name, repository, folder, branch and pull request, the model, the time, and the conversation id, from which the row offers the command to open it again. Removing a session does not touch its note. Wrapping up again replaces it.
+- **The model** is `haiku`, or `wrapUp.model` in `settings.json`; a value that could be read as a flag falls back to the default.
+- Not built: notes in the palette's search, a Notes view in the panel (the notes of removed sessions are reachable through `porchlight notes` only), deleting a note from the app.
 
 ### 6.7 Roadmap after v1
 

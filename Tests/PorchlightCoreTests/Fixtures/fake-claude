@@ -2,7 +2,7 @@
 # Stand-in for the `claude` CLI in tests. Records how it was called and replays fixtures.
 #
 #   FAKE_CLAUDE_LOG    file that receives the working directory and argv, NUL-separated
-#   FAKE_CLAUDE_MODE   untrusted | broken-json | fail | hang | old-help | no-id | refuse | stop-fail | rm-refused (default: normal)
+#   FAKE_CLAUDE_MODE   untrusted | broken-json | fail | hang | old-help | no-id | refuse | stop-fail | rm-refused | print-fail | print-empty (default: normal)
 set -u
 here="$(cd "$(dirname "$0")" && pwd)"
 
@@ -46,6 +46,35 @@ case "${1:-}" in
         ;;
     --help)
         if [ "$mode" = "old-help" ]; then cat "$here/claude-help-old.txt"; else cat "$here/claude-help.txt"; fi
+        ;;
+    --print)
+        # Stands in for a summary. It refuses any call that could change the session or run a
+        # tool, the way a test of the contract should: a fork, nothing saved, no tools.
+        fork=""; unsaved=""; notools=""; resume=""; model=""; prompt=""; previous=""; ended=""
+        for argument in "$@"; do
+            if [ -n "$ended" ]; then prompt="$argument"; continue; fi
+            case "$argument" in
+                --) ended=1 ;;
+                --fork-session) fork=1 ;;
+                --no-session-persistence) unsaved=1 ;;
+            esac
+            if [ "$previous" = "--tools" ] && [ -z "$argument" ]; then notools=1; fi
+            if [ "$previous" = "--resume" ]; then resume="$argument"; fi
+            if [ "$previous" = "--model" ]; then model="$argument"; fi
+            previous="$argument"
+        done
+        if [ -z "$fork" ] || [ -z "$unsaved" ] || [ -z "$notools" ] || [ -z "$resume" ] || [ -z "$model" ] || [ -z "$prompt" ]; then
+            echo "fake-claude: an unsafe or incomplete summary call: $*" >&2
+            exit 64
+        fi
+        if [ "$mode" = "print-fail" ]; then
+            echo "No conversation found with session ID: $resume" >&2
+            exit 1
+        fi
+        if [ "$mode" = "print-empty" ]; then exit 0; fi
+        printf '\033[2mDoing:\033[22m renaming the config file across the project.\n'
+        printf 'Stopped at: waiting for a yes to delete the old file.\n'
+        printf 'Worth keeping: nothing. (%s, %s)\n' "$model" "$resume"
         ;;
     --bg)
         if [ "$mode" = "untrusted" ]; then
