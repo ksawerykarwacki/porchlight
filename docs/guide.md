@@ -216,6 +216,9 @@ porchlight doctor                 # check that the claude CLI can be found and r
 Porchlight is local only: no account, no server, no telemetry. What it touches on your Mac:
 
 - **It runs the `claude` command** to list, start, open, stop and remove sessions.
+- **It asks your login shell for its environment once, at launch**, so that sessions started from
+  Porchlight have the same `PATH` and variables as ones you start in a terminal. The values are
+  passed on to `claude` and kept in memory only: never logged, never written to disk.
 - **It reads `~/.claude/jobs/*/state.json`**, read-only, for the question a session is waiting on.
   It never reads the fields that can hold your prompt or environment values.
 - **For a summary on this Mac, it reads that one session's conversation file**
