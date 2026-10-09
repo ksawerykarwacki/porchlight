@@ -3,12 +3,21 @@
 #
 #   FAKE_FM_LOG     file that receives argv, NUL-separated
 #   FAKE_FM_INPUT   file that receives standard input of the last `respond`
-#   FAKE_FM_MODE    unavailable | fail | empty | overflow-once | licence (default: normal)
+#   FAKE_FM_MODE    unavailable | fail | empty | overflow-once | licence | unlicensed | unlicensed-quietly | unlicensed-respond (default: normal)
 set -u
 if [ -n "${FAKE_FM_LOG:-}" ]; then
     printf '%s\0' "$@" >> "$FAKE_FM_LOG"
 fi
 mode="${FAKE_FM_MODE:-normal}"
+
+# What the real tool printed before its terms were accepted (macOS 27.0, 2026-10-09). Whether
+# it then exits 0 was not seen; "unlicensed-quietly" stands for that case.
+if [ "$mode" = "unlicensed" ] || [ "$mode" = "unlicensed-quietly" ] || { [ "$mode" = "unlicensed-respond" ] && [ "${1:-}" = "respond" ]; }; then
+    echo "YOU HAVE NOT AGREED TO THE APPLE FOUNDATION MODELS CLI LEGAL NOTICE & TERMS."
+    echo "Agreeing to the Apple Foundation Models CLI Legal Notice & Terms applies to every user on the machine, so it must be run as a privileged user (e.g. 'sudo fm license')."
+    if [ "$mode" = "unlicensed-quietly" ]; then exit 0; fi
+    exit 1
+fi
 
 case "${1:-}" in
     available)

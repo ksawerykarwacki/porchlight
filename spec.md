@@ -334,7 +334,8 @@ The problem: sessions pile up, many stalled for weeks, and it is not clear which
   - **Claude usage is spent only** when the setting is Claude, when this Mac cannot honour the setting (said in the question), or by the question's own button "Read all of it with haiku (uses Claude usage)".
   - **Verified with the real `fm`** on the throwaway session: 2.1 seconds, a correct summary from three turns, the session list and the conversation file unchanged.
   - **Private Cloud Compute** (32,768 tokens, macOS 27) was tried from an unsigned command-line program and refused every request with `ModelManagerError 1046`; the cause is not known. Not used.
-  - Not verified: a Mac without the model, and what `fm` says before Apple's terms are accepted (this Mac had already accepted them).
+  - **Before Apple's terms are accepted** `fm` prints "YOU HAVE NOT AGREED TO THE APPLE FOUNDATION MODELS CLI LEGAL NOTICE & TERMS." and that agreeing applies to every user of the machine, so it needs `sudo fm license` (seen by the owner on macOS 27.0, 2026-10-09). Porchlight recognises the words "not agreed" in either stream, whatever the exit code, and says in its own words which command to run. `fm license --status` reports the agreement.
+  - Not verified: a Mac without the model, and which stream and exit code `fm` uses for that refusal (only its words were seen).
 - Not built: notes in the palette's search, a Notes view in the panel (the notes of removed sessions are reachable through `porchlight notes` only), deleting a note from the app.
 
 ### 6.7 Roadmap after v1

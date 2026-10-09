@@ -195,6 +195,24 @@ struct ConversationWorld {
         #expect(await WrapUpRunner(claude: nil, onDevice: world.model(), reader: world.reader).engine(preferred: .claude) == .claude)
     }
 
+    /// With the words the real tool printed before its terms were accepted.
+    @Test func termsNotYetAcceptedAreRecognisedAndTheCommandIsNamed() async throws {
+        let world = try world()
+        for mode in ["unlicensed", "unlicensed-quietly"] {
+            #expect(await world.model(mode).status() == .licenceNeeded)
+            let refused = await world.model(mode).summarise(world.session(), reader: world.reader).map(\.summary)
+            #expect(refused == .failure(.onDeviceUnavailable(OnDeviceModel.licenceNeeded)))
+        }
+        #expect(OnDeviceStatus.licenceNeeded.explanation == OnDeviceModel.licenceNeeded && !OnDeviceStatus.licenceNeeded.isAvailable)
+        #expect(OnDeviceModel.licenceNeeded.contains("\"sudo fm license\"") && OnDeviceModel.licenceNeeded.contains("every user"))
+        // Nothing was asked of the model, and Claude stands in until the terms are accepted.
+        #expect(try !world.recorded().contains("respond"))
+        #expect(await WrapUpRunner(claude: nil, onDevice: world.model("unlicensed"), reader: world.reader).engine(preferred: .onDevice) == .claude)
+        // Refused only at the answer: the same plain message, not the tool's capitals.
+        let late = await world.model("unlicensed-respond").summarise(world.session(), reader: world.reader).map(\.summary)
+        #expect(late == .failure(.onDeviceUnavailable(OnDeviceModel.licenceNeeded)))
+    }
+
     @Test func aContextOverflowIsTriedOnceMoreWithHalfTheText() async throws {
         let world = try ConversationWorld()
         var lines = [ConversationWorld.line("user", "FIRST request")]

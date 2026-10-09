@@ -129,6 +129,10 @@ import Testing
         let blocked = SettingsPage.wrapUpNote(notReady)
         #expect(blocked.contains("sudo fm license") && blocked.contains("Until then Claude (haiku) is used"))
         #expect(SettingsPage.wrapUpNote(WrapUpPlan(chosen: .onDevice, onDevice: .missing)).contains("macOS 26"))
+        let unlicensed = WrapUpPlan(chosen: .onDevice, model: "haiku", onDevice: .licenceNeeded)
+        #expect(unlicensed.engine == .claude)
+        #expect(SettingsPage.wrapUpNote(unlicensed).hasPrefix("Apple's terms for its on-device model have not been accepted on this Mac. Run \"sudo fm license\""))
+        #expect(TriageRow.wrapUpQuestion(unlicensed).hasPrefix(OnDeviceModel.licenceNeeded) && TriageRow.wrapUpQuestion(unlicensed).contains("Claude usage"))
     }
 
     func height(_ actions: InboxActions, named name: String? = nil) throws -> CGFloat {

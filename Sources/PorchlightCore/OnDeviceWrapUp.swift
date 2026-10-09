@@ -150,9 +150,11 @@ public enum OnDeviceStatus: Sendable, Equatable {
     case available
     /// No `fm` tool: an older macOS.
     case missing
-    /// The tool is there and says no, in its own words: Apple Intelligence off, the model still
-    /// downloading, or Apple's terms not accepted yet.
+    /// The tool is there and says no, in its own words: Apple Intelligence off, or the model
+    /// still downloading.
     case notReady(String)
+    /// Apple's terms for the tool have not been accepted on this Mac.
+    case licenceNeeded
 
     public var isAvailable: Bool { self == .available }
 
@@ -161,6 +163,7 @@ public enum OnDeviceStatus: Sendable, Equatable {
         switch self {
         case .available: nil
         case .missing: "Apple's on-device model is not on this Mac; it needs macOS 26 or later with Apple Intelligence."
+        case .licenceNeeded: OnDeviceModel.licenceNeeded
         case .notReady(let words):
             (words.isEmpty ? "Apple's on-device model is not ready." : "Apple's on-device model is not ready: \(words)\(".!?".contains(words.last ?? " ") ? "" : ".")")
                 + " " + OnDeviceModel.licenceHint
@@ -189,6 +192,16 @@ public struct WrapUpPlan: Sendable, Equatable {
 
 /// Apple's on-device model, through the `fm` tool macOS ships with. Free and local.
 public struct OnDeviceModel: Sendable {
+    /// What to say when the tool refuses for want of the terms.
+    public static let licenceNeeded = "Apple's terms for its on-device model have not been accepted on this Mac. Run \"sudo fm license\" once in a terminal; it applies to every user of the Mac."
+
+    /// True for the tool's refusal as the owner saw it on macOS 27.0 (2026-10-09): "YOU HAVE NOT
+    /// AGREED TO THE APPLE FOUNDATION MODELS CLI LEGAL NOTICE & TERMS." Which stream and exit code
+    /// it uses was not seen, so only the words are looked at.
+    static func asksForLicence(_ result: CLIResult) -> Bool {
+        (result.stdout + result.stderr).localizedCaseInsensitiveContains("not agreed")
+    }
+
     /// Apple's terms for the model have to be accepted once per Mac before the tool answers.
     public static let licenceHint = "If you have not accepted Apple's terms for it yet, run \"sudo fm license\" once in a terminal."
 
@@ -213,6 +226,7 @@ public struct OnDeviceModel: Sendable {
     public func status() async -> OnDeviceStatus {
         guard FileManager.default.isExecutableFile(atPath: executable.path) else { return .missing }
         guard let result = try? await runner.run(executable, ["available"], environment: environment, timeout: 10) else { return .notReady("") }
+        if Self.asksForLicence(result) { return .licenceNeeded }
         if result.succeeded { return .available }
         let words = WrapUp.tidy(result.stderr)
         return .notReady(words.isEmpty ? WrapUp.tidy(result.stdout) : words)
@@ -230,6 +244,7 @@ public struct OnDeviceModel: Sendable {
         do {
             let result = try await runner.run(
                 executable, Self.arguments(), environment: environment, input: "The session:\n\n" + digest.text, timeout: 120)
+            if Self.asksForLicence(result) { return .failure(.onDeviceUnavailable(Self.licenceNeeded)) }
             guard result.succeeded else {
                 var words = WrapUp.tidy(result.stderr)
                 if words.isEmpty { words = WrapUp.tidy(result.stdout) }
