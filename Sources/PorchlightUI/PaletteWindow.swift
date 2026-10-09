@@ -101,10 +101,11 @@ public final class PaletteController {
         if isVisible { hide() } else { show() }
     }
 
-    public func show() {
+    /// - Parameter notes: open on the kept summaries instead of sessions and repositories.
+    public func show(notes: Bool = false) {
         let panel = self.panel ?? makePanel()
         self.panel = panel
-        Task { await model.begin() }
+        Task { await notes ? model.beginOnNotes() : model.begin() }
         place(panel)
         panel.makeKeyAndOrderFront(nil)
     }
@@ -117,10 +118,16 @@ public final class PaletteController {
         let panel = PalettePanel()
         panel.onEscape = { [weak self] in self?.model.escape() }
         panel.onConfirm = { [weak self] in self?.model.confirm() }
-        panel.onCommandReturn = { [weak self] in self?.model.copyReplyAndOpenSelected() }
+        panel.onCommandReturn = { [weak self] in
+            guard let model = self?.model else { return }
+            if model.step == .notes { model.copySelectedNote() } else { model.copyReplyAndOpenSelected() }
+        }
         panel.onCommandR = { [weak self] in self?.model.retrySelected() }
         panel.onCommandS = { [weak self] in self?.model.askControlSelected(.stop) }
-        panel.onCommandD = { [weak self] in self?.model.askControlSelected(.remove) }
+        panel.onCommandD = { [weak self] in
+            guard let model = self?.model else { return }
+            if model.step == .notes { model.askDeleteSelectedNote() } else { model.askControlSelected(.remove) }
+        }
         panel.onCommandP = { [weak self] in Task { await self?.model.togglePinSelected() } }
         let content = PaletteView(
             model: model, hover: hover, browse: { [weak self] in self?.chooseFolder(asRoot: false) },
@@ -186,6 +193,8 @@ struct PaletteTextField: NSViewRepresentable {
     /// Option-Return.
     var onAlternateSubmit: () -> Void = {}
     var onCancel: () -> Void = {}
+    /// Tab, where it means something; nil leaves it to move the keyboard on as usual.
+    var onTab: (() -> Void)?
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -231,6 +240,9 @@ struct PaletteTextField: NSViewRepresentable {
             case #selector(NSResponder.insertNewline(_:)): parent.onSubmit()
             case #selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)): parent.onAlternateSubmit()
             case #selector(NSResponder.cancelOperation(_:)): parent.onCancel()
+            case #selector(NSResponder.insertTab(_:)):
+                guard let onTab = parent.onTab else { return false }
+                onTab()
             default: return false
             }
             return true

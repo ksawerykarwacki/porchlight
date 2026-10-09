@@ -73,6 +73,7 @@ struct PorchlightApp: App {
         paletteModel.onOpenSession = { id in model.open(sessionID: id) }
         paletteModel.onCopyReply = { id in model.copyReply(sessionID: id) }
         paletteModel.onSnooze = { id, choice in await model.snooze(sessionID: id, choice) }
+        paletteModel.onResume = { note in model.resume(note) }
         paletteModel.onRetry = { id in model.retry(sessionID: id) }
         paletteModel.onTogglePin = { id in model.togglePin(sessionID: id) }
         paletteModel.onControl = { pending in await model.control(pending) }
@@ -99,6 +100,10 @@ struct PorchlightApp: App {
                 newSession: {
                     PanelWindowObserver.closePanel()
                     palette.show()
+                },
+                showNotes: {
+                    PanelWindowObserver.closePanel()
+                    palette.show(notes: true)
                 },
                 quit: { NSApplication.shared.terminate(nil) })
                 // Keeps the panel attached to the menu bar when its height changes, and brings

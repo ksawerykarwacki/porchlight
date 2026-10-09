@@ -47,6 +47,13 @@ public struct TerminalCommand: Sendable, Equatable {
             arguments: [claude, "attach", session.id], cwd: session.location.repoRoot, title: session.name, sessionID: session.id)
     }
 
+    /// Resumes the conversation a note is about, in the folder it ran in. Nil when the note's id
+    /// is not the UUID the CLI reports, so that nothing else can ride on the command.
+    public static func resume(_ note: SessionNote, claude: String) -> TerminalCommand? {
+        guard WrapUp.isValidConversationID(note.sessionID), !note.directory.isEmpty else { return nil }
+        return TerminalCommand(arguments: [claude, "--resume", note.sessionID], cwd: note.directory, title: note.name)
+    }
+
     /// - Parameter cwd: where to start agent view. Claude Code asks whether to trust a folder it
     ///   has not been started in before, so pass one the user already works in, not the home folder.
     public static func agentView(claude: String, cwd: String? = nil) -> TerminalCommand {

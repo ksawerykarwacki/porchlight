@@ -81,6 +81,8 @@ public struct InboxActions {
     /// The row's "read all of it" button: summarise with Claude although this Mac's model is the choice.
     public var confirmWrapUpWithClaude: () -> Void = {}
     public var setWrapUpEngine: (WrapUpEngine) -> Void = { _ in }
+    /// Opens the palette on the kept summaries.
+    public var showNotes: () -> Void = {}
     public var cancelWrapUp: () -> Void = {}
     public var dismissWrapUpProblem: () -> Void = {}
     /// Copies the command that opens a summarised conversation again.
@@ -151,7 +153,7 @@ public struct InboxView: View {
     }
 
     public init(
-        model: InboxModel, updates: UpdateModel? = nil, triage: TriageModel? = nil, newSession: @escaping () -> Void = {},
+        model: InboxModel, updates: UpdateModel? = nil, triage: TriageModel? = nil, newSession: @escaping () -> Void = {}, showNotes: @escaping () -> Void = {},
         quit: @escaping () -> Void
     ) {
         var actions = InboxActions()
@@ -197,6 +199,7 @@ public struct InboxView: View {
             actions.installUpdate = { Task { await updates.update() } }
         }
         actions.newSession = newSession
+        actions.showNotes = showNotes
         actions.pins = model.pins
         actions.togglePin = { model.togglePin(sessionID: $0) }
         actions.setPinQuiet = { id, quiet in model.setPinQuiet(sessionID: id, quiet) }

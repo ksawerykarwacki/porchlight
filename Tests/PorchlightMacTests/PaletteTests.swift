@@ -14,6 +14,28 @@ final class PaletteProbe: @unchecked Sendable {
     private var storedRepos = RepoIndexSettings()
     private var storedFailure: DispatchError?
     private var storedRows: [InboxRow] = []
+    private var storedNotes: [SessionNote] = []
+    private var storedConversations: Set<String> = []
+    private var storedDeleted: [String] = []
+
+    /// The kept summaries, newest first, and the conversations Claude Code still has.
+    var notes: [SessionNote] {
+        get { lock.withLock { storedNotes } }
+        set { lock.withLock { storedNotes = newValue } }
+    }
+    var conversations: Set<String> {
+        get { lock.withLock { storedConversations } }
+        set { lock.withLock { storedConversations = newValue } }
+    }
+    var deleted: [String] { lock.withLock { storedDeleted } }
+    func delete(_ id: String) -> Bool {
+        lock.withLock {
+            guard storedNotes.contains(where: { $0.id == id }) else { return false }
+            storedNotes.removeAll { $0.id == id }
+            storedDeleted.append(id)
+            return true
+        }
+    }
 
     var rows: [InboxRow] {
         get { lock.withLock { storedRows } }
@@ -63,7 +85,7 @@ struct PaletteHarness {
                 .appendingPathComponent("PorchlightCoreTests/Fixtures/claude-help.txt"), encoding: .utf8)
         let known = capabilities ?? DispatchCapabilities(help: help)
         let folders = Set(names.map { "/Users/u/code/\($0)" } + ["/Users/u/elsewhere/loose"])
-        let services = PaletteServices(
+        var services = PaletteServices(
             loadIndex: {
                 RepoIndex(
                     scanned: names.map { "/Users/u/code/\($0)" }, sessionDirectories: ["/Users/u/code/docs"], settings: probe.repos,
@@ -88,6 +110,9 @@ struct PaletteHarness {
             },
             now: { PaletteHarness.now },
             home: PaletteHarness.home)
+        services.notes = { probe.notes }
+        services.deleteNote = { probe.delete($0) }
+        services.conversationExists = { probe.conversations.contains($0) }
         model = PaletteModel(services: services)
         let (startedBox, opened, trusted, copied, closed) = (startedBox, opened, trusted, copied, closed)
         model.onStarted = { startedBox.values.append(($0, $1)) }

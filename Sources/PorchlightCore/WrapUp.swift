@@ -81,6 +81,31 @@ public struct SessionNote: Codable, Sendable, Equatable, Identifiable {
     }
 }
 
+/// What can still be done with the conversation a note is about.
+public enum NoteReach: Sendable, Equatable {
+    /// Its session is still in the list: it can be opened like any other.
+    case session
+    /// The session was removed, but Claude Code still has the conversation and its folder is
+    /// there: it can be resumed.
+    case conversation
+    /// Only the summary is left.
+    case summaryOnly
+
+    public static func of(_ note: SessionNote, liveSessionIDs: Set<String>, conversationExists: (String) -> Bool, folderExists: (String) -> Bool) -> NoteReach {
+        if liveSessionIDs.contains(note.id) { return .session }
+        return conversationExists(note.sessionID) && folderExists(note.directory) ? .conversation : .summaryOnly
+    }
+
+    /// For a note's row: where its session stands.
+    public var label: String {
+        switch self {
+        case .session: "still here"
+        case .conversation: "removed"
+        case .summaryOnly: "only this note is left"
+        }
+    }
+}
+
 /// The notes on disk: one file per session, in Porchlight's own folder.
 public struct NotesArchive: Sendable {
     public var directory: URL
@@ -121,12 +146,23 @@ public struct NotesArchive: Sendable {
 
     /// The notes whose name, repository, branch or summary contain every word of the text.
     public func search(_ text: String) -> [SessionNote] {
+        Self.matching(all(), text)
+    }
+
+    /// The same search over notes already in hand, keeping their order.
+    public static func matching(_ notes: [SessionNote], _ text: String) -> [SessionNote] {
         let words = text.lowercased().split(whereSeparator: \.isWhitespace).map(String.init)
-        guard !words.isEmpty else { return all() }
-        return all().filter { note in
+        guard !words.isEmpty else { return notes }
+        return notes.filter { note in
             let haystack = [note.name, note.repo, note.branch ?? "", note.summary].joined(separator: "\n").lowercased()
             return words.allSatisfy(haystack.contains)
         }
+    }
+
+    /// Removes one note. The session and its conversation are not touched.
+    public func delete(_ id: String) throws {
+        guard let url = url(for: id) else { throw CocoaError(.fileNoSuchFile) }
+        try FileManager.default.removeItem(at: url)
     }
 }
 

@@ -26,6 +26,7 @@ public struct PaletteView: View {
         VStack(alignment: .leading, spacing: 0) {
             switch model.step {
             case .folder: folderStep
+            case .notes: notesStep
             case .prompt: promptStep
             case .starting: starting
             case .started(let started): result(started)
@@ -47,7 +48,7 @@ public struct PaletteView: View {
             field(
                 text: model.query, placeholder: "Session, repository, or a folder path", size: 20,
                 onChange: model.setQuery, onMove: model.moveSelection, onSubmit: model.confirmFolder,
-                onAlternateSubmit: { Task { await model.snoozeSelected() } })
+                onAlternateSubmit: { Task { await model.snoozeSelected() } }, onTab: model.toggleNotes)
         }
         .padding(.horizontal, 18)
         .frame(height: 56)
@@ -85,6 +86,30 @@ public struct PaletteView: View {
                 }
             }
             .padding(.vertical, 6)
+        }
+
+        // The way to the kept summaries: one quiet line, never a row among the results.
+        if model.notesOnOffer > 0 {
+            Button(action: model.toggleNotes) {
+                HStack(spacing: 6) {
+                    Image(systemName: "note.text")
+                        .font(.system(size: 11))
+                    Text(Self.notesLine(count: model.notesOnOffer, searching: !model.query.trimmingCharacters(in: .whitespaces).isEmpty))
+                        .font(.system(size: 12))
+                    Text("⇥")
+                        .font(.system(size: 11, weight: .medium))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 1)
+                        .background(Capsule().fill(Color.primary.opacity(0.09)))
+                    Spacer()
+                }
+                .foregroundStyle(hover.hovered == "palette.notes" ? .primary : .secondary)
+                .padding(.horizontal, 18)
+                .padding(.bottom, 8)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .onHover { hover.set("palette.notes", $0) }
         }
 
         if let note = model.pendingControl?.question ?? model.controlMessage {
@@ -145,6 +170,122 @@ public struct PaletteView: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
+    }
+
+    static func notesLine(count: Int, searching: Bool) -> String {
+        let notes = "\(count) \(count == 1 ? "note" : "notes")"
+        return searching ? "\(notes) \(count == 1 ? "matches" : "match")" : "\(notes) kept from sessions you wrapped up"
+    }
+
+    // MARK: Notes
+
+    @ViewBuilder private var notesStep: some View {
+        HStack(spacing: 10) {
+            Button(action: model.toggleNotes) {
+                HStack(spacing: 5) {
+                    Image(systemName: "note.text")
+                        .font(.system(size: 11, weight: .semibold))
+                    Text("Notes")
+                        .font(.system(size: 13, weight: .semibold))
+                }
+                .padding(.horizontal, 9)
+                .padding(.vertical, 5)
+                .background(Capsule().fill(Lamp.light.opacity(hover.hovered == "palette.notes.chip" ? 0.42 : 0.30)))
+                .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .onHover { hover.set("palette.notes.chip", $0) }
+            .help("Back to sessions and repositories")
+            field(
+                text: model.query, placeholder: "Search what your wrapped-up sessions were about", size: 20,
+                onChange: model.setQuery, onMove: model.moveNoteSelection, onSubmit: model.confirmNote, onTab: model.toggleNotes)
+        }
+        .padding(.horizontal, 14)
+        .frame(height: 56)
+        Divider()
+
+        if model.noteResults.isEmpty {
+            Text(notesEmptyMessage)
+                .font(.system(size: 13))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 18)
+                .padding(.vertical, 22)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(model.visibleNoteResults)) { note in
+                    PaletteNoteRow(
+                        note: note, reach: model.reach(of: note), now: model.now, isSelected: note == model.selectedNote, hover: hover,
+                        select: { model.select(note) })
+                }
+            }
+            .padding(.vertical, 6)
+            Divider()
+            // The selected note in full: reading takes arrow keys and nothing else.
+            if let note = model.selectedNote {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(note.summary)
+                        .font(.system(size: 13))
+                        .lineSpacing(2)
+                        .lineLimit(12)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(Self.provenance(of: note))
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(.tertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.horizontal, 18)
+                .padding(.vertical, 12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+
+        if let message = model.pendingNoteDeletion.map({ "Delete the note about \($0.name)? The session and its conversation are not touched." }) ?? model.noteMessage {
+            Divider()
+            Text(message)
+                .font(.system(size: 12.5))
+                .foregroundStyle(model.pendingNoteDeletion == nil ? .secondary : .primary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 18)
+                .padding(.vertical, 10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+
+        Divider()
+        HStack(spacing: 2) {
+            if model.pendingNoteDeletion != nil {
+                KeyHint(keys: "↩", label: "Delete note", id: "palette.hint.choose", hover: hover, prominent: true, action: model.confirmNote)
+                KeyHint(keys: "esc", label: "Cancel", id: "palette.hint.close", hover: hover, action: model.escape)
+            } else if model.selectedNote != nil {
+                KeyHint(keys: "↩", label: model.noteVerb, id: "palette.hint.choose", hover: hover, action: model.confirmNote)
+                if model.noteVerb != "Copy summary" {
+                    KeyHint(keys: "⌘↩", label: "Copy summary", id: "palette.hint.reply", hover: hover, action: model.copySelectedNote)
+                }
+                KeyHint(keys: "⌘D", label: "Delete note", id: "palette.hint.remove", hover: hover, action: model.askDeleteSelectedNote)
+            }
+            Spacer()
+            KeyHint(keys: "⇥", label: "Sessions", id: "palette.hint.back", hover: hover, action: model.toggleNotes)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+    }
+
+    var notesEmptyMessage: String {
+        if model.notes.isEmpty {
+            return "No notes yet. Wrap up a session in the Triage tab and its summary is kept here, also after the session is removed."
+        }
+        return "No note matches “\(model.query)”."
+    }
+
+    /// Where a note's session was and who summarised it, under the summary.
+    static func provenance(of note: SessionNote) -> String {
+        var parts: [String] = []
+        if let branch = note.branch { parts.append(branch) }
+        if let pullRequest = note.pullRequest { parts.append(pullRequest) }
+        parts.append("summarised \(note.source)")
+        return parts.joined(separator: ", ")
     }
 
     /// The heading above an item, when it is the first of its kind on screen.
@@ -414,12 +555,12 @@ public struct PaletteView: View {
     @ViewBuilder
     private func field(
         text: String, placeholder: String, size: CGFloat, onChange: @escaping (String) -> Void, onMove: @escaping (Int) -> Void = { _ in },
-        onSubmit: @escaping () -> Void = {}, onAlternateSubmit: @escaping () -> Void = {}, focuses: Bool = true
+        onSubmit: @escaping () -> Void = {}, onAlternateSubmit: @escaping () -> Void = {}, onTab: (() -> Void)? = nil, focuses: Bool = true
     ) -> some View {
         if drawsFields {
             PaletteTextField(
                 text: text, placeholder: placeholder, fontSize: size, focusRequest: focuses ? model.focusRequest : nil,
-                onChange: onChange, onMove: onMove, onSubmit: onSubmit, onAlternateSubmit: onAlternateSubmit, onCancel: model.escape)
+                onChange: onChange, onMove: onMove, onSubmit: onSubmit, onAlternateSubmit: onAlternateSubmit, onCancel: model.escape, onTab: onTab)
         } else {
             Text(text.isEmpty ? placeholder : text)
                 .font(.system(size: size))
@@ -519,6 +660,59 @@ struct PaletteSessionRow: View {
         )
         .contentShape(Rectangle())
         .onTapGesture(perform: open)
+        .onHover { hover.set(id, $0) }
+        .padding(.horizontal, 6)
+    }
+}
+
+/// One kept summary in the palette's notes: a line to pick it by; the summary itself is shown
+/// below the list.
+struct PaletteNoteRow: View {
+    let note: SessionNote
+    let reach: NoteReach
+    let now: Date
+    let isSelected: Bool
+    let hover: HoverTracker
+    let select: () -> Void
+
+    private var id: String { "palette.note.\(note.id)" }
+
+    static func age(_ note: SessionNote, now: Date) -> String {
+        guard let age = Age.short(since: note.createdAt, now: now) else { return "" }
+        return age == "just now" ? age : "\(age) ago"
+    }
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: reach == .summaryOnly ? "note.text" : reach == .session ? "circle.fill" : "arrow.uturn.backward")
+                .font(.system(size: reach == .session ? 6 : 10))
+                .foregroundStyle(reach == .session ? Lamp.light : Color.secondary)
+                .frame(width: 12)
+            Text(note.name)
+                .font(.system(size: 14, weight: .medium))
+                .lineLimit(1)
+            Text(note.repo)
+                .font(.system(size: 12))
+                .foregroundStyle(.tertiary)
+                .lineLimit(1)
+            Spacer(minLength: 8)
+            Text(reach.label)
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+            Text(Self.age(note, now: now))
+                .font(.system(size: 12))
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+                .frame(minWidth: 52, alignment: .trailing)
+        }
+        .padding(.horizontal, 12)
+        .frame(height: 34)
+        .background(
+            RoundedRectangle(cornerRadius: PaletteSurface.radius - 12, style: .continuous)
+                .fill(isSelected ? Lamp.light.opacity(0.24) : Color.primary.opacity(hover.hovered == id ? 0.07 : 0))
+        )
+        .contentShape(Rectangle())
+        .onTapGesture(perform: select)
         .onHover { hover.set(id, $0) }
         .padding(.horizontal, 6)
     }

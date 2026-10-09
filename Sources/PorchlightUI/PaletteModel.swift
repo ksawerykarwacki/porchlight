@@ -19,6 +19,11 @@ public struct PaletteServices: Sendable {
     public var updateRepos: @Sendable (@Sendable (inout RepoIndexSettings) -> Void) -> Void
     public var now: @Sendable () -> Date
     public var home: String
+    /// The kept summaries, newest first.
+    public var notes: @Sendable () -> [SessionNote] = { [] }
+    public var deleteNote: @Sendable (String) -> Bool = { _ in false }
+    /// Whether Claude Code still has the conversation with this id.
+    public var conversationExists: @Sendable (String) -> Bool = { _ in false }
 
     public init(
         loadIndex: @escaping @Sendable () async -> RepoIndex,
@@ -56,7 +61,7 @@ public struct PaletteServices: Sendable {
         sessionDirectories: @escaping @Sendable () async -> [String],
         sessions: @escaping @Sendable () async -> [InboxRow] = { [] }
     ) -> PaletteServices {
-        PaletteServices(
+        var services = PaletteServices(
             loadIndex: {
                 let settings = Settings.load(from: settingsURL).repos ?? RepoIndexSettings()
                 let directories = await sessionDirectories()
@@ -83,6 +88,10 @@ public struct PaletteServices: Sendable {
                 try? settings.save(to: settingsURL)
             }
         )
+        services.notes = { NotesArchive().all() }
+        services.deleteNote = { (try? NotesArchive().delete($0)) != nil }
+        services.conversationExists = { ConversationReader().file(for: $0) != nil }
+        return services
     }
 }
 
@@ -92,6 +101,8 @@ public struct PaletteServices: Sendable {
 public final class PaletteModel {
     public enum Step: Equatable {
         case folder
+        /// The kept summaries, instead of sessions and repositories. Tab goes there and back.
+        case notes
         case prompt
         case starting
         case started(Dispatched)
@@ -171,12 +182,157 @@ public final class PaletteModel {
         self.services = services
     }
 
+    // MARK: Notes
+
+    public static let visibleNotes = 5
+
+    /// Every kept summary, as last read.
+    public private(set) var notes: [SessionNote] = []
+    /// The ones matching what is typed; all of them, newest first, when nothing is.
+    public private(set) var noteResults: [SessionNote] = []
+    public private(set) var noteSelection = 0
+    /// The note whose deletion waits for Return.
+    public private(set) var pendingNoteDeletion: SessionNote?
+    public private(set) var noteMessage: String?
+    /// True when the palette was opened on its notes, so Escape closes it instead of going back.
+    private var openedOnNotes = false
+    /// Resumes a removed session's conversation in the terminal.
+    public var onResume: (SessionNote) -> Void = { _ in }
+
+    /// The clock the notes' ages are measured against.
+    public var now: Date { services.now() }
+
+    public var selectedNote: SessionNote? {
+        noteResults.indices.contains(noteSelection) ? noteResults[noteSelection] : nil
+    }
+
+    public var visibleNoteResults: ArraySlice<SessionNote> {
+        let first = max(0, min(noteSelection - Self.visibleNotes + 1, noteResults.count - Self.visibleNotes))
+        return noteResults[first..<min(first + Self.visibleNotes, noteResults.count)]
+    }
+
+    /// For the ordinary list's last line: how many notes there are to switch to. With text, the
+    /// ones that match it; a path is never a search for notes.
+    public var notesOnOffer: Int {
+        let text = query.trimmingCharacters(in: .whitespaces)
+        guard !text.hasPrefix("/"), !text.hasPrefix("~") else { return 0 }
+        return NotesArchive.matching(notes, text).count
+    }
+
+    public func reach(of note: SessionNote) -> NoteReach {
+        NoteReach.of(note, liveSessionIDs: Set(sessions.map(\.id)), conversationExists: services.conversationExists, folderExists: services.isFolder)
+    }
+
+    private func rankNotes() {
+        noteResults = NotesArchive.matching(notes, query)
+        noteSelection = min(noteSelection, max(noteResults.count - 1, 0))
+    }
+
+    /// Tab: from the list to the notes and back, with what was typed.
+    public func toggleNotes() {
+        switch step {
+        case .folder:
+            step = .notes
+            pendingControl = nil
+            pendingNoteDeletion = nil
+            noteMessage = nil
+            noteSelection = 0
+            notes = services.notes()
+            rankNotes()
+        case .notes:
+            step = .folder
+            pendingNoteDeletion = nil
+            selection = 0
+            rank()
+        default:
+            return
+        }
+        focusRequest += 1
+    }
+
+    /// Opens the palette on its notes, for the link in the Triage tab.
+    public func beginOnNotes() async {
+        await begin()
+        toggleNotes()
+        openedOnNotes = true
+    }
+
+    public func moveNoteSelection(by offset: Int) {
+        guard !noteResults.isEmpty else { return }
+        pendingNoteDeletion = nil
+        noteMessage = nil
+        noteSelection = max(0, min(noteResults.count - 1, noteSelection + offset))
+    }
+
+    public func select(_ note: SessionNote) {
+        if let position = noteResults.firstIndex(of: note) {
+            noteSelection = position
+            pendingNoteDeletion = nil
+        }
+    }
+
+    /// What Return will do with the selected note, for the hint.
+    public var noteVerb: String {
+        guard let note = selectedNote else { return "Open" }
+        switch reach(of: note) {
+        case .session: return "Open the session"
+        case .conversation: return "Resume in terminal"
+        case .summaryOnly: return "Copy summary"
+        }
+    }
+
+    /// Return on a note: the most that can still be done with it.
+    public func confirmNote() {
+        guard step == .notes else { return }
+        if let pending = pendingNoteDeletion {
+            pendingNoteDeletion = nil
+            if services.deleteNote(pending.id) {
+                notes.removeAll { $0.id == pending.id }
+                rankNotes()
+                noteMessage = "Deleted the note about \(pending.name)."
+            } else {
+                noteMessage = "The note could not be deleted."
+            }
+            return
+        }
+        guard let note = selectedNote else { return }
+        switch reach(of: note) {
+        case .session:
+            onOpenSession(note.id)
+            onClose()
+        case .conversation:
+            onResume(note)
+            onClose()
+        case .summaryOnly:
+            copySelectedNote()
+        }
+    }
+
+    /// ⌘Return: the summary on the clipboard, with where it was from.
+    public func copySelectedNote() {
+        guard step == .notes, let note = selectedNote else { return }
+        var heading = "\(note.name) (\(note.repo)"
+        if let branch = note.branch { heading += ", \(branch)" }
+        onCopy("\(heading))\n\(note.summary)")
+        noteMessage = "Summary copied."
+    }
+
+    /// ⌘D: asks to delete the selected note. Return then does it.
+    public func askDeleteSelectedNote() {
+        guard step == .notes, let note = selectedNote else { return }
+        noteMessage = nil
+        pendingNoteDeletion = note
+    }
+
     // MARK: Opening
 
     /// Starts over with an empty palette and reads the repositories again. What was loaded last
     /// time stays on screen until the new list arrives.
     public func begin() async {
         step = .folder
+        openedOnNotes = false
+        pendingNoteDeletion = nil
+        noteMessage = nil
         pendingControl = nil
         controlMessage = nil
         query = ""
@@ -189,6 +345,7 @@ public final class PaletteModel {
         showsOptions = false
         focusRequest += 1
         history = services.loadHistory()
+        notes = services.notes()
         rank()
         await reload()
     }
@@ -210,9 +367,13 @@ public final class PaletteModel {
     public func setQuery(_ text: String) {
         guard text != query else { return }
         pendingControl = nil
+        pendingNoteDeletion = nil
+        noteMessage = nil
         query = text
         selection = 0
+        noteSelection = 0
         rank()
+        rankNotes()
     }
 
     /// The folder the text names, when it is a path to one rather than something to search for.
@@ -538,6 +699,14 @@ public final class PaletteModel {
                 pendingControl = nil
             } else {
                 onClose()
+            }
+        case .notes:
+            if pendingNoteDeletion != nil {
+                pendingNoteDeletion = nil
+            } else if openedOnNotes {
+                onClose()
+            } else {
+                toggleNotes()
             }
         case .prompt: back()
         case .starting: break
