@@ -75,6 +75,16 @@ public struct InboxActions {
     public var dismissTriageResult: () -> Void = {}
     /// Pins a session from its Triage row and takes the row away.
     public var keepFromTriage: (String) -> Void = { _ in }
+    /// Asks whether to summarise a session; nothing is read until `confirmWrapUp`.
+    public var askWrapUp: (String) -> Void = { _ in }
+    public var confirmWrapUp: () -> Void = {}
+    /// The row's "read all of it" button: summarise with Claude although this Mac's model is the choice.
+    public var confirmWrapUpWithClaude: () -> Void = {}
+    public var setWrapUpEngine: (WrapUpEngine) -> Void = { _ in }
+    public var cancelWrapUp: () -> Void = {}
+    public var dismissWrapUpProblem: () -> Void = {}
+    /// Copies the command that opens a summarised conversation again.
+    public var copyResumeCommand: (SessionNote) -> Void = { _ in }
     public var setShowsSettings: (Bool) -> Void = { _ in }
     public var reminders = ReminderSettings()
     public var updateReminders: ((inout ReminderSettings) -> Void) -> Void = { _ in }
@@ -162,6 +172,17 @@ public struct InboxView: View {
             actions.cancelRemoveSafe = { triage.cancelRemoveSafe() }
             actions.confirmRemoveSafe = { Task { await triage.confirmRemoveSafe() } }
             actions.dismissTriageResult = { triage.dismissResult() }
+            actions.askWrapUp = { triage.askWrapUp($0) }
+            actions.confirmWrapUp = { Task { await triage.confirmWrapUp() } }
+            actions.confirmWrapUpWithClaude = { Task { await triage.confirmWrapUp(with: .claude) } }
+            actions.setWrapUpEngine = { engine in
+                model.setWrapUpEngine(engine)
+                triage.choose(engine)
+                Task { await triage.refreshPlan() }
+            }
+            actions.cancelWrapUp = { triage.cancelWrapUp() }
+            actions.dismissWrapUpProblem = { triage.dismissWrapUpProblem() }
+            actions.copyResumeCommand = { model.copy($0.resumeCommand, saying: "Command copied: paste it in a terminal to open that conversation") }
             actions.keepFromTriage = { id in
                 model.keep(sessionID: id)
                 triage.exclude(id)
@@ -984,6 +1005,26 @@ struct SettingsPage: View {
             }
 
             Divider().padding(.vertical, 10)
+            Text("Wrapping up")
+                .font(.system(size: 13, weight: .semibold))
+                .padding(.bottom, 2)
+            Text("Which model summarises a session when you ask for it in Triage.")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .padding(.bottom, 8)
+            row("Summarise with") {
+                choice(WrapUpEngine.allCases, selected: actions.triage.plan.chosen, label: { $0.title }) { engine in
+                    actions.setWrapUpEngine(engine)
+                }
+            }
+            Text(SettingsPage.wrapUpNote(actions.triage.plan))
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 2)
+
+            Divider().padding(.vertical, 10)
             Text("General")
                 .font(.system(size: 13, weight: .semibold))
                 .padding(.bottom, 6)
@@ -1074,6 +1115,20 @@ struct SettingsPage: View {
         .font(.system(size: 12.5))
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// What the choice of engine means, and what stands in its way on this Mac.
+    static func wrapUpNote(_ plan: WrapUpPlan) -> String {
+        switch plan.chosen {
+        case .claude:
+            return "Claude Code reads the whole conversation as a copy, with every tool off, using \(plan.model). It uses some of your Claude usage each time."
+        case .onDevice:
+            if let why = plan.onDevice.explanation {
+                return "\(why) Until then Claude (\(plan.model)) is used, and the question says so before anything is spent."
+            }
+            return "Apple's on-device model reads the first request and the end of the conversation. It is free and nothing leaves this Mac. "
+                + "Each question also offers Claude for the whole conversation."
+        }
     }
 
     private func row(_ title: String, @ViewBuilder control: () -> some View) -> some View {

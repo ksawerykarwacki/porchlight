@@ -24,11 +24,28 @@ struct PorchlightApp: App {
         self.model = model
         model.willOpenTerminal = { PanelWindowObserver.closePanelAndLetGo() }
         let settingsURL = Settings.fileURL()
+        let savedWrapUp = Settings.load(from: settingsURL).wrapUp ?? WrapUpSettings()
         self.triage = TriageModel(services: TriageModel.Services(
             sessions: { model.snapshot.sessions }, pins: { model.pins },
             settings: { Settings.load(from: settingsURL).triage ?? TriageSettings() },
             remove: { id in await model.removePlainly(sessionID: id) },
-            reload: { await model.reload() }))
+            reload: { await model.reload() },
+            // Only reached after the question in the Triage row has been answered with yes.
+            wrapUp: { item, engine, name in
+                let settings = Settings.load(from: settingsURL)
+                return await WrapUpRunner(claude: ClaudeLocator(override: settings.claudePath).locate()).wrapUp(
+                    item.session, engine: engine, model: name, branch: item.facts.branch,
+                    pullRequest: item.facts.branch == nil ? nil : item.facts.pullRequest.summary)
+            },
+            notes: { NotesArchive().all() },
+            wrapUpPlan: {
+                let settings = Settings.load(from: settingsURL).wrapUp ?? WrapUpSettings()
+                return WrapUpPlan(chosen: settings.engine, model: settings.model, onDevice: await OnDeviceModel().status())
+            }),
+            // The saved choice at once; whether this Mac has the model follows a moment later.
+            plan: WrapUpPlan(chosen: savedWrapUp.engine, model: savedWrapUp.model, onDevice: .missing))
+        let triage = self.triage
+        Task { await triage.refreshPlan() }
         model.pickFolder = {
             let dialog = NSOpenPanel()
             dialog.canChooseDirectories = true

@@ -368,6 +368,20 @@ public final class InboxModel {
     }
 
     /// Hides the optional first-run steps for good. Problems still show.
+    /// Chooses which model summarises sessions.
+    public func setWrapUpEngine(_ engine: WrapUpEngine) {
+        var settings = Settings.load(from: settingsURL)
+        var wrapUp = settings.wrapUp ?? WrapUpSettings()
+        guard wrapUp.engine != engine || settings.wrapUp == nil else { return }
+        wrapUp.engine = engine
+        settings.wrapUp = wrapUp
+        do {
+            try settings.save(to: settingsURL)
+        } catch {
+            show("Could not save the settings")
+        }
+    }
+
     public func hideSetup() {
         var settings = Settings.load(from: settingsURL)
         settings.setupHidden = true

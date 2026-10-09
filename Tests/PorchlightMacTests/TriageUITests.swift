@@ -19,6 +19,22 @@ final class TriageWorld {
     var gathers = 0
     /// Session ids Claude Code refuses to remove, with what it says.
     var refusals: [String: String] = [:]
+    /// Each summary asked for, as "id model".
+    var wrapped: [String] = []
+    /// What the summariser answers instead of a summary.
+    var wrapUpFailure: WrapUpFailure?
+    let archive = NotesArchive(directory: FileManager.default.temporaryDirectory.appendingPathComponent("porchlight-triage-notes-\(UUID().uuidString)/notes"))
+    /// When set, a summary waits here until `release` is called, the way a real one takes a while.
+    var holdsWrapUp = false
+    /// The engine chosen and whether this Mac has the on-device model. Claude unless a test says otherwise.
+    nonisolated(unsafe) var plan = WrapUpPlan(chosen: .claude, model: "haiku", onDevice: .missing)
+    private var waiting: [CheckedContinuation<Void, Never>] = []
+
+    func release() {
+        holdsWrapUp = false
+        waiting.forEach { $0.resume() }
+        waiting = []
+    }
 
     init() {
         func session(_ id: String, _ name: String, _ state: String, idle: TimeInterval, waited: TimeInterval? = nil) -> Session {
@@ -63,7 +79,22 @@ final class TriageWorld {
                 return .done("removed \(id)")
             },
             reload: { [self] in self.reloads += 1 },
-            now: { TriageWorld.now }))
+            now: { TriageWorld.now },
+            wrapUp: { [self] item, engine, model in
+                self.wrapped.append("\(item.id) \(engine == .onDevice ? "on-device" : model)")
+                if self.holdsWrapUp {
+                    await withCheckedContinuation { self.waiting.append($0) }
+                }
+                if let failure = self.wrapUpFailure { return .failure(failure) }
+                let note = SessionNote(
+                    id: item.id, sessionID: "22222222-0000-4000-8000-000000000000", name: item.session.name, repo: item.session.location.repoName,
+                    directory: item.session.summary.cwd, branch: item.facts.branch, summary: "Doing: \(item.session.name).\nStopped at: waiting.\nWorth keeping: nothing.",
+                    model: engine == .onDevice ? WrapUp.onDeviceModelName : model, createdAt: TriageWorld.now)
+                try? self.archive.save(note)
+                return .success(note)
+            },
+            notes: { [archive] in archive.all() },
+            wrapUpPlan: { [self] in self.plan }))
     }
 }
 

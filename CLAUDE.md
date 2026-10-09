@@ -36,7 +36,7 @@ Every side effect is passed in as a closure or protocol (the `claude` runner, th
 ## Fixed values
 
 - Bundle id `io.github.ksawerykarwacki.porchlight`; state in `~/Library/Application Support/Porchlight/` (`settings.json`, `reminders.json`, `dispatches.json`, `activity.log`); `PORCHLIGHT_STATE_DIR` overrides the folder.
-- `PORCHLIGHT_CLAUDE` overrides where `claude` is found; `PORCHLIGHT_NO_NOTIFICATIONS` turns delivery off.
+- `PORCHLIGHT_CLAUDE` overrides where `claude` is found; `PORCHLIGHT_NO_NOTIFICATIONS` turns delivery off; `PORCHLIGHT_FM` and `PORCHLIGHT_CONVERSATIONS_DIR` point at a stand-in `fm` and a made-up conversations folder.
 - The CLI contract Porchlight relies on is Appendix A of `spec.md`: `claude agents --json --all`, `claude --bg … -- <prompt>`, `claude attach`, `claude stop`, `claude rm`. Minimum version 2.1.294 (provisional).
 - Homebrew formula `Formula/porchlight.rb`, fully qualified `ksawerykarwacki/porchlight/porchlight`; it calls `scripts/make-app.sh`, so keep the two in step.
 
@@ -44,7 +44,9 @@ Every side effect is passed in as a closure or protocol (the `claude` runner, th
 
 - **Run the unmodified `claude` through documented interfaces only.** No reverse engineering, no reading the binary, no undocumented sockets.
 - **Never read, store or forward Claude credentials.** A test fails if a source file names where they live.
-- **Never send input into a session.** No typing into terminals, no cross-session messages as if they were the user. Replies stay "copy and open".
+- **Never send input into a session.** No typing into terminals, no cross-session messages as if they were the user. Replies stay "copy and open". Wrap-up is not an exception: it reads a fork of the conversation with every tool off and nothing saved (`WrapUp.arguments`), and is not run at all if the CLI lacks one of those flags.
+- **Nothing spends the user's Claude usage unasked.** A summary runs only after the user's answer to a question that says so, one at a time.
+- **Claude Code's own files are read, never written,** and only two kinds: a job's `state.json` and, for an on-device summary the user asked for, a conversation's `.jsonl` (`ConversationReader`). Of a conversation only what was said is taken: no commands, no tool output. Both formats are undocumented, so every reader skips what it cannot read.
 - **Nothing that destroys work happens without the user's explicit answer.** `claude rm` is run plain; `--discard-unpushed` and `--force-remove-worktree` are passed only with the value Claude Code printed in its own refusal, after a second confirmation.
 - **No attribution lines**: no `Co-Authored-By` trailers, no "Generated with" in pull requests.
 - The product's name never contains "Claude".
