@@ -316,6 +316,37 @@ final class TriageWorld {
         #expect(sessions > 300)
     }
 
+    /// When another tab makes the panel taller than the settings would be alone, the settings
+    /// scroll in all of that height instead of leaving a blank band under them.
+    @Test func theSettingsFillThePanelWhenAnotherTabMakesItTaller() async throws {
+        func scrollHeights(_ configure: (inout InboxActions) -> Void) -> [CGFloat] {
+            var actions = InboxActions()
+            configure(&actions)
+            let host = NSHostingView(rootView: InboxView(snapshot: StoreSnapshot(), now: TriageWorld.now, actions: actions))
+            host.frame = NSRect(origin: .zero, size: host.fittingSize)
+            host.layoutSubtreeIfNeeded()
+            var found: [CGFloat] = []
+            func walk(_ view: NSView) {
+                if view is NSScrollView { found.append(view.frame.height) }
+                view.subviews.forEach(walk)
+            }
+            walk(host)
+            return found.sorted()
+        }
+        // Many idle sessions: the Triage tab is at its limit, which is taller than the settings' own.
+        var tall = await state()
+        tall.items = (0..<4).flatMap { _ in tall.items }
+        let heights = scrollHeights { $0.triage = tall; $0.showsSettings = true }
+        let tallest = try #require(heights.last)
+        #expect(tallest > 400)
+        // The settings' scroll view is as tall as the tallest tab's.
+        #expect(heights.filter { abs($0 - tallest) < 1 }.count >= 2, "scroll views are \(heights)")
+
+        // With little in the other tabs the settings still get their own height, not less.
+        let alone = scrollHeights { $0.showsSettings = true }
+        #expect((alone.last ?? 0) >= 359, "scroll views are \(alone)")
+    }
+
     @Test func theFootersRefreshDoesWhatTheShownTabNeeds() async {
         var calls: [String] = []
         var actions = InboxActions()

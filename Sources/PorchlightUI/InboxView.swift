@@ -293,12 +293,10 @@ public struct InboxView: View {
                 // tallest of them and switching tabs never resizes its window. A window that
                 // gets shorter keeps its bottom edge, which would drop it away from the menu bar.
                 ZStack(alignment: .top) {
-                    // Shorter than the session list's limit: the settings scroll, so that a few
-                    // sessions do not sit in a panel as tall as the whole settings page.
-                    ScrollView { SettingsPage(actions: actions) }
-                        .frame(maxHeight: 360)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .shown(actions.showsSettings)
+                    // The settings' say in the height. Shorter than the session list's limit, so
+                    // that a few sessions do not sit in a panel as tall as the whole settings
+                    // page; the page itself is always longer than this and scrolls.
+                    Color.clear.frame(height: Self.settingsHeight)
                     ScrollView { sessionList }
                         .frame(maxHeight: 480)
                         // The menu-bar window sizes its content to the minimum it will accept, and
@@ -310,6 +308,13 @@ public struct InboxView: View {
                         .frame(maxHeight: 480)
                         .fixedSize(horizontal: false, vertical: true)
                         .shown(actions.showsTriage)
+                }
+                // Drawn over the stack rather than in it, so the settings scroll in whatever
+                // height the panel has. Inside the stack they kept their own 360 points and left
+                // a blank band below when another tab had made the panel taller.
+                .overlay {
+                    ScrollView { SettingsPage(actions: actions) }
+                        .shown(actions.showsSettings)
                 }
             } else if actions.showsTriage {
                 TriagePage(actions: actions, hover: hover)
@@ -324,6 +329,9 @@ public struct InboxView: View {
         }
         .frame(width: 400)
     }
+
+    /// How tall the panel's middle is when only the settings have a say.
+    static let settingsHeight: CGFloat = 360
 
     @ViewBuilder private var sessionList: some View {
         if !actions.setupSteps.isEmpty {
