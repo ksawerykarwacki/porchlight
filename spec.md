@@ -377,7 +377,8 @@ Claude Code 2.1.295 ships an extension interface it calls mods: a plugin whose h
 - `$.http.fetch` takes a `socketPath`, so a mod can speak HTTP to a Unix socket. Against a stand-in server on a socket with mode 0600 and a token in a 0600 file: an event reached the server in 1 to 7 ms; a command queued on the server reached the mod within milliseconds through a request held open (20 s, then asked again).
 - The mod's timers kept running while its hooks waited and after a failed turn.
 - With the server gone the request fails at once (`HooksError: … failed`); the probe asked again every three seconds at no visible cost. Without the token the server answered 403.
-- Not tested: a dozen sessions at once; the app restarting while requests are held.
+- **The app restarting:** with the stand-in server killed for about ten seconds while a request was held, the mod's requests failed, it asked again every three seconds, and it was back as soon as the server was; a command queued afterwards arrived.
+- Not tested: a dozen sessions at once.
 
 *Answering a question.*
 
@@ -390,7 +391,9 @@ Claude Code 2.1.295 ships an extension interface it calls mods: a plugin whose h
 - In the session's default background mode a harmless command was not asked about at all (the mode's own decider let it through). With `--permission-mode default` the order is: `tool.check` (verdict `ask`), then `classic.PermissionRequest`, then the dialog.
 - A function hook answers a permission request with `{ decision: { behavior: "allow" } }`, not the settings hook's `hookSpecificOutput` wrapper. Given 6 seconds after the request, it ran the command with no dialog answered.
 - **Both hooks are given ten seconds.** After that their signal aborts and the engine goes on: an answer at 11, 22 or 30 seconds was ignored and the dialog stood. Holding `tool.check` only delays the dialog by its ten seconds.
-- So an approval from the app is possible for about ten seconds after the request (perhaps twenty using both hooks, not tried), and not from a notification clicked minutes later. Not tried: refusing the call with "waiting for approval", then allowing the same call and resubmitting once the user approves; drawing the dialog from the mod.
+- So an approval through those hooks is possible for about ten seconds after the request, and not from a notification clicked minutes later.
+- **Refuse and resubmit works for a late approval (third round, 2026-10-10).** The mod's `tool.check` hook refused the command with a reason telling the model to stop and wait; the model ended its turn saying it was waiting. Sixty seconds later the approval arrived, the mod remembered that exact command and submitted "the owner approved this command, run exactly it now"; the model asked again, `tool.check` let it through, and it ran. The costs: one extra model turn, the session shows as finished rather than waiting in between, and the match is on the exact command text.
+- Drawing the permission dialog from a mod is not possible: it is not among the components a mod may draw.
 
 *A turn that fails.*
 
