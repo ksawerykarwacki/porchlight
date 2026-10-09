@@ -35,6 +35,8 @@ public final class InboxModel {
     public private(set) var snapshot = StoreSnapshot()
     /// When and how to remind, as last saved.
     public private(set) var reminderSettings = ReminderSettings()
+    /// Which waiting text counts as a passing failure. Read from the settings when the app starts.
+    public private(set) var transientErrors = TransientErrors()
     /// Whether the panel shows the reminder settings instead of the sessions.
     public var showsSettings = false
     /// Which row or button the pointer is over.
@@ -89,6 +91,7 @@ public final class InboxModel {
         let delivery = UserNotificationDelivery { action in relay.send(action) }
         self.delivery = delivery
         self.reminderSettings = settings.reminders ?? ReminderSettings()
+        self.transientErrors = settings.transientErrors ?? TransientErrors()
         self.engine = ReminderEngine(
             delivery: delivery, stateURL: remindersURL,
             // Read from the file each time, so a change here or by hand applies at the next refresh.
@@ -293,6 +296,44 @@ public final class InboxModel {
             let copied = (try? await CLIRunner().run(URL(fileURLWithPath: "/usr/bin/pbcopy"), [], input: reply))?.succeeded ?? false
             show(copied ? "Suggested reply copied" : "Could not copy the reply")
         }
+    }
+
+    /// Opens a session that stopped on a passing failure and puts the line to resend on the
+    /// clipboard. Judged again here, from the session as it is now: a session that has moved on
+    /// or is asking something is left alone, whatever the row showed.
+    public func retry(sessionID: String) {
+        guard let session = snapshot.sessions.first(where: { $0.id == sessionID }),
+              transientErrors.isTransientFailure(session) else {
+            show("That session is not waiting on something that can be retried")
+            return
+        }
+        guard let claude = locator.locate() else {
+            log?.record("retry: the claude command was not found")
+            show("The claude command was not found")
+            return
+        }
+        var configured = MacTerminalLauncher(preferred: chosenTerminal)
+        configured.preferAgentView = prefersAgentView
+        let launcher: any TerminalLauncher = injectedLauncher ?? configured
+        let settings = transientErrors
+        let copy = self.copy
+        Task {
+            let outcome = await Retry.run(session: session, settings: settings, claude: claude.path, launcher: launcher, copy: copy)
+            log?.record("retry \(sessionID): \(outcome)")
+            switch outcome {
+            case .notRetryable: break
+            case .launched(.failed(let reason), _): show(reason.prefix(1).uppercased() + reason.dropFirst())
+            case .launched(.copiedToClipboard(let reason), _):
+                show("\(reason.prefix(1).uppercased() + reason.dropFirst()). Command copied; paste it in a terminal, then send \u{201C}\(settings.resend)\u{201D}.")
+            case .launched(_, resendCopied: true): show("Opened \(session.name). Paste \u{201C}\(settings.resend)\u{201D} there and press Return.")
+            case .launched(_, resendCopied: false): show("Opened \(session.name). Send \u{201C}\(settings.resend)\u{201D} there to try again.")
+            }
+        }
+    }
+
+    /// Puts text on the clipboard. Tests replace it so they never touch the real one.
+    var copy: @Sendable (String) async -> Bool = { text in
+        (try? await CLIRunner().run(URL(fileURLWithPath: "/usr/bin/pbcopy"), [], input: text))?.succeeded ?? false
     }
 
     private func launch(_ makeCommand: @escaping @Sendable (String) -> TerminalCommand) {

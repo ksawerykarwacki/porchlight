@@ -63,6 +63,11 @@ the session came with one. A daily summary arrives at 09:00.
 - **During a Focus** macOS holds ordinary reminders back: no banner, no sound, and they wait in
   Notification Centre. Porchlight cannot see that a Focus is on, so its ladder does not pause.
   Add Porchlight to the Focus's allowed apps if you want its reminders to come through.
+- **Retry.** A session that stopped on a passing failure (a rate or usage limit, the laptop going
+  to sleep, the API being down) is marked "Can be retried" in the inbox. Its Retry button opens the
+  session in your terminal and puts `continue` on the clipboard: paste it and press Return.
+  Porchlight sends nothing by itself. What counts as such a failure is a list of patterns under
+  `transientErrors` in `settings.json`.
 - **The menu-bar lantern** is unlit when nothing waits, amber when a session waits, and red with
   rays once one has waited as long as the second step. The number appears from two sessions up.
 

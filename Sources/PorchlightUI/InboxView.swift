@@ -29,6 +29,10 @@ public struct InboxActions {
     public var setShowsSettings: (Bool) -> Void = { _ in }
     public var reminders = ReminderSettings()
     public var updateReminders: ((inout ReminderSettings) -> Void) -> Void = { _ in }
+    /// Opens a session that stopped on a passing failure, with a line to resend on the clipboard.
+    public var retry: (String) -> Void = { _ in }
+    /// The patterns that decide which rows offer Retry.
+    public var transientErrors = TransientErrors()
 
     public init() {}
 }
@@ -108,6 +112,8 @@ public struct InboxView: View {
         actions.setShowsSettings = { model.showsSettings = $0 }
         actions.reminders = model.reminderSettings
         actions.updateReminders = { model.updateReminders($0) }
+        actions.retry = { model.retry(sessionID: $0) }
+        actions.transientErrors = model.transientErrors
         self.init(
             snapshot: model.snapshot, now: model.now, notice: model.notice, notificationProblem: model.notificationProblem,
             snoozes: model.snoozes, actions: actions, hover: model.hover)
@@ -168,7 +174,7 @@ public struct InboxView: View {
 
     @ViewBuilder private var sessionList: some View {
         let sections = InboxGroups(sessions: snapshot.sessions, now: now)
-            .sections(now: now, snoozes: snoozes, overdueAfter: actions.reminders.secondStep)
+            .sections(now: now, snoozes: snoozes, overdueAfter: actions.reminders.secondStep, transientErrors: actions.transientErrors)
         VStack(alignment: .leading, spacing: 0) {
             if sections.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
@@ -404,6 +410,31 @@ struct InboxRowView: View {
                 }
                 .buttonStyle(.plain)
                 .onHover { hover.set("reply.\(row.id)", $0) }
+                .padding(.leading, 30)
+                .padding(.bottom, 8)
+            }
+
+            if row.isRetryable {
+                // Said in words as well as offered: the session is not asking anything, it
+                // stopped on a failure that has probably passed.
+                HStack(spacing: 8) {
+                    Button {
+                        actions.retry(row.id)
+                    } label: {
+                        Label("Retry", systemImage: "arrow.clockwise")
+                            .font(.system(size: 11.5, weight: .medium))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(Capsule().fill(Color.primary.opacity(hover.hovered == "retry.\(row.id)" ? 0.16 : 0.08)))
+                            .contentShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .onHover { hover.set("retry.\(row.id)", $0) }
+                    .help("Open the session with \u{201C}\(actions.transientErrors.resend)\u{201D} on the clipboard, ready to send")
+                    Text("Can be retried")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
                 .padding(.leading, 30)
                 .padding(.bottom, 8)
             }

@@ -93,6 +93,8 @@ public struct Settings: Sendable, Equatable, Codable {
     public var preferAgentView: Bool?
     /// When and how to remind. Nil uses the defaults.
     public var reminders: ReminderSettings?
+    /// How to recognise a session that stopped on a passing failure. Nil uses the defaults.
+    public var transientErrors: TransientErrors?
     /// Where to look for repositories to start sessions in. Nil means nowhere yet.
     public var repos: RepoIndexSettings?
     /// How new sessions are named. Nil uses the defaults.
@@ -102,8 +104,9 @@ public struct Settings: Sendable, Equatable, Codable {
 
     public init(
         terminal: String? = nil, claudePath: String? = nil, preferAgentView: Bool? = nil, reminders: ReminderSettings? = nil,
-        repos: RepoIndexSettings? = nil, naming: NamingSettings? = nil, hotkey: Hotkey? = nil
+        transientErrors: TransientErrors? = nil, repos: RepoIndexSettings? = nil, naming: NamingSettings? = nil, hotkey: Hotkey? = nil
     ) {
+        self.transientErrors = transientErrors
         self.terminal = terminal
         self.claudePath = claudePath
         self.preferAgentView = preferAgentView
@@ -114,7 +117,7 @@ public struct Settings: Sendable, Equatable, Codable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case terminal, claudePath, preferAgentView, reminders, repos, naming, hotkey
+        case terminal, claudePath, preferAgentView, reminders, transientErrors, repos, naming, hotkey
     }
 
     /// Each value is read on its own, so one odd entry does not discard the rest.
@@ -124,6 +127,7 @@ public struct Settings: Sendable, Equatable, Codable {
         claudePath = try? c.decodeIfPresent(String.self, forKey: .claudePath)
         preferAgentView = try? c.decodeIfPresent(Bool.self, forKey: .preferAgentView)
         reminders = try? c.decodeIfPresent(ReminderSettings.self, forKey: .reminders)
+        transientErrors = try? c.decodeIfPresent(TransientErrors.self, forKey: .transientErrors)
         repos = try? c.decodeIfPresent(RepoIndexSettings.self, forKey: .repos)
         naming = try? c.decodeIfPresent(NamingSettings.self, forKey: .naming)
         hotkey = try? c.decodeIfPresent(Hotkey.self, forKey: .hotkey)

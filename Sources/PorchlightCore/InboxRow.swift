@@ -37,8 +37,15 @@ public struct InboxRow: Sendable, Equatable, Identifiable {
     /// Which of `options` Claude recommends, if it marked one.
     public let recommendedOption: Int?
     public let suggestedReply: String?
+    /// Waiting only because of a passing failure (a limit, a sleeping laptop, an API that was
+    /// down), so trying again is likely all it needs.
+    public let isRetryable: Bool
 
-    public init(session: Session, snooze: Snooze? = nil, overdueAfter: TimeInterval = MenuBarStatus.defaultOverdueAfter, now: Date = Date()) {
+    public init(
+        session: Session, snooze: Snooze? = nil, overdueAfter: TimeInterval = MenuBarStatus.defaultOverdueAfter,
+        transientErrors: TransientErrors = TransientErrors(), now: Date = Date()
+    ) {
+        isRetryable = transientErrors.isTransientFailure(session)
         isSnoozed = session.needsHuman && (snooze?.isActive(waitingSince: session.waitingSince, now: now) ?? false)
         id = session.id
         title = session.name
@@ -105,11 +112,16 @@ public struct InboxRow: Sendable, Equatable, Identifiable {
 extension InboxGroups {
     /// The groups as titled sections of rows, leaving out empty ones.
     public func sections(
-        now: Date = Date(), snoozes: [String: Snooze] = [:], overdueAfter: TimeInterval = MenuBarStatus.defaultOverdueAfter
+        now: Date = Date(), snoozes: [String: Snooze] = [:], overdueAfter: TimeInterval = MenuBarStatus.defaultOverdueAfter,
+        transientErrors: TransientErrors = TransientErrors()
     ) -> [(title: String, rows: [InboxRow])] {
         [("Needs you", needsYou), ("Working", working), ("Recently done", recentlyDone), ("Other", other)]
             .filter { !$0.1.isEmpty }
-            .map { (title: $0.0, rows: $0.1.map { InboxRow(session: $0, snooze: snoozes[$0.id], overdueAfter: overdueAfter, now: now) }) }
+            .map { section in
+                (title: section.0, rows: section.1.map {
+                    InboxRow(session: $0, snooze: snoozes[$0.id], overdueAfter: overdueAfter, transientErrors: transientErrors, now: now)
+                })
+            }
     }
 }
 
