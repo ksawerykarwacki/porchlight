@@ -56,6 +56,8 @@ Every side effect is passed in as a closure or protocol (the `claude` runner, th
 - Tests use Swift Testing (`@Suite`, `@Test`, `#expect`, `@testable import`). The stand-in CLI is `Tests/PorchlightCoreTests/Fixtures/fake-claude`; it records its folder and arguments and prints what the real CLI was seen to print. When the real CLI's output is observed, update the stand-in and say so in `spec.md`.
 - Tests never write the real state folder: pass URLs in, or use a temporary folder.
 - Offscreen renders cannot draw AppKit controls or system pickers; views take `drawsMenus` / `drawsFields` and draw text instead. Renders of the same view can differ by one level between the first renders of a process and later ones, and test order is random: compare with a tolerance, never byte for byte.
+- The README's pictures are drawn from the app's own views with made-up sessions (`ReadmeImages` in the Mac tests). When a view they show changes, draw them again: `PORCHLIGHT_README_DIR=docs/images swift test --filter ReadmeImages`. The logo is `icon_128x128@2x.png` from `PorchlightIconTool`.
+- The README is for someone deciding whether to install; how things work in detail goes in `docs/guide.md`, and what was built when goes in `spec.md`.
 - Comments say why, in a line or two, in plain English. Match the code around them.
 - Settings are optional fields read one by one (`try?` per field), so one odd value never discards the rest; an explicit `null` means off where "off" is a choice.
 - What only exists on a screen (focus, the panel, the palette, notifications) cannot be verified by tests. Say so under "Not checked" in the pull request and ask the owner to try it.
