@@ -145,3 +145,53 @@ func pin(arguments: [String]) async {
     }
     print(pinning ? "Pinned \(session.name)" + (quiet ? "; its reminders are off" : "") : "Unpinned \(session.name)")
 }
+
+/// `porchlight triage [--json]`: what could be cleared away, and what would be lost.
+func triage(arguments: [String]) async {
+    let store = liveStore()
+    await store.refresh()
+    let snapshot = await store.snapshot
+    if let problem = snapshot.problem { fail(describe(problem)) }
+    let settings = Settings.load().triage ?? TriageSettings()
+    let items = await TriageGatherer().items(sessions: snapshot.sessions, pins: Pins.load(), settings: settings)
+
+    if arguments.contains("--json") {
+        struct Row: Encodable {
+            let id: String
+            let name: String
+            let repo: String
+            let state: String
+            let verdict: String
+            let reason: String
+            let pullRequest: String
+            let branch: String?
+            let worktree: String?
+            let uncommitted: Int?
+            let unpushed: Int?
+        }
+        let rows = items.map { item in
+            Row(
+                id: item.id, name: item.session.name, repo: item.session.location.repoName, state: item.session.summary.state.rawValue,
+                verdict: item.verdict.rawValue, reason: item.reason, pullRequest: item.facts.pullRequest.summary, branch: item.facts.branch,
+                worktree: item.facts.worktree?.path, uncommitted: item.facts.worktree?.uncommitted, unpushed: item.facts.worktree?.unpushed)
+        }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        guard let data = try? encoder.encode(["sessions": rows]) else { fail("could not encode the triage") }
+        print(String(decoding: data, as: UTF8.self))
+        return
+    }
+
+    if items.isEmpty {
+        print("Nothing to triage: no session is finished, stopped or waiting for long.")
+        return
+    }
+    for verdict in TriageVerdict.allCases {
+        let group = items.filter { $0.verdict == verdict }
+        guard !group.isEmpty else { continue }
+        print("\n\(verdict.title) (\(group.count)): \(verdict.explanation)")
+        for item in group {
+            print("  \(item.id)  \(item.session.name)  [\(item.session.location.repoName)]  \(item.reason)")
+        }
+    }
+}

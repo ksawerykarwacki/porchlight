@@ -28,6 +28,9 @@ let usage = """
                                               --no-name, --model, --effort, --agent,
                                               --permission-mode, --worktree[=NAME], --json
       porchlight name [--dir DIR] PROMPT      Print the name a session started with PROMPT would get
+      porchlight triage [--json]              List sessions that are finished, stopped or long waiting,
+                                              each with a verdict: safe to remove, needs a decision,
+                                              stale, or keep
       porchlight pin <id> [--quiet]           Keep a session: it is grouped at the top and never
                                               offered for removal; --quiet also turns its reminders off
       porchlight unpin <id>
@@ -353,6 +356,8 @@ case "new":
     #else
     fail("new is only available on macOS")
     #endif
+case "triage":
+    await triage(arguments: Array(arguments.dropFirst()))
 case "pin", "unpin":
     await pin(arguments: arguments)
 case "stop":
