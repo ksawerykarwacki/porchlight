@@ -30,6 +30,9 @@ public struct InboxRow: Sendable, Equatable, Identifiable {
     public let kind: Kind
     /// The question, the command awaiting approval, or the raw need. Nil when nothing is known.
     public let detail: String?
+    /// Where a waiting session stands, when that says more than `detail` does. Not for an
+    /// approval, which is about one command.
+    public let context: String?
     /// The tool a pending approval is for, such as "Bash".
     public let tool: String?
     /// Choices offered with a question, in order, without the "(Recommended)" marker.
@@ -103,7 +106,11 @@ public struct InboxRow: Sendable, Equatable, Identifiable {
             age = nil
         }
         self.tool = tool
-        self.detail = detail.map(Self.singleLine)
+        let shown = detail.map(Self.singleLine)
+        self.detail = shown
+        let standing = kind == .question || kind == .waiting ? session.standing.map(Self.singleLine) : nil
+        // Said once: not when it only repeats the question.
+        context = standing.flatMap { $0.caseInsensitiveCompare(shown ?? "") == .orderedSame ? nil : $0 }
         let labels = session.questions.first?.options.map(\.label) ?? []
         let marker = "(Recommended)"
         recommendedOption = labels.firstIndex { $0.localizedCaseInsensitiveContains(marker) }

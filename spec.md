@@ -425,6 +425,8 @@ What Claude Code documents for programs outside it (same date): `claude agents -
 - Only the call that was waiting ends the wait: another tool finishing beside an open approval does not.
 - A session that asked before the app started has only its state file until the mod next speaks (within a minute, for an open question). A reload of the mod forgets what was open; the state file covers that too.
 
+**Where a waiting session stands (2026-10-10).** Seen by the owner: a session that ended its turn with a long report and "I'll start when you say which one." showed in the panel as "which one." and nothing else, because the row drew only the state file's `needs`. The same file holds `output.result`, Claude Code's sentence on what the turn came to, and `detail`, its status line. A row that waits on a question or on free text now shows one of them (the result first) above what it asks, unless it only repeats it; an approval does not, being about one command. The suggested reply's text is drawn under its button, so the choice can be judged before opening the session. `intent` and `providerEnv` are still never read.
+
 **Built, layer 3 (2026-10-10): answering one question from the panel.** The owner changed rule 8 in 12.1 for this.
 
 - *What can be answered:* a session that is waiting, whose mod said it takes answers (`"can": ["answer"]` and an id for this asking, `q<n>-<time>`), with exactly one question, options, one to be picked, and only when that question is the one the row shows (`Session.answerTarget`). Several questions, a choice of several and typed text stay with the session's dialog; so does everything from a mod older than 0.2.0, whose options stay plain text.

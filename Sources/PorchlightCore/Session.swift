@@ -76,6 +76,10 @@ public struct Session: Sendable, Equatable, Identifiable {
     }
     public var suggestedReply: String? { needsHuman ? job?.suggestedReply : nil }
 
+    /// Where a waiting session stands, in Claude Code's own words: what the last turn came to,
+    /// or failing that its status line. What it asks for is often too short to act on alone.
+    public var standing: String? { needsHuman ? (job?.result ?? job?.detail) : nil }
+
     /// When the session started waiting: the job file's last update if there is one, otherwise the
     /// first time the store observed it blocked.
     public var waitingSince: Date? { needsHuman ? (job?.updatedAt ?? observedBlockedSince) : nil }

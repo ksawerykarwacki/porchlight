@@ -586,6 +586,16 @@ struct InboxRowView: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
 
+                        if let context = row.context {
+                            // Where the session stands, before what it asks: the ask alone can
+                            // be two words.
+                            Text(context)
+                                .font(.system(size: 11.5))
+                                .foregroundStyle(.secondary)
+                                .lineLimit(3)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .padding(.top, 3)
+                        }
                         if let detail = row.detail {
                             Text(row.kind == .approval ? "\(row.tool ?? "Tool"): \(detail)" : detail)
                                 .font(row.kind == .approval ? .system(size: 11.5, design: .monospaced) : .system(size: 12.5))
@@ -717,7 +727,18 @@ struct InboxRowView: View {
                 .buttonStyle(.plain)
                 .onHover { hover.set("reply.\(row.id)", $0) }
                 .padding(.leading, 30)
-                .padding(.bottom, 8)
+                .padding(.bottom, 3)
+                if let reply = row.suggestedReply {
+                    // What would be copied, so the choice can be judged without opening the session.
+                    Text("\u{201C}\(reply)\u{201D}")
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.leading, 30)
+                        .padding(.trailing, 10)
+                        .padding(.bottom, 8)
+                }
             }
 
             if row.isRetryable {

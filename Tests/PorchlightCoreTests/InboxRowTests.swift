@@ -47,6 +47,30 @@ import Testing
         #expect(row.isOverdue)
     }
 
+    @Test func aWaitingRowSaysWhereTheSessionStandsBesideWhatItAsks() throws {
+        // What the last turn came to, from the state file's `output.result`.
+        #expect(try rows()["11111111"]?.context == "Found two candidate timeouts.")
+        // A question with options and an approval have none in these files (`output` is null).
+        #expect(try rows()["22222222"]?.context == nil && rows()["55555555"]?.context == nil)
+
+        func row(_ fields: [String: Any], state: SessionState = .blocked) throws -> InboxRow {
+            var json: [String: Any] = ["state": "blocked", "name": "n", "needs": "which one."]
+            fields.forEach { json[$0] = $1 }
+            let job = try JSONDecoder().decode(JobState.self, from: JSONSerialization.data(withJSONObject: json))
+            return InboxRow(session: Session(summary: SessionSummary(id: "a", name: "n", state: state), job: job), now: Date())
+        }
+        // Without a result the status line serves; an odd `output` is passed over, not fatal.
+        #expect(try row(["detail": "layer 3 confirmed; layers 4 to 6 next"]).context == "layer 3 confirmed; layers 4 to 6 next")
+        #expect(try row(["detail": "status", "output": "text"]).context == "status")
+        #expect(try row(["detail": "status", "output": ["result": ""]]).context == "status")
+        #expect(try row(["output": ["result": "Line one\nline two"]]).context == "Line one line two")
+        // Said once, and only while the session waits; never for an approval.
+        #expect(try row(["output": ["result": "Which one."]]).context == nil)
+        #expect(try row([:]).context == nil)
+        #expect(try row(["output": ["result": "Done."]], state: .working).context == nil)
+        #expect(try row(["needs": "approve Bash: make", "output": ["result": "Ready to build."]]).context == nil)
+    }
+
     @Test func sessionsThatAreNotBlockedShowNoQuestion() throws {
         let rows = try rows()
         let working = try #require(rows["33333333"])
