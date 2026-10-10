@@ -59,6 +59,8 @@ public struct InboxRow: Sendable, Equatable, Identifiable {
     public let retry: RetryTarget?
     /// Where a reply typed in Porchlight would go, when the session can take one.
     public let reply: ReplyTarget?
+    /// The session has no process but can be brought back to take a reply: see `Session.canBeWoken`.
+    public let canWake: Bool
     /// What automatic retry will do about it, when that is turned on.
     public let autoRetry: AutoRetry.Standing?
     /// When a scheduled retry will be sent, in words: "now", "in a minute", "in 4 min".
@@ -79,6 +81,7 @@ public struct InboxRow: Sendable, Equatable, Identifiable {
         isRetryable = transientErrors.offersRetry(session)
         retry = session.retryTarget
         reply = session.replyTarget
+        canWake = session.replyTarget == nil && session.canBeWoken
         autoRetry = session.retryTarget.flatMap { target in transientErrors.autoRetry.map { $0.standing(for: target) } }
         if case .scheduled(let at, _, _)? = autoRetry {
             let left = at.timeIntervalSince(now)

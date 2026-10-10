@@ -219,6 +219,14 @@ export const register: Register = on => {
     try {
       open = undefined
       void send($, { kind: 'session.start' })
+      // A session that starts with nothing to do (one brought back after it had stopped, or a
+      // reload of this mod) is idle from the start: it can take a reply too. A turn that
+      // starts takes the offer back.
+      session ??= String(await $.session.id())
+      asked += 1
+      const idle = { kind: 'idle' as const, id: `s${asked}-${Number(await $.clock.now())}`, can: ['reply'] }
+      ended = idle
+      void send($, idle).then(() => replyFromApp($, idle))
       $.clock.every(REPEAT_EVERY_MS, () => {
         const again = reportOf(open)
         if (again !== undefined) void send($, again)

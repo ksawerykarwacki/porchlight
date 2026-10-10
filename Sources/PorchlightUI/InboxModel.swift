@@ -121,10 +121,52 @@ public final class InboxModel {
     /// The turn each draft was written for: a draft does not carry over to a later turn.
     private var replyDraftTurns: [String: String] = [:]
 
+    /// What a draft is tied to when its session has to be woken first: there is no turn yet.
+    static let wakeFirst = "wake"
+
     public func setReplyDraft(sessionID: String, _ text: String) {
-        guard let target = snapshot.sessions.first(where: { $0.id == sessionID })?.replyTarget else { return }
+        guard let session = snapshot.sessions.first(where: { $0.id == sessionID }) else { return }
+        guard let turn = session.replyTarget?.turnID ?? (session.canBeWoken ? Self.wakeFirst : nil) else { return }
         replyDrafts[sessionID] = text.isEmpty ? nil : text
-        replyDraftTurns[sessionID] = text.isEmpty ? nil : target.turnID
+        replyDraftTurns[sessionID] = text.isEmpty ? nil : turn
+    }
+
+    /// Brings a session without a process back, without starting a turn. Replaced in tests;
+    /// otherwise the installed `claude respawn <id>` is run.
+    var wake: (@Sendable (String) async -> Bool)?
+    /// How long a woken session has to say it is idle, and how often that is looked for.
+    var wakeWait: (total: TimeInterval, step: Duration) = (15, .milliseconds(250))
+
+    private func wakeSession(_ id: String) async -> Bool {
+        if let wake { return await wake(id) }
+        guard let claude = locator.locate() else { return false }
+        let result = try? await CLIRunner().run(URL(fileURLWithPath: claude.path), ["respawn", id], timeout: 30)
+        return result?.succeeded ?? false
+    }
+
+    /// Wakes a session that has no process and sends it the reply once its mod says it is idle.
+    private func wakeAndReply(_ session: Session, text: String) async -> (sent: Bool, message: String) {
+        guard let conversation = session.summary.sessionId?.lowercased(), ReplyTarget(sessionID: conversation, turnID: "x").command(text: text) != nil else {
+            return (false, "That reply is empty or too long to send from here")
+        }
+        log?.record("reply \(session.id): waking the session first")
+        guard await wakeSession(session.id) else {
+            let copied = await copy(text)
+            return (false, "\(session.name) could not be woken." + (copied ? " Your reply is on the clipboard: open the session and paste it." : ""))
+        }
+        // The woken session's mod says it is idle and then asks for a reply; both take a moment.
+        let deadline = Date().addingTimeInterval(wakeWait.total)
+        while Date() < deadline {
+            if let turn = companion?.snapshot()[conversation]?.replyableTurnID, let command = ReplyTarget(sessionID: conversation, turnID: turn).command(text: text),
+               let sendToCompanionIfWaiting, sendToCompanionIfWaiting(command, conversation) {
+                log?.record("reply \(session.id): \(text.count) characters, taken after waking")
+                return (true, "Woke \(session.name) and sent your reply")
+            }
+            try? await Task.sleep(for: wakeWait.step)
+        }
+        log?.record("reply \(session.id): woken, but its mod did not ask for a reply")
+        let copied = await copy(text)
+        return (false, "\(session.name) is awake but is not listening (it may not have the companion mod)." + (copied ? " Your reply is on the clipboard: open the session and paste it." : ""))
     }
 
     /// Puts the reply Claude Code suggests into the field, for the user to change or send. Only
@@ -142,6 +184,20 @@ public final class InboxModel {
     /// session has moved on, nothing is sent and the text stays in the field.
     public func sendReply(sessionID: String) {
         guard let text = replyDrafts[sessionID], !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        // No process: bring the session back first. That takes a moment, so it is said.
+        if let session = snapshot.sessions.first(where: { $0.id == sessionID }), session.replyTarget == nil, session.canBeWoken,
+           replyDraftTurns[sessionID] == Self.wakeFirst {
+            show("Waking \(session.name)\u{2026}")
+            Task {
+                let outcome = await wakeAndReply(session, text: text)
+                if outcome.sent {
+                    replyDrafts[sessionID] = nil
+                    replyDraftTurns[sessionID] = nil
+                }
+                show(outcome.message)
+            }
+            return
+        }
         guard let session = snapshot.sessions.first(where: { $0.id == sessionID }), let target = session.replyTarget,
               replyDraftTurns[sessionID] == target.turnID else {
             show("That session has moved on; nothing was sent")
@@ -160,6 +216,18 @@ public final class InboxModel {
             show("Sent your reply to \(session.name)")
             return
         }
+        if session.hasNoProcess, wake != nil || locator.locate() != nil {
+            show("Waking \(session.name)\u{2026}")
+            Task {
+                let outcome = await wakeAndReply(session, text: text)
+                if outcome.sent {
+                    replyDrafts[sessionID] = nil
+                    replyDraftTurns[sessionID] = nil
+                }
+                show(outcome.message)
+            }
+            return
+        }
         log?.record("reply \(sessionID): the session's mod was not waiting")
         let copy = self.copy
         Task {
@@ -171,6 +239,10 @@ public final class InboxModel {
     /// Sends a reply typed somewhere other than the panel's field (the palette), for the turn it
     /// was typed for. Says whether it went, and what to tell the user.
     public func reply(sessionID: String, turnID: String, text: String) async -> (sent: Bool, message: String) {
+        // Begun on a session that has no process: it is woken first.
+        if turnID == Self.wakeFirst, let session = snapshot.sessions.first(where: { $0.id == sessionID }), session.replyTarget == nil, session.canBeWoken {
+            return await wakeAndReply(session, text: text)
+        }
         guard let session = snapshot.sessions.first(where: { $0.id == sessionID }), let target = session.replyTarget, target.turnID == turnID else {
             return (false, "That session has moved on; nothing was sent")
         }
@@ -181,6 +253,8 @@ public final class InboxModel {
             log?.record("reply \(sessionID): \(text.count) characters, taken")
             return (true, "Sent your reply to \(session.name)")
         }
+        // What the mod last said is still remembered, but the session's process is gone.
+        if session.hasNoProcess { return await wakeAndReply(session, text: text) }
         log?.record("reply \(sessionID): the session's mod was not waiting")
         let copied = await copy(text)
         return (false, copied ? "\(session.name) is not listening. Your reply is on the clipboard: open the session and paste it." : "\(session.name) is not listening. Open the session and send your reply there.")
@@ -347,7 +421,11 @@ public final class InboxModel {
         self.snapshot = snapshot
         // A draft is a reply to one turn's end: gone when the session has moved on from it.
         for (sessionID, turn) in replyDraftTurns where snapshot.problem == nil {
-            if snapshot.sessions.first(where: { $0.id == sessionID })?.replyTarget?.turnID != turn {
+            let session = snapshot.sessions.first(where: { $0.id == sessionID })
+            // One written for a session still to be woken stays until that session is gone
+            // or busy; it is sent to whatever turn the woken session offers.
+            if turn == Self.wakeFirst, let session, session.summary.state != .working { continue }
+            if session?.replyTarget?.turnID != turn {
                 replyDrafts[sessionID] = nil
                 replyDraftTurns[sessionID] = nil
             }

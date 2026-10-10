@@ -18,6 +18,11 @@ import Testing
         var sent: [[String: Any]] = []
         /// Whether the session's mod is waiting for a command right now.
         var listening = true
+        /// The sessions asked to be woken, and what waking one does. Never the real `claude`.
+        let woken = Box<[String]>([])
+        var onWake: @MainActor () -> Bool = { false }
+        /// Whether `claude agents` lists a process for the session.
+        var pid: Int? = 4242
 
         init() throws {
             let directory = FileManager.default.temporaryDirectory.appendingPathComponent("porchlight-reply-\(UUID().uuidString)")
@@ -33,6 +38,12 @@ import Testing
                 if self.listening { self.sent.append((try? JSONSerialization.jsonObject(with: command) as? [String: Any]) ?? [:]) }
                 return self.listening
             }
+            let woken = woken
+            inbox.wake = { [unowned self] id in
+                woken.value.append(id)
+                return await MainActor.run { self.onWake() }
+            }
+            inbox.wakeWait = (0.6, .milliseconds(20))
             // Never the one that queues: a reply must not arrive later, when nobody expects it.
             inbox.sendToCompanion = { _, _ in
                 Issue.record("a reply was queued")
@@ -58,7 +69,7 @@ import Testing
             var snapshot = StoreSnapshot()
             snapshot.sessions = [
                 Session(
-                    summary: SessionSummary(id: "22222222", sessionId: ReplyFromPanelTests.conversation, name: "asks", cwd: "/Users/u/code/app", kind: "background", state: state),
+                    summary: SessionSummary(id: "22222222", sessionId: ReplyFromPanelTests.conversation, name: "asks", cwd: "/Users/u/code/app", kind: "background", state: state, pid: pid),
                     job: job, companion: hub.snapshot()[ReplyFromPanelTests.conversation])
             ]
             snapshot.fetchedAt = Date()
@@ -164,6 +175,69 @@ import Testing
         // The panel closing does not lose a half-written reply.
         world.inbox.panelClosed()
         #expect(world.inbox.replyDrafts["22222222"] == "Yes, merge it.")
+        // It has a process, so waking it was not tried.
+        #expect(world.woken.value.isEmpty)
+    }
+
+    @Test func aSessionWithoutAProcessIsWokenAndThenRepliedTo() async throws {
+        // Finished and gone: `claude agents` lists it without a process, and no mod has spoken.
+        let world = try World()
+        world.pid = nil
+        try world.show(state: .done)
+        let row = try #require(world.inbox.rows.first)
+        #expect(row.reply == nil && row.canWake)
+
+        // Waking it brings its mod up, which says the session is idle and can take a reply.
+        world.listening = false
+        world.onWake = { [unowned world] in
+            world.report(["kind": "session.start"])
+            world.report(["kind": "idle", "id": "s1-9", "can": ["reply"]])
+            world.listening = true
+            return true
+        }
+        world.inbox.setReplyDraft(sessionID: "22222222", "Also update the docs.")
+        world.inbox.sendReply(sessionID: "22222222")
+        #expect(world.inbox.notice == "Waking asks\u{2026}" && world.sent.isEmpty)
+        for _ in 0..<300 where world.sent.isEmpty { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(world.woken.value == ["22222222"])
+        #expect(world.sent.count == 1 && world.sent[0]["id"] as? String == "s1-9" && world.sent[0]["text"] as? String == "Also update the docs.")
+        for _ in 0..<300 where world.inbox.notice != "Woke asks and sent your reply" { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(world.inbox.notice == "Woke asks and sent your reply" && world.inbox.replyDrafts.isEmpty)
+    }
+
+    @Test func aSessionThatCannotBeWokenOrHasNoModKeepsTheReply() async throws {
+        // `claude respawn` failed.
+        let failed = try World()
+        failed.pid = nil
+        try failed.show(state: .unknown("stopped"))
+        #expect(failed.inbox.rows.first?.canWake == true)
+        failed.inbox.setReplyDraft(sessionID: "22222222", "Carry on.")
+        failed.inbox.sendReply(sessionID: "22222222")
+        for _ in 0..<300 where failed.copies.value.isEmpty { try await Task.sleep(for: .milliseconds(10)) }
+        for _ in 0..<300 where failed.inbox.notice?.hasPrefix("asks could not") != true { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(failed.inbox.notice == "asks could not be woken. Your reply is on the clipboard: open the session and paste it.")
+        #expect(failed.sent.isEmpty && failed.copies.value == ["Carry on."] && failed.inbox.replyDrafts["22222222"] == "Carry on.")
+
+        // It woke, but nothing in it asks for a reply: no companion mod.
+        let silent = try World()
+        silent.pid = nil
+        silent.onWake = { true }
+        try silent.show(state: .done)
+        silent.inbox.setReplyDraft(sessionID: "22222222", "Carry on.")
+        silent.inbox.sendReply(sessionID: "22222222")
+        for _ in 0..<400 where silent.copies.value.isEmpty { try await Task.sleep(for: .milliseconds(10)) }
+        for _ in 0..<300 where silent.inbox.notice?.hasPrefix("asks is awake") != true { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(silent.inbox.notice == "asks is awake but is not listening (it may not have the companion mod). Your reply is on the clipboard: open the session and paste it.")
+        #expect(silent.sent.isEmpty && silent.inbox.replyDrafts["22222222"] == "Carry on.")
+
+        // A session that is working, or one with a process, is never woken.
+        let busy = try World()
+        busy.pid = nil
+        try busy.show(state: .working)
+        #expect(busy.inbox.rows.first?.canWake == false)
+        let alive = try World()
+        try alive.show(state: .done)
+        #expect(alive.inbox.rows.first?.canWake == false)
     }
 
     @Test func theSuggestedReplyGoesIntoTheFieldNotToTheSession() throws {

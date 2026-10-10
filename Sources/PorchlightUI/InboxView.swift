@@ -564,7 +564,10 @@ struct InboxRowView: View {
     private var waits: Bool { row.kind == .question || row.kind == .approval || row.kind == .waiting }
     /// A finished session's row stays small: one line of what it said, and no reply field,
     /// until "Show more" opens it.
-    private var isFolded: Bool { row.kind == .done && !actions.expandedSaid.contains(row.id) }
+    private var isFolded: Bool { folds && !actions.expandedSaid.contains(row.id) }
+    /// Finished and stopped sessions are the ones that fold.
+    private var folds: Bool { row.kind == .done || row.kind == .unknown }
+    private var takesReply: Bool { row.reply != nil || row.canWake }
     /// Whether the options are buttons that answer the session.
     private var answers: Bool { row.isAnswerable && !row.options.isEmpty }
 
@@ -726,10 +729,10 @@ struct InboxRowView: View {
                 .padding(.top, 7)
             }
 
-            if let said = row.said, said != row.saidEnding || row.kind == .done {
+            if (row.said.map { $0 != row.saidEnding } ?? false) || (folds && (row.said != nil || takesReply)) {
                 let open = actions.expandedSaid.contains(row.id)
                 Button { actions.toggleSaid(row.id) } label: {
-                    Text(open ? "Show less" : row.kind == .done && row.reply != nil ? "Show more, or reply" : "Show more")
+                    Text(open ? "Show less" : !folds || !takesReply ? "Show more" : row.said == nil ? "Reply" : "Show more, or reply")
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(hover.hovered == "said.\(row.id)" ? .primary : .secondary)
                         .contentShape(Rectangle())
@@ -810,10 +813,11 @@ struct InboxRowView: View {
                 }
             }
 
-            if row.reply != nil, !isFolded {
+            if takesReply, !isFolded {
                 ReplyField(
                     text: actions.replyDrafts[row.id] ?? "", id: "reply.field.\(row.id)", hover: hover, drawsField: drawsMenus,
-                    change: { actions.setReplyDraft(row.id, $0) }, send: { actions.sendReply(row.id) }
+                    change: { actions.setReplyDraft(row.id, $0) }, send: { actions.sendReply(row.id) },
+                    placeholder: row.canWake ? "Reply (the session is woken first)\u{2026}" : "Reply\u{2026}"
                 )
                 .padding(.leading, 30)
                 .padding(.trailing, 10)
@@ -942,6 +946,7 @@ struct ReplyField: View {
     var drawsField = true
     let change: (String) -> Void
     let send: () -> Void
+    var placeholder = "Reply\u{2026}"
 
     private var isEmpty: Bool { text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
@@ -949,12 +954,12 @@ struct ReplyField: View {
         HStack(alignment: .bottom, spacing: 6) {
             Group {
                 if drawsField {
-                    TextField("Reply\u{2026}", text: Binding(get: { text }, set: change), axis: .vertical)
+                    TextField(placeholder, text: Binding(get: { text }, set: change), axis: .vertical)
                         .textFieldStyle(.plain)
                         .lineLimit(1...5)
                         .onSubmit(send)
                 } else {
-                    Text(text.isEmpty ? "Reply\u{2026}" : text)
+                    Text(text.isEmpty ? placeholder : text)
                         .foregroundStyle(text.isEmpty ? .tertiary : .primary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }

@@ -614,7 +614,7 @@ public final class PaletteModel {
     /// what ⌘Return always did: its suggested reply copied and the session opened.
     public func replyOrCopySelected() {
         guard step == .folder, let row = selectedSession else { return }
-        guard row.reply != nil else { return copyReplyAndOpenSelected() }
+        guard row.reply != nil || row.canWake else { return copyReplyAndOpenSelected() }
         replyRow = row
         replyText = ""
         replyMessage = nil
@@ -643,9 +643,9 @@ public final class PaletteModel {
     /// ⌘Return in the field: sends what is written. Sent, the palette goes back to its list and
     /// says so; not sent, it stays on the reply with the reason, and the text is kept.
     public func sendReply() async {
-        guard canSendReply, let row = replyRow, let target = row.reply else { return }
+        guard canSendReply, let row = replyRow, let turn = row.reply?.turnID ?? (row.canWake ? InboxModel.wakeFirst : nil) else { return }
         isSendingReply = true
-        let outcome = await onReply(row.id, target.turnID, replyText)
+        let outcome = await onReply(row.id, turn, replyText)
         isSendingReply = false
         guard outcome.sent else {
             replyMessage = outcome.message

@@ -143,8 +143,8 @@ public struct PaletteView: View {
                 KeyHint(keys: "esc", label: "Cancel", id: "palette.hint.close", hover: hover, action: model.escape)
             } else if let row = model.selectedSession {
                 KeyHint(keys: "↩", label: "Open", id: "palette.hint.choose", hover: hover, action: model.confirmFolder)
-                if row.reply != nil {
-                    KeyHint(keys: "⌘↩", label: "Reply", id: "palette.hint.reply", hover: hover, action: model.replyOrCopySelected)
+                if row.reply != nil || row.canWake {
+                    KeyHint(keys: "⌘↩", label: row.canWake ? "Wake and reply" : "Reply", id: "palette.hint.reply", hover: hover, action: model.replyOrCopySelected)
                 } else if row.suggestedReply != nil {
                     KeyHint(keys: "⌘↩", label: "Copy reply, open", id: "palette.hint.reply", hover: hover, action: model.copyReplyAndOpenSelected)
                 }
@@ -457,7 +457,10 @@ public struct PaletteView: View {
         HStack(spacing: 2) {
             KeyHint(keys: "esc", label: "Back", id: "palette.hint.close", hover: hover, action: model.escape)
             Spacer()
-            KeyHint(keys: "⌘↩", label: model.isSendingReply ? "Sending\u{2026}" : "Send reply", id: "palette.hint.start", hover: hover, prominent: model.canSendReply) {
+            KeyHint(
+                keys: "⌘↩", label: model.isSendingReply ? (row?.canWake == true ? "Waking\u{2026}" : "Sending\u{2026}") : (row?.canWake == true ? "Wake and send" : "Send reply"),
+                id: "palette.hint.start", hover: hover, prominent: model.canSendReply
+            ) {
                 Task { await model.sendReply() }
             }
         }
