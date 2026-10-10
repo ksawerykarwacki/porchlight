@@ -103,6 +103,8 @@ public final class PaletteModel {
         case folder
         /// The kept summaries, instead of sessions and repositories. Tab goes there and back.
         case notes
+        /// Writing a reply to the session that was selected.
+        case reply
         case prompt
         case starting
         case started(Dispatched)
@@ -342,6 +344,9 @@ public final class PaletteModel {
         pendingControl = nil
         pendingAnswer = nil
         showsWholeSaid = false
+        replyRow = nil
+        replyText = ""
+        replyMessage = nil
         controlMessage = nil
         query = ""
         selection = 0
@@ -569,6 +574,77 @@ public final class PaletteModel {
         rank()
     }
 
+    // MARK: Replying to a session
+
+    /// Sends a reply to a session for one turn's end; says whether it went and what to tell the user.
+    public var onReply: (_ sessionID: String, _ turnID: String, _ text: String) async -> (sent: Bool, message: String) = { _, _, _ in (false, "Not available") }
+    /// The session being replied to, as it was when the reply was begun.
+    public private(set) var replyRow: InboxRow?
+    public private(set) var replyText = ""
+    /// Why the reply did not go, when it did not.
+    public private(set) var replyMessage: String?
+    public private(set) var isSendingReply = false
+
+    /// ⌘Return on a session that can take a reply: a field to write it in. On one that cannot,
+    /// what ⌘Return always did: its suggested reply copied and the session opened.
+    public func replyOrCopySelected() {
+        guard step == .folder, let row = selectedSession else { return }
+        guard row.reply != nil else { return copyReplyAndOpenSelected() }
+        replyRow = row
+        replyText = ""
+        replyMessage = nil
+        pendingControl = nil
+        pendingAnswer = nil
+        step = .reply
+        focusRequest += 1
+    }
+
+    public func setReplyText(_ text: String) {
+        replyText = text
+        replyMessage = nil
+    }
+
+    /// Puts the reply Claude Code suggests in the field. Only into an empty one.
+    public func useSuggestedReply() {
+        guard step == .reply, let suggested = replyRow?.suggestedReply, replyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        replyText = suggested
+        focusRequest += 1
+    }
+
+    public var canSendReply: Bool {
+        step == .reply && !isSendingReply && !replyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// ⌘Return in the field: sends what is written. Sent, the palette goes back to its list and
+    /// says so; not sent, it stays on the reply with the reason, and the text is kept.
+    public func sendReply() async {
+        guard canSendReply, let row = replyRow, let target = row.reply else { return }
+        isSendingReply = true
+        let outcome = await onReply(row.id, target.turnID, replyText)
+        isSendingReply = false
+        guard outcome.sent else {
+            replyMessage = outcome.message
+            return
+        }
+        replyRow = nil
+        replyText = ""
+        step = .folder
+        controlMessage = outcome.message
+        focusRequest += 1
+        sessions = await services.sessions()
+        rank()
+    }
+
+    /// Back to the list without sending. What was written is dropped.
+    public func cancelReply() {
+        guard step == .reply else { return }
+        replyRow = nil
+        replyText = ""
+        replyMessage = nil
+        step = .folder
+        focusRequest += 1
+    }
+
     // MARK: What the selected session said
 
     /// Whether the selected session's last words are shown whole rather than only their ending.
@@ -786,6 +862,7 @@ public final class PaletteModel {
                 toggleNotes()
             }
         case .prompt: back()
+        case .reply: cancelReply()
         case .starting: break
         case .started: onClose()
         case .failed: editAgain()

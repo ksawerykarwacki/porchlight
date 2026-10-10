@@ -28,6 +28,7 @@ public struct PaletteView: View {
             case .folder: folderStep
             case .notes: notesStep
             case .prompt: promptStep
+            case .reply: replyStep
             case .starting: starting
             case .started(let started): result(started)
             case .failed(let message, let command, let untrustedFolder):
@@ -142,7 +143,9 @@ public struct PaletteView: View {
                 KeyHint(keys: "esc", label: "Cancel", id: "palette.hint.close", hover: hover, action: model.escape)
             } else if let row = model.selectedSession {
                 KeyHint(keys: "↩", label: "Open", id: "palette.hint.choose", hover: hover, action: model.confirmFolder)
-                if row.suggestedReply != nil {
+                if row.reply != nil {
+                    KeyHint(keys: "⌘↩", label: "Reply", id: "palette.hint.reply", hover: hover, action: model.replyOrCopySelected)
+                } else if row.suggestedReply != nil {
                     KeyHint(keys: "⌘↩", label: "Copy reply, open", id: "palette.hint.reply", hover: hover, action: model.copyReplyAndOpenSelected)
                 }
                 if row.isRetryable {
@@ -384,6 +387,106 @@ public struct PaletteView: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
+    }
+
+    // MARK: Reply
+
+    @ViewBuilder private var replyStep: some View {
+        let row = model.replyRow
+        HStack(spacing: 8) {
+            Button(action: model.cancelReply) {
+                HStack(spacing: 6) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 11, weight: .semibold))
+                    Text(row?.title ?? "")
+                        .font(.system(size: 13, weight: .semibold))
+                        .lineLimit(1)
+                }
+                .padding(.horizontal, 9)
+                .padding(.vertical, 5)
+                .background(Capsule().fill(Color.primary.opacity(hover.hovered == "palette.back" ? 0.12 : 0.07)))
+                .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .onHover { hover.set("palette.back", $0) }
+            .help("Back to the sessions")
+            Spacer(minLength: 8)
+            Text(row?.place ?? "")
+                .font(.system(size: 12))
+                .foregroundStyle(.tertiary)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 14)
+        .padding(.top, 12)
+        .padding(.bottom, 8)
+
+        if let said = row?.said ?? row?.detail {
+            // What is being replied to, in full: the reply is written under it.
+            SaidText(text: said, size: 12.5)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 19)
+                .padding(.bottom, 10)
+        }
+
+        replyField
+            .frame(height: 88)
+            .padding(.horizontal, 14)
+
+        if let suggested = row?.suggestedReply, model.replyText.isEmpty {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                QuietButton(title: "Use the suggested reply", symbol: nil, id: "palette.reply.suggested", hover: hover, action: model.useSuggestedReply)
+                Text("\u{201C}\(suggested)\u{201D}")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 12)
+            .padding(.top, 6)
+        }
+
+        if let message = model.replyMessage {
+            Text(message)
+                .font(.system(size: 12.5))
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 19)
+                .padding(.top, 8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+
+        Divider().padding(.top, 10)
+        HStack(spacing: 2) {
+            KeyHint(keys: "esc", label: "Back", id: "palette.hint.close", hover: hover, action: model.escape)
+            Spacer()
+            KeyHint(keys: "⌘↩", label: model.isSendingReply ? "Sending\u{2026}" : "Send reply", id: "palette.hint.start", hover: hover, prominent: model.canSendReply) {
+                Task { await model.sendReply() }
+            }
+        }
+        .padding(.horizontal, 12)
+        .frame(height: 36)
+    }
+
+    @ViewBuilder private var replyField: some View {
+        if drawsFields {
+            PalettePromptField(
+                text: model.replyText, focusRequest: model.focusRequest, onChange: model.setReplyText,
+                onSubmit: { _ in Task { await model.sendReply() } }, onCancel: model.escape
+            )
+            .overlay(alignment: .topLeading) {
+                if model.replyText.isEmpty {
+                    Text("Your reply")
+                        .font(.system(size: 15))
+                        .foregroundStyle(.tertiary)
+                        .padding(.leading, 5)
+                        .allowsHitTesting(false)
+                }
+            }
+        } else {
+            Text(model.replyText.isEmpty ? "Your reply" : model.replyText)
+                .font(.system(size: 15))
+                .foregroundStyle(model.replyText.isEmpty ? .tertiary : .primary)
+                .padding(.leading, 5)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
     }
 
     @ViewBuilder private var promptField: some View {
