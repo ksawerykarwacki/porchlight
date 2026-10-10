@@ -46,9 +46,9 @@ session only starts working when the message reaches it.
 
 ## Good to know
 
-- **It is built on an early-access API.** Claude Code calls its mods interface early access and
-  says it changes between releases. A Claude Code update may break this mod; if it does, messages
-  simply behave as they did without it.
+- **It is built on a new interface.** Mods are on by default since Claude Code 2.1.287, but the
+  reference that ships with Claude Code still says the interface "moves between releases". An
+  update may break this mod; if it does, messages simply behave as they did without it.
 - **A woken session stays running** until it goes idle by itself again.
 - **A session whose folder or worktree is gone** may not restart; the message then fails as before.
 

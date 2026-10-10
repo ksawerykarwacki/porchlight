@@ -233,6 +233,10 @@ Porchlight is local only: no account, no server, no telemetry. What it touches o
   it, every request must carry a secret from `companion.json`, which only you can read and which is
   new each time the app starts, and nothing listens on the network. Without the mod nothing ever
   connects.
+- **The companion mod, if you install it,** sends the app a session's question, the approval it
+  asks for (the tool and one line), and when turns start, finish or fail. It does not send your
+  prompts, the replies, your answers or any tool output; the full list is in
+  [its README](../mods/companion/README.md).
 - **It writes only in its own folder**, `~/Library/Application Support/Porchlight/` (settings,
   reminders, pins, notes, a log), plus one Warp tab config when you open a session in Warp.
 

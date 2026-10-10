@@ -51,6 +51,9 @@ let usage = """
       porchlight settings import FILE         Replace the settings with those in FILE
       porchlight tab                          Run agent view in this tab and let the app switch it
                                               to a session when you click one
+      porchlight companion                    Listen for the companion mod in place of the app and
+                                              print what sessions report, until interrupted. For
+                                              checking the mod; refuses while the app is listening
       porchlight doctor                       Check that the claude CLI can be found and used
       porchlight help
 
@@ -393,6 +396,12 @@ case "open":
     await open(arguments: Array(arguments.dropFirst()))
 case "watch":
     await watch(arguments: Array(arguments.dropFirst()))
+case "companion":
+    #if canImport(PorchlightMac)
+    await companion()
+    #else
+    fail("companion is only available on macOS")
+    #endif
 case "doctor":
     await doctor()
 case nil, "help", "--help", "-h":
