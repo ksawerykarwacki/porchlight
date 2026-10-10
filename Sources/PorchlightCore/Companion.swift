@@ -172,6 +172,10 @@ public final class CompanionHub: ChangeTrigger, @unchecked Sendable {
         lock.withLock { facts }
     }
 
+    /// How many are waiting to be told of a report. A report that arrives before anyone listens
+    /// wakes nobody; its facts are kept all the same and are there at the next read.
+    var listenerCount: Int { lock.withLock { listeners.count } }
+
     /// How many reports were taken since launch, for the set-up page and the log.
     public var reportCount: Int { lock.withLock { received } }
 

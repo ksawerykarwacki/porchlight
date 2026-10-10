@@ -166,12 +166,14 @@ final class CompanionRig: @unchecked Sendable {
         // A minute between reads on the timer: anything sooner is the trigger's doing.
         let loop = Task { await RefreshLoop(activeInterval: .seconds(60), idleInterval: .seconds(60), debounce: .milliseconds(20)).run(store: store, triggers: [hub]) }
         defer { loop.cancel() }
-        let deadline = Date().addingTimeInterval(5)
-        while reads.count < 1, Date() < deadline { try await Task.sleep(for: .milliseconds(20)) }
+        // The first read, and the loop listening to the hub: only then is a report a trigger.
+        var deadline = Date().addingTimeInterval(30)
+        while reads.count < 1 || hub.listenerCount < 1, Date() < deadline { try await Task.sleep(for: .milliseconds(20)) }
         let before = reads.count
-        #expect(before >= 1)
+        #expect(before >= 1 && hub.listenerCount == 1)
 
         hub.receive(report(asked))
+        deadline = Date().addingTimeInterval(30)
         while reads.count == before, Date() < deadline { try await Task.sleep(for: .milliseconds(20)) }
         #expect(reads.count > before)
         #expect(await store.snapshot.sessions.first?.questions.map(\.question) == ["Apple or pear?"])
