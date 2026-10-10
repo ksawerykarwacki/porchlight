@@ -41,11 +41,17 @@ public struct Session: Sendable, Equatable, Identifiable {
         self.companion = companion
     }
 
-    /// What the mod says the session is waiting on, when that is at least as new as the job
-    /// file. The mod is told the moment a question is asked; the file may lag or be absent.
+    /// How much later than the mod's report the job file may be written and still be about the
+    /// same wait. The mod is told as the question is asked; Claude Code writes its file a moment
+    /// after. A file later than this is about something the mod did not report.
+    static let reportLead: TimeInterval = 5
+
+    /// What the mod says the session is waiting on. Where the mod is present this is used in
+    /// place of the job file, which Claude Code calls "not a stable interface"; the file is the
+    /// fallback when the mod is absent, silent, or clearly behind.
     private var reportedWaiting: CompanionFacts.Waiting? {
         guard needsHuman, let companion, let waiting = companion.waiting else { return nil }
-        if let written = job?.updatedAt, let since = companion.waitingSince, written > since { return nil }
+        if let written = job?.updatedAt, let since = companion.waitingSince, written.timeIntervalSince(since) > Self.reportLead { return nil }
         return waiting
     }
 

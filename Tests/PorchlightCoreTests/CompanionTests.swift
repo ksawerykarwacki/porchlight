@@ -179,7 +179,16 @@ private func question(_ text: String, _ options: [String]) -> [String: Any] {
         #expect(approval.needs == .approval(tool: "Bash", detail: "make deploy") && approval.questions.isEmpty)
     }
 
-    @Test func theFileWinsWhenItIsNewerAndNothingChangesWithoutAReport() throws {
+    @Test func theReportIsUsedInPlaceOfTheFileThatIsWrittenAMomentLater() throws {
+        // The usual order: the mod reports as the question is asked, the file follows.
+        let reported = facts(["kind": "question", "questions": [question("Apple or pear?", ["apple", "pear"])]], at: start)
+        let moment = try job(question: "Apple or pear? (as the file words it)", updated: start + 0.4)
+        #expect(session(.blocked, job: moment, companion: reported).questions.map(\.question) == ["Apple or pear?"])
+        let atTheEdge = try job(question: "x", updated: start + Session.reportLead)
+        #expect(session(.blocked, job: atTheEdge, companion: reported).questions.map(\.question) == ["Apple or pear?"])
+    }
+
+    @Test func theFileWinsWhenItIsClearlyLaterAndNothingChangesWithoutAReport() throws {
         let fromFile = try job(question: "The file's question?", updated: start + 60)
         let stale = facts(["kind": "question", "questions": [question("An earlier question?", ["a"])]], at: start)
         #expect(session(.blocked, job: fromFile, companion: stale).questions.map(\.question) == ["The file's question?"])
