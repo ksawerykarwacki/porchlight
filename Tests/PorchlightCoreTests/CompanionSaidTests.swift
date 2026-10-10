@@ -90,6 +90,27 @@ private func session(_ reports: [[String: Any]], state: SessionState = .blocked)
         #expect(planner.due(sessions: [plain], state: &third, now: start).first?.body == "which one.")
     }
 
+    @Test func aSessionThatStartsIdleCanTakeAReplyAndOneWithoutAProcessCanBeWoken() throws {
+        let event = try #require(CompanionEvent.decode(report(["kind": "idle", "id": "s1-9", "can": ["reply"]]), receivedAt: start))
+        #expect(event.kind == .idle && event.turnID == "s1-9" && event.takesReply && event.line == "22222222  is idle")
+        let idle = try session([["kind": "session.start"], ["kind": "idle", "id": "s1-9", "can": ["reply"]]], state: .done)
+        #expect(idle.replyTarget == ReplyTarget(sessionID: conversation, turnID: "s1-9") && idle.lastSaid == nil)
+        // A turn that starts takes the offer back; an older mod's idle makes none.
+        #expect(try session([["kind": "idle", "id": "s1-9", "can": ["reply"]], ["kind": "turn.start"]], state: .done).replyTarget == nil)
+        #expect(try session([["kind": "idle", "id": "s1-9"]], state: .done).replyTarget == nil)
+
+        func bare(_ state: SessionState, pid: Int? = nil, kind: String? = "background") -> Session {
+            Session(summary: SessionSummary(id: "a", sessionId: conversation, name: "n", kind: kind, state: state, pid: pid))
+        }
+        // No process and no word from a mod: finished, stopped or left waiting can be woken.
+        #expect(bare(.done).canBeWoken && bare(.unknown("stopped")).canBeWoken && bare(.blocked).canBeWoken)
+        // Not one that is working, has a process, failed for good, or is not a background session.
+        #expect(!bare(.working).canBeWoken && !bare(.done, pid: 7).canBeWoken && !bare(.unknown("failed")).canBeWoken)
+        #expect(!bare(.done, kind: "interactive").canBeWoken)
+        // One its mod reported on is taken to be running.
+        #expect(!idle.canBeWoken)
+    }
+
     @Test func theEndingIsTheLastParagraphsThatFit() {
         #expect(InboxRow.ending(of: "One.\n\nTwo.\n\nThree.") == "One.\n\nTwo.\n\nThree.")
         let long = String(repeating: "word ", count: 80).trimmingCharacters(in: .whitespaces)

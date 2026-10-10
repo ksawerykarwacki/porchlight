@@ -18,6 +18,9 @@ public struct CompanionEvent: Sendable, Equatable {
         case permission(tool: String, detail: String)
         /// The question was answered or the approval given: it is working again.
         case resumed
+        /// The session started with nothing to do (it was brought back after stopping, or its
+        /// mod was loaded again) and sits idle: it can take a reply.
+        case idle
         /// A turn ended on an API failure, in Claude Code's own class for it (`rate_limit`,
         /// `overloaded`, `server_error`, …).
         case failure(kind: String)
@@ -97,6 +100,7 @@ public struct CompanionEvent: Sendable, Equatable {
             guard let tool = body.tool, !tool.isEmpty else { return nil }
             kind = .permission(tool: cut(tool), detail: cut(body.detail))
         case "resumed": kind = .resumed
+        case "idle": kind = .idle
         case "failure":
             guard let error = body.error, !error.isEmpty else { return nil }
             kind = .failure(kind: cut(error))
@@ -106,6 +110,11 @@ public struct CompanionEvent: Sendable, Equatable {
         if case .turnComplete = kind, let said = body.said?.trimmingCharacters(in: .whitespacesAndNewlines), !said.isEmpty {
             // Its end is what matters: that is where a session says what it needs.
             event.said = String(said.suffix(saidLimit))
+        }
+        if case .idle = kind, let id = body.id, isValidQuestionID(id) {
+            event.turnID = id
+            let can = ((try? JSONSerialization.jsonObject(with: data)) as? [String: Any])?["can"] as? [Any]
+            event.takesReply = can?.contains { $0 as? String == "reply" } ?? false
         }
         if case .turnComplete = kind, let id = body.id, isValidQuestionID(id) {
             event.turnID = id
@@ -139,6 +148,7 @@ extension CompanionEvent {
         case .question(let questions): what = "asks: " + questions.map(\.question).joined(separator: " / ")
         case .permission(let tool, let detail): what = "wants approval for \(tool): \(detail)"
         case .resumed: what = "is working again"
+        case .idle: what = "is idle"
         case .failure(let kind): what = "failed: \(kind)"
         }
         return "\(sessionID.prefix(8))  \(what)"
@@ -225,6 +235,12 @@ public struct CompanionFacts: Sendable, Equatable {
             next.waiting = nil
             next.waitingSince = nil
             next.answerableQuestionID = nil
+        case .idle:
+            next.isTurnRunning = false
+            next.waiting = nil
+            next.waitingSince = nil
+            next.answerableQuestionID = nil
+            next.replyableTurnID = event.takesReply ? event.turnID : nil
         case .failure(let kind):
             next.failure = kind
             next.replyableTurnID = nil
@@ -485,5 +501,24 @@ extension Session {
         guard isIdleAfterATurn, let conversation = summary.sessionId, let companion, companion.waiting == nil, !companion.isTurnRunning,
               companion.failure == nil, let id = companion.replyableTurnID else { return nil }
         return ReplyTarget(sessionID: conversation.lowercased(), turnID: id)
+    }
+}
+
+extension Session {
+    /// No process, as far as `claude agents` says, in a session that runs in the background.
+    public var hasNoProcess: Bool { summary.pid == nil && (summary.kind == nil || summary.kind == "background") }
+
+    /// Whether the session has no process any more and could be brought back to take a reply:
+    /// it finished, was stopped, or was left waiting, and Claude Code still has its conversation.
+    /// `claude respawn` restarts such a session without starting a turn.
+    public var canBeWoken: Bool {
+        // A session its mod has reported on is taken to be running: it is replied to as it is,
+        // and woken only if that turns out not to reach it.
+        guard hasNoProcess, companion == nil, summary.sessionId != nil else { return false }
+        switch summary.state {
+        case .done, .blocked: return true
+        case .unknown(let raw): return raw == "stopped"
+        case .working: return false
+        }
     }
 }

@@ -18,6 +18,7 @@ export type Open =
 
 export type Report =
   | { kind: 'session.start' | 'session.end' | 'turn.start' | 'resumed' }
+  | { kind: 'idle'; id: string; can: string[] }
   | { kind: 'turn.complete'; reason?: string; said?: string; id?: string; can?: string[] }
   | { kind: 'question'; questions: Question[]; id?: string; can?: string[] }
   | { kind: 'permission'; tool: string; detail: string }

@@ -65,6 +65,11 @@ the session came with one. A daily summary arrives at 09:00.
   or "done" from its last words, and calls one done that ended by asking what to do next. In the
   panel its row shows one line of what it said; "Show more, or reply" opens it. The palette lists
   the three latest finished sessions after the working ones.
+  A session whose process has ended (Claude Code ends them after a while, and `stop` does at once)
+  cannot hear anything. Porchlight wakes it first with `claude respawn`, which restarts it without
+  starting a turn, and sends your reply once the session says it is ready; the field and the
+  palette say "the session is woken first". If it does not come back, or has no companion mod,
+  your reply is put on the clipboard instead.
   Option-Return starts a new line. The text arrives as plain text: an `@file` mention or a pasted
   image is not expanded the way it is when typed in the session, so open the session for those.
 - **Trying again by itself.** Off unless you turn it on in Settings ("Try again by itself", with
