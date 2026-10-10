@@ -77,7 +77,12 @@ public struct PaletteView: View {
                     }
                     switch item {
                     case .session(let row):
-                        PaletteSessionRow(row: row, isSelected: item == model.selectedItem, hover: hover) { model.open(row) }
+                        let isSelected = item == model.selectedItem
+                        PaletteSessionRow(
+                            row: row, isSelected: isSelected, hover: hover,
+                            answers: isSelected && model.pendingControl == nil && model.canAnswer(row), chosen: model.chosenOption(for: row),
+                            choose: model.chooseAnswer
+                        ) { model.open(row) }
                     case .repo(let repo):
                         PaletteRepoRow(
                             repo: repo, isSelected: item == model.selectedItem, home: NSHomeDirectory(), hover: hover,
@@ -110,11 +115,6 @@ public struct PaletteView: View {
             }
             .buttonStyle(.plain)
             .onHover { hover.set("palette.notes", $0) }
-        }
-
-        if model.pendingControl == nil, let row = model.selectedSession, model.canAnswer(row) {
-            Divider()
-            PaletteAnswerStrip(row: row, chosen: model.chosenOption(for: row), hover: hover, choose: model.chooseAnswer)
         }
 
         if let note = model.pendingControl?.question ?? model.controlMessage {
@@ -598,44 +598,53 @@ public struct PaletteView: View {
     }
 }
 
-/// The selected session's question in full, with its options to pick from: ⌘ and a number, or a
-/// click, chooses; Return then sends.
-struct PaletteAnswerStrip: View {
-    let row: InboxRow
-    let chosen: Int?
+/// One option of the selected session's question: its key, then its label. ⌘ and the number, or
+/// a click, chooses it; Return then sends.
+struct PaletteOption: View {
+    let index: Int
+    let text: String
+    let recommended: Bool
+    let chosen: Bool
     let hover: HoverTracker
     let choose: (Int) -> Void
 
+    private var id: String { "palette.answer.\(index)" }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            if let question = row.detail {
-                Text(question)
-                    .font(.system(size: 12.5))
-                    .lineLimit(4)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.bottom, 2)
-            }
-            ForEach(Array(row.options.enumerated()), id: \.offset) { index, option in
-                Button { choose(index) } label: {
-                    HStack(spacing: 8) {
-                        // Only the first nine have a key.
-                        Text(index < 9 ? "⌘\(index + 1)" : "")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(.secondary)
-                            .frame(width: 24, alignment: .leading)
-                        OptionChip(
-                            text: option, recommended: index == row.recommendedOption, chosen: index == chosen,
-                            hovered: hover.hovered == "palette.answer.\(index)")
-                    }
-                    .contentShape(Rectangle())
+        Button { choose(index) } label: {
+            HStack(spacing: 6) {
+                // Only the first nine have a key.
+                if index < 9 {
+                    Text("⌘\(index + 1)")
+                        .font(.system(size: 10.5, weight: .semibold))
+                        .foregroundStyle(chosen ? .primary : .secondary)
                 }
-                .buttonStyle(.plain)
-                .onHover { hover.set("palette.answer.\(index)", $0) }
+                Text(text)
+                    .font(.system(size: 12.5, weight: chosen ? .semibold : .regular))
+                    .lineLimit(1)
+                if recommended {
+                    Text("recommended")
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(.secondary)
+                }
             }
+            .padding(.horizontal, 9)
+            .padding(.vertical, 4)
+            .background(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(chosen ? Lamp.light.opacity(0.85) : Color.primary.opacity(hover.hovered == id ? 0.16 : 0.09))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .strokeBorder(chosen ? Lamp.light : Color.primary.opacity(0.12), lineWidth: 1)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
         }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 10)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .buttonStyle(.plain)
+        .onHover {
+            hover.set(id, $0)
+            Pointer.hand($0)
+        }
     }
 }
 
@@ -644,9 +653,18 @@ struct PaletteSessionRow: View {
     let row: InboxRow
     let isSelected: Bool
     let hover: HoverTracker
+    /// The row is selected and its question can be answered here: it opens up to show the
+    /// question in full and its options.
+    var answers = false
+    var chosen: Int?
+    var choose: (Int) -> Void = { _ in }
     let open: () -> Void
 
     private var id: String { "palette.session.\(row.id)" }
+
+    private func option(_ index: Int) -> PaletteOption {
+        PaletteOption(index: index, text: row.options[index], recommended: index == row.recommendedOption, chosen: index == chosen, hover: hover, choose: choose)
+    }
 
     private var lamp: Color {
         if row.isSnoozed || row.isQuiet { return Color.primary.opacity(0.25) }
@@ -686,8 +704,17 @@ struct PaletteSessionRow: View {
                 }
                 Text(subtitle)
                     .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                    .foregroundStyle(answers ? .primary : .secondary)
+                    .lineLimit(answers ? 4 : 1)
+                    .fixedSize(horizontal: false, vertical: true)
+                if answers {
+                    // Side by side while they fit, one under another when the labels are long.
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 6) { ForEach(row.options.indices, id: \.self) { option($0) } }
+                        VStack(alignment: .leading, spacing: 4) { ForEach(row.options.indices, id: \.self) { option($0) } }
+                    }
+                    .padding(.top, 6)
+                }
             }
             Spacer(minLength: 8)
             if row.isRetryable {
@@ -702,7 +729,8 @@ struct PaletteSessionRow: View {
             }
         }
         .padding(.horizontal, 12)
-        .frame(height: 46)
+        .padding(.vertical, answers ? 9 : 0)
+        .frame(minHeight: 46)
         .background(
             RoundedRectangle(cornerRadius: PaletteSurface.radius - 12, style: .continuous)
                 .fill(isSelected ? Lamp.light.opacity(0.24) : Color.primary.opacity(hover.hovered == id ? 0.07 : 0))

@@ -540,6 +540,8 @@ struct InboxRowView: View {
         (waits ? 22 : 0) + 22
     }
     private var waits: Bool { row.kind == .question || row.kind == .approval || row.kind == .waiting }
+    /// Whether the options are buttons that answer the session.
+    private var answers: Bool { row.isAnswerable && !row.options.isEmpty }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -592,26 +594,13 @@ struct InboxRowView: View {
                                 .fixedSize(horizontal: false, vertical: true)
                                 .padding(.top, 3)
                         }
-                        if !row.options.isEmpty {
-                            let chosen = actions.pendingAnswer?.sessionID == row.id && actions.pendingAnswer?.questionID == row.answerID ? actions.pendingAnswer?.option : nil
+                        // Options that can be clicked are drawn under the button, not in it: a
+                        // button inside the button that opens the session took its tooltip and
+                        // its click.
+                        if !row.options.isEmpty, !row.isAnswerable {
                             VStack(alignment: .leading, spacing: 4) {
                                 ForEach(Array(row.options.enumerated()), id: \.offset) { index, option in
-                                    if row.isAnswerable {
-                                        // A click chooses and sends nothing; Send, below, is the answer.
-                                        Button { actions.chooseAnswer(row.id, index) } label: {
-                                            OptionChip(
-                                                text: option, recommended: index == row.recommendedOption, chosen: index == chosen,
-                                                hovered: hover.hovered == "answer.\(row.id).\(index)")
-                                        }
-                                        .buttonStyle(.plain)
-                                        .onHover { hover.set("answer.\(row.id).\(index)", $0) }
-                                        .help("Choose this answer")
-                                    } else {
-                                        OptionChip(text: option, recommended: index == row.recommendedOption)
-                                    }
-                                }
-                                if let chosen, row.options.indices.contains(chosen) {
-                                    AnswerBar(option: row.options[chosen], id: "answer.\(row.id)", hover: hover, send: actions.sendAnswer, cancel: actions.cancelAnswer)
+                                    OptionChip(text: option, recommended: index == row.recommendedOption)
                                 }
                             }
                             .padding(.top, 4)
@@ -620,7 +609,7 @@ struct InboxRowView: View {
                 }
                 .padding(.horizontal, 10)
                 .padding(.top, 7)
-                .padding(.bottom, row.suggestedReply == nil ? 7 : 4)
+                .padding(.bottom, row.suggestedReply == nil && !answers ? 7 : 4)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
             }
@@ -688,6 +677,33 @@ struct InboxRowView: View {
                 }
                 .padding(.trailing, 10)
                 .padding(.top, 7)
+            }
+
+            if answers {
+                let chosen = actions.pendingAnswer?.sessionID == row.id && actions.pendingAnswer?.questionID == row.answerID ? actions.pendingAnswer?.option : nil
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(Array(row.options.enumerated()), id: \.offset) { index, option in
+                        // A click chooses and sends nothing; Send, below, is the answer.
+                        Button { actions.chooseAnswer(row.id, index) } label: {
+                            OptionChip(
+                                text: option, recommended: index == row.recommendedOption, chosen: index == chosen,
+                                hovered: hover.hovered == "answer.\(row.id).\(index)"
+                            )
+                            .contentShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .onHover {
+                            hover.set("answer.\(row.id).\(index)", $0)
+                            Pointer.hand($0)
+                        }
+                        .help("Choose this answer; nothing is sent until you press Send")
+                    }
+                    if let chosen, row.options.indices.contains(chosen) {
+                        AnswerBar(option: row.options[chosen], id: "answer.\(row.id)", hover: hover, send: actions.sendAnswer, cancel: actions.cancelAnswer)
+                    }
+                }
+                .padding(.leading, 30)
+                .padding(.bottom, 8)
             }
 
             if row.suggestedReply != nil {
@@ -800,6 +816,15 @@ struct StatusLamp: View {
 }
 
 /// One of the choices a session offered. The one Claude recommends is lit.
+/// The pointer over something that answers a session. The panel and the palette open over
+/// whatever is in front, and without this the pointer keeps the shape that app gave it: a text
+/// cursor, over a terminal.
+enum Pointer {
+    static func hand(_ inside: Bool) {
+        if inside { NSCursor.pointingHand.set() } else { NSCursor.arrow.set() }
+    }
+}
+
 /// What a chosen option needs before it is an answer: Send, or Cancel.
 struct AnswerBar: View {
     let option: String
@@ -823,7 +848,10 @@ struct AnswerBar: View {
                 .contentShape(Capsule())
         }
         .buttonStyle(.plain)
-        .onHover { hover.set(key, $0) }
+        .onHover {
+            hover.set(key, $0)
+            Pointer.hand($0)
+        }
     }
 
     var body: some View {

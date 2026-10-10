@@ -185,10 +185,10 @@ import Testing
         // Choosing changes the footer, not the height.
         #expect(abs(chosen - answerable) <= 2)
 
-        // The same list with the other session selected: no question, no options.
+        // The same list with the other session selected: its row stays closed.
         if let position = model.items.firstIndex(where: { $0.id == "session:33333333" }) { model.moveSelection(by: position - model.selection) }
         #expect(model.selectedSession?.id == "33333333")
         let plain = try height(model, named: "palette-answer-none")
-        #expect(answerable > plain + 80)
+        #expect(answerable > plain + 40)
     }
 }
