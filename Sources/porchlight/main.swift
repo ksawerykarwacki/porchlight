@@ -54,6 +54,8 @@ let usage = """
       porchlight companion                    Listen for the companion mod in place of the app and
                                               print what sessions report, until interrupted. For
                                               checking the mod; refuses while the app is listening
+      porchlight update [--app | --mods]      Build the latest app with Homebrew and start it, and
+                                              update the Porchlight mods installed in Claude Code
       porchlight doctor                       Check that the claude CLI can be found and used
       porchlight help
 
@@ -401,6 +403,12 @@ case "companion":
     await companion()
     #else
     fail("companion is only available on macOS")
+    #endif
+case "update":
+    #if canImport(PorchlightMac)
+    await update(arguments: Array(arguments.dropFirst()))
+    #else
+    fail("update is only available on macOS")
     #endif
 case "doctor":
     await doctor()

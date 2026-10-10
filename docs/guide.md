@@ -217,6 +217,7 @@ porchlight notes login            # search the notes
 porchlight pin <id>               # keep a session; unpin to undo
 porchlight stop <id>              # stop a session; rm <id> removes it
 porchlight settings               # print the settings in force
+porchlight update                 # build the latest app, start it, and update the installed mods
 porchlight doctor                 # check that the claude CLI can be found and read
 ```
 
