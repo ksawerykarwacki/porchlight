@@ -340,6 +340,7 @@ public final class PaletteModel {
         pendingNoteDeletion = nil
         noteMessage = nil
         pendingControl = nil
+        pendingAnswer = nil
         controlMessage = nil
         query = ""
         selection = 0

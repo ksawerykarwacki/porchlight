@@ -67,6 +67,11 @@ private let conversation = "22222222-0000-4000-8000-000000000000"
         inbox.cancelAnswer()
         inbox.sendAnswer()
         #expect(inbox.pendingAnswer == nil && world.sent.isEmpty)
+        // A choice does not outlive the panel it was made in.
+        inbox.chooseAnswer(sessionID: "22222222", option: 1)
+        inbox.panelClosed()
+        inbox.sendAnswer()
+        #expect(inbox.pendingAnswer == nil && world.sent.isEmpty)
 
         inbox.chooseAnswer(sessionID: "22222222", option: 1)
         inbox.sendAnswer()

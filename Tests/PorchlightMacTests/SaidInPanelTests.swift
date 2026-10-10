@@ -115,5 +115,11 @@ import Testing
         inbox.toggleSaid(sessionID: "b")
         inbox.toggleSaid(sessionID: "a")
         #expect(inbox.expandedSaid == ["b"])
+
+        // Closing the panel puts it back: the sessions tab, nothing opened, nothing half chosen.
+        inbox.showsSettings = true
+        inbox.showsTriage = true
+        inbox.panelClosed()
+        #expect(inbox.expandedSaid.isEmpty && !inbox.showsSettings && !inbox.showsTriage && inbox.pendingAnswer == nil && inbox.pendingControl == nil)
     }
 }

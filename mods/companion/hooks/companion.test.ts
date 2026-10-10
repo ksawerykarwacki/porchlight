@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { answerOf, bodyOf, descriptorOf, detailOf, mayClear, questionsOf, reportOf, retryOf, SAID_LIMIT, tailOf, takesAnswer, TEXT_LIMIT } from './report'
+import { answerOf, bodyOf, descriptorOf, detailOf, isNewApp, mayClear, questionsOf, reportOf, retryOf, SAID_LIMIT, tailOf, takesAnswer, TEXT_LIMIT } from './report'
 
 const SESSION = '22222222-0000-4000-8000-000000000000'
 const DESCRIPTOR = JSON.stringify({ v: 1, socket: '/Users/u/Library/Application Support/Porchlight/companion.sock', secret: 'abc123' })
@@ -389,4 +389,14 @@ test('a failure that needs a person is never retried, and a new turn ends the wa
   await settle($)
   expect(state.asks).toBe(0)
   expect(submitted).toEqual([])
+})
+
+test('a restarted app is one that has not been told', () => {
+  const told = { secret: 'abc' }
+  expect(isNewApp(told, { secret: 'abc' })).toBe(false)
+  expect(isNewApp(told, { secret: 'xyz' })).toBe(true)
+  expect(isNewApp(undefined, { secret: 'abc' })).toBe(true)
+  // No app at all: nobody to tell.
+  expect(isNewApp(told, undefined)).toBe(false)
+  expect(isNewApp(undefined, undefined)).toBe(false)
 })
