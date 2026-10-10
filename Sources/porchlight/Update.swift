@@ -39,9 +39,10 @@ func update(arguments: [String]) async {
                     print(after == before ? "  Porchlight is already the latest." : "  The new Porchlight is installed; it is not running, so nothing was started.")
                 } else {
                     let asService = AppRestart.serviceIsLoaded()
-                    // Homebrew's service replaces the copy it runs. Otherwise the running copy is
-                    // asked to quit first: left alone it would stay beside the new one.
-                    if !asService, !AppRestart.quitRunningCopies() {
+                    // Every running copy is asked to quit first, the service's or not: a copy
+                    // that was opened by hand, or by an earlier update, is not the service's to
+                    // replace, and left alone it would stay beside the new one.
+                    if !AppRestart.quitRunningCopies() {
                         print("  The running Porchlight did not quit; quit it and open the new one yourself.")
                         failed = true
                     } else {
