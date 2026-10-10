@@ -145,6 +145,11 @@ private let conversation = "22222222-0000-4000-8000-000000000000"
         let command = try #require(target.command(choosing: 1))
         // Nobody asking: queued, and said so.
         #expect(!rig.listener.send(command, to: "44444444-0000-4000-8000-000000000000"))
+        // Sent only if someone is waiting: nothing is kept, so the next request finds nothing.
+        let other = "55555555-0000-4000-8000-000000000000"
+        let quick = try CompanionRig(hold: 0.3)
+        #expect(!quick.listener.send(command, to: other, queues: false))
+        #expect(try await quick.request("GET", "/v1/next?session=\(other)", timeout: 15).status == 204)
         async let waiting = rig.request("GET", "/v1/next?session=\(conversation)", timeout: 15)
         // Not before the request has arrived and is held, however slow the machine.
         for _ in 0..<1000 where rig.listener.heldCount(for: conversation) == 0 { try await Task.sleep(for: .milliseconds(10)) }

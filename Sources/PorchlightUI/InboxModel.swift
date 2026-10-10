@@ -123,6 +123,8 @@ public final class InboxModel {
     }
     /// Hands a command to a session's mod; true when the mod took it at once. Set by the app.
     public var sendToCompanion: ((_ command: Data, _ conversationID: String) -> Bool)?
+    /// The same, but nothing is kept for later when the mod is not waiting. Set by the app.
+    public var sendToCompanionIfWaiting: ((_ command: Data, _ conversationID: String) -> Bool)?
 
     /// Chooses an option. Nothing is sent: `sendAnswer` does that, and only for this choice.
     public func chooseAnswer(sessionID: String, option: Int) {
@@ -725,8 +727,10 @@ public final class InboxModel {
         }
         // Through the session's mod when it is there to take it: the user pressed Retry, and
         // the line is theirs. Otherwise as before: the session opened, the line on the clipboard.
-        if let target = session.retryTarget, let sendToCompanion, let command = target.command(text: transientErrors.resend),
-           sendToCompanion(command, target.sessionID) {
+        // Nothing is left queued when the mod is not there: the user is about to send the line
+        // by hand, and it must not arrive a second time.
+        if let target = session.retryTarget, let sendToCompanionIfWaiting, let command = target.command(text: transientErrors.resend),
+           sendToCompanionIfWaiting(command, target.sessionID) {
             sentRetries[target.failureID] = (clock(), true)
             log?.record("retry \(sessionID): sent through the mod after \(target.failureClass)")
             show("Sent \u{201C}\(transientErrors.resend)\u{201D} to \(session.name)")

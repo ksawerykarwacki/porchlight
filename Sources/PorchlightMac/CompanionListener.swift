@@ -123,8 +123,11 @@ public final class CompanionListener: @unchecked Sendable {
 
     /// Hands a command to a session's mod. True when the mod was waiting and has it now; false
     /// when it was queued for the mod's next request, which may never come.
+    ///
+    /// With `queues` false nothing is kept when the mod is not waiting: for when the caller will
+    /// do the thing another way, and the command must not arrive as well a moment later.
     @discardableResult
-    public func send(_ command: Data, to session: String) -> Bool {
+    public func send(_ command: Data, to session: String, queues: Bool = true) -> Bool {
         queue.sync {
             let key = Self.key(session)
             if var waiting = self.held[key], !waiting.isEmpty {
@@ -133,7 +136,7 @@ public final class CompanionListener: @unchecked Sendable {
                 self.respond(first.connection, status: 200, body: command)
                 return true
             }
-            self.commands[key, default: []].append((command, Date()))
+            if queues { self.commands[key, default: []].append((command, Date())) }
             return false
         }
     }

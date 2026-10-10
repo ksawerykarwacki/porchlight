@@ -46,6 +46,12 @@ import Testing
                 self.sent.append((try? JSONSerialization.jsonObject(with: command) as? [String: Any]) ?? [:])
                 return self.taken
             }
+            inbox.sendToCompanionIfWaiting = { [unowned self] command, to in
+                #expect(to == AutoRetryTests.conversation)
+                // Only what the mod took has gone anywhere.
+                if self.taken { self.sent.append((try? JSONSerialization.jsonObject(with: command) as? [String: Any]) ?? [:]) }
+                return self.taken
+            }
         }
 
         func report(_ fields: [String: Any]) {
@@ -212,9 +218,11 @@ import Testing
         #expect(world.inbox.notice == "Sent \u{201C}continue\u{201D} to fails")
         #expect(await world.launcher.opened.isEmpty && world.copies.value.isEmpty)
 
-        // The mod is not there to take it: as before, the session opened and the line copied.
+        // The mod is not there to take it: as before, the session opened and the line copied,
+        // and nothing left behind for the mod to submit as well.
         world.taken = false
         world.inbox.retry(sessionID: "22222222")
+        #expect(world.sent.count == 1)
         for _ in 0..<200 where world.copies.value.isEmpty { try await Task.sleep(for: .milliseconds(10)) }
         #expect(world.copies.value == ["continue"])
         #expect(await world.launcher.opened.map(\.arguments) == [["/custom/claude", "attach", "22222222"]])
