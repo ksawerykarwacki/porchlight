@@ -61,6 +61,10 @@ the session came with one. A daily summary arrives at 09:00.
   the field with "Use as reply"; it is sent only when you send it. If the session is not listening
   (it was stopped, or has no mod), nothing is sent: your text is put on the clipboard so you can
   open the session and paste it. A reply written for one turn is not sent to a later one.
+  A finished session can be replied to as well: Claude Code decides whether a session is "waiting"
+  or "done" from its last words, and calls one done that ended by asking what to do next. In the
+  panel its row shows one line of what it said; "Show more, or reply" opens it. The palette lists
+  the three latest finished sessions after the working ones.
   Option-Return starts a new line. The text arrives as plain text: an `@file` mention or a pasted
   image is not expanded the way it is when typed in the session, so open the session for those.
 - **Trying again by itself.** Off unless you turn it on in Settings ("Try again by itself", with
