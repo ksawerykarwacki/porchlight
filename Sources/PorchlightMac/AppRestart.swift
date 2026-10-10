@@ -40,9 +40,12 @@ public enum AppRestart {
     @discardableResult
     public static func quitRunningCopies(bundleIdentifier: String = "io.github.ksawerykarwacki.porchlight", wait: TimeInterval = 8) -> Bool {
         func running() -> [NSRunningApplication] { NSRunningApplication.runningApplications(withBundleIdentifier: bundleIdentifier) }
-        running().forEach { $0.terminate() }
         let deadline = Date().addingTimeInterval(wait)
-        while !running().isEmpty, Date() < deadline { Thread.sleep(forTimeInterval: 0.2) }
+        // Asked again while any is left: launchd may bring the service's copy straight back.
+        while !running().isEmpty, Date() < deadline {
+            running().forEach { $0.terminate() }
+            Thread.sleep(forTimeInterval: 0.3)
+        }
         return running().isEmpty
     }
 
