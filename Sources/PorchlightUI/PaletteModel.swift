@@ -341,6 +341,7 @@ public final class PaletteModel {
         noteMessage = nil
         pendingControl = nil
         pendingAnswer = nil
+        showsWholeSaid = false
         controlMessage = nil
         query = ""
         selection = 0
@@ -375,6 +376,7 @@ public final class PaletteModel {
         guard text != query else { return }
         pendingControl = nil
         pendingAnswer = nil
+        showsWholeSaid = false
         pendingNoteDeletion = nil
         noteMessage = nil
         query = text
@@ -473,13 +475,17 @@ public final class PaletteModel {
         // The question was about the row that was selected.
         pendingControl = nil
         pendingAnswer = nil
+        showsWholeSaid = false
         refusedRemoval = nil
         selection = max(0, min(count - 1, selection + offset))
     }
 
     public func select(_ item: Item) {
         guard let position = items.firstIndex(of: item) else { return }
-        if position != selection { pendingAnswer = nil }
+        if position != selection {
+            pendingAnswer = nil
+            showsWholeSaid = false
+        }
         selection = position
     }
 
@@ -561,6 +567,24 @@ public final class PaletteModel {
         }
         sessions = await services.sessions()
         rank()
+    }
+
+    // MARK: What the selected session said
+
+    /// Whether the selected session's last words are shown whole rather than only their ending.
+    /// It is about the row that is selected: moving on, typing or closing puts it back.
+    public private(set) var showsWholeSaid = false
+
+    /// Whether there is more of it than the row shows.
+    public var canShowMoreSaid: Bool {
+        guard step == .folder, let row = selectedSession, let said = row.said else { return false }
+        return said != row.saidEnding
+    }
+
+    /// ⌘E, or a click on the line under the text.
+    public func toggleWholeSaid() {
+        guard canShowMoreSaid else { return }
+        showsWholeSaid.toggle()
     }
 
     // MARK: Answering a question
