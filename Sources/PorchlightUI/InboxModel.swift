@@ -99,6 +99,41 @@ public final class InboxModel {
     }
     public var now: Date { clock() }
 
+    /// An option the user clicked for a session's question, not sent yet.
+    public struct PendingAnswer: Equatable, Sendable {
+        public let sessionID: String
+        public let option: Int
+    }
+
+    public private(set) var pendingAnswer: PendingAnswer?
+    /// Hands a command to a session's mod; true when the mod took it at once. Set by the app.
+    public var sendToCompanion: ((_ command: Data, _ conversationID: String) -> Bool)?
+
+    /// Chooses an option. Nothing is sent: `sendAnswer` does that, and only for this choice.
+    public func chooseAnswer(sessionID: String, option: Int) {
+        guard let target = snapshot.sessions.first(where: { $0.id == sessionID })?.answerTarget, target.options.indices.contains(option) else { return }
+        pendingAnswer = PendingAnswer(sessionID: sessionID, option: option)
+    }
+
+    public func cancelAnswer() {
+        pendingAnswer = nil
+    }
+
+    /// Sends the chosen option to the session as its question's answer. Judged again now, from
+    /// the session as it is: if it has moved on or asks something else, nothing is sent.
+    public func sendAnswer() {
+        guard let pending = pendingAnswer else { return }
+        pendingAnswer = nil
+        guard let session = snapshot.sessions.first(where: { $0.id == pending.sessionID }), let target = session.answerTarget,
+              let command = target.command(choosing: pending.option), let sendToCompanion else {
+            show("That question is no longer open; nothing was sent")
+            return
+        }
+        let taken = sendToCompanion(command, target.sessionID)
+        log?.record("answer \(session.id): option \(pending.option + 1) of \(target.options.count), \(taken ? "taken" : "queued")")
+        show(taken ? "Answered \(session.name): \(target.options[pending.option])" : "Sent to \(session.name). If it does not move on, open it and answer there.")
+    }
+
     /// The companion mod's reports, when the app listens for them.
     private let companion: CompanionHub?
     /// Why the app is not listening for the mod, when it tried and could not.
@@ -194,6 +229,10 @@ public final class InboxModel {
 
     /// Replaces the sessions the model shows. The store calls this through `observe`.
     func apply(_ snapshot: StoreSnapshot) {
+        // A choice is about the question that was showing: gone when that question is.
+        if let pending = pendingAnswer, snapshot.sessions.first(where: { $0.id == pending.sessionID })?.answerTarget == nil {
+            pendingAnswer = nil
+        }
         companionSessions = snapshot.sessions.filter { $0.companion != nil }.count
         if snapshot.problem == nil {
             companion?.keep(only: Set(snapshot.sessions.compactMap { $0.summary.sessionId?.lowercased() }))

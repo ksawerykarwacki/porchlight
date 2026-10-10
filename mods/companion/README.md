@@ -8,8 +8,16 @@ Without it Porchlight finds these things out by asking Claude Code every few sec
 file Claude Code calls "not a stable interface". With it, the panel shows a session's question as
 soon as it is asked.
 
-**It only reports.** It answers nothing, approves nothing and types nothing. Every one of its hooks
-hands back exactly what Claude Code would have done without it.
+It also lets you answer from Porchlight. When a session asks one question with options to pick one
+of, the panel shows the options as buttons: click one, then **Send**, and the mod hands that option
+to the session as the question's answer. The session's own dialog stays up the whole time; whichever
+is answered first counts.
+
+**The mod never chooses.** It passes on only an option you clicked and sent in Porchlight, only for
+the question that is open, and only if it is one of that question's own options. It approves
+nothing and types nothing. Questions with several parts, a choice of several, or a typed answer are
+shown in the panel and answered in the session as before. Every other hook hands back exactly what
+Claude Code would have done without it.
 
 ## Install
 
@@ -40,6 +48,10 @@ only your user can open. Nothing goes over the network.
 
 Not sent: your prompts, the assistant's replies, your answers, file contents, tool output.
 
+The app sends the mod one thing only: the option you chose and sent for an open question, with that
+question's text and the id the mod gave that asking. While such a question is open the mod keeps
+one request to the app waiting for it.
+
 Every report carries a secret the app writes into a file only you can read, new each time the app
 starts. Without the app running there is nothing to send to, and the mod does nothing.
 
@@ -49,6 +61,11 @@ starts. Without the app running there is nothing to send to, and the mod does no
   again for five. The session never waits for a report.
 - **The app was restarted:** the mod reads the new secret and carries on. If a question is open, it
   says so again within a minute.
+- **An answer arrives for a question that is no longer the open one,** or names something that is
+  not one of its options: it is dropped. One the mod never came for is thrown away by the app
+  after a minute.
+- **You answered in the session first:** that answer counts, and the mod stops waiting for the app.
+- **An older Porchlight:** nothing is ever sent back, and the mod only reports.
 - **Anything in the mod fails:** the session continues exactly as it would without it.
 
 ## Working on it

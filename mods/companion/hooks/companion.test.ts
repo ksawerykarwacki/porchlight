@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { bodyOf, descriptorOf, detailOf, questionsOf, reportOf, TEXT_LIMIT } from './report'
+import { answerOf, bodyOf, descriptorOf, detailOf, questionsOf, reportOf, takesAnswer, TEXT_LIMIT } from './report'
 
 const SESSION = '22222222-0000-4000-8000-000000000000'
 const DESCRIPTOR = JSON.stringify({ v: 1, socket: '/Users/u/Library/Application Support/Porchlight/companion.sock', secret: 'abc123' })
@@ -46,9 +46,19 @@ test('the app is found only through a well-formed file', () => {
   }
 })
 
-/** A stand-in machine for the mod: its files, its clock, and an app that answers as told. */
-const machine = (on: any, start: { descriptor?: string; status?: number | 'hang' | 'throw' } = {}) => {
-  const state = { now: 1_000_000, posts: [] as any[], descriptor: start.descriptor as string | undefined, status: start.status ?? 204, reads: 0 }
+type Ask = 'hold' | ((question: any) => { status: number; text: string })
+
+/**
+ * A stand-in machine for the mod: its files, its clock, and an app that answers as told.
+ * `posts` are the reports; `asks` counts the requests for an answer, each answered by `ask`:
+ * held open for ever, as the app does while the user has not picked, or answered from the
+ * question last reported.
+ */
+const machine = (on: any, start: { descriptor?: string; status?: number | 'hang' | 'throw'; ask?: Ask[] } = {}) => {
+  const state = {
+    now: 1_000_000, posts: [] as any[], asks: 0, descriptor: start.descriptor as string | undefined, status: start.status ?? 204, reads: 0,
+    ask: start.ask ?? (['hold'] as Ask[]),
+  }
   if (!('descriptor' in start)) state.descriptor = DESCRIPTOR
   on('session.id', () => ({ value: SESSION }))
   on('env.get', (_$: any, e: any) => ({ value: e.name === 'HOME' ? '/Users/u' : undefined }))
@@ -60,6 +70,21 @@ const machine = (on: any, start: { descriptor?: string; status?: number | 'hang'
   on('clock.now', () => ({ value: state.now }))
   on('clock.sleep', () => new Promise(() => {}))
   on('http.fetch', (_$: any, e: any) => {
+    if (String(e.url).includes('/v1/next')) {
+      const ask = state.ask[Math.min(state.asks, state.ask.length - 1)]
+      state.asks += 1
+      if (ask === 'hold') return new Promise(() => {})
+      // The request for an answer may be made before the report of the question has landed;
+      // the app only has something to say once it knows the question.
+      return new Promise(resolve => {
+        const answer = () => {
+          const question = [...state.posts].reverse().find(post => post.body.kind === 'question')?.body
+          if (question === undefined) return void setTimeout(answer, 5)
+          resolve({ value: { ...ask(question), ok: true, headers: {} } })
+        }
+        answer()
+      })
+    }
     state.posts.push({ url: e.url, socketPath: e.init?.socketPath, secret: e.init?.headers?.['X-Porchlight-Secret'], body: JSON.parse(e.init?.body ?? '{}') })
     if (state.status === 'hang') return new Promise(() => {})
     if (state.status === 'throw') throw new Error('connection refused')
@@ -67,6 +92,10 @@ const machine = (on: any, start: { descriptor?: string; status?: number | 'hang'
   })
   return state
 }
+
+/** The dialog, answered by the person after a moment. */
+const dialogAfter = (ms: number, answers: Record<string, string>) => () =>
+  new Promise(resolve => setTimeout(() => resolve({ result: { questions: [fruit], answers } }), ms))
 
 /** Lets the reports that were sent on the side be sent. */
 const settle = (_$?: unknown) => new Promise<void>(resolve => setTimeout(resolve, 40))
@@ -79,7 +108,10 @@ test('a question is reported when asked and again when answered, and its answer 
   await settle($)
   expect(result.result).toEqual(answered.result)
   expect(state.posts.map(post => post.body.kind)).toEqual(['question', 'resumed'])
-  expect(state.posts[0].body).toEqual({ v: 1, session: SESSION, kind: 'question', questions: [{ question: 'Apple or pear?', options: [{ label: 'apple', description: 'An apple' }, { label: 'pear' }] }] })
+  // One question with options to pick one of: the mod says it will take an answer, and names this asking.
+  const { id, ...reported } = state.posts[0].body
+  expect(reported).toEqual({ v: 1, session: SESSION, kind: 'question', can: ['answer'], questions: [{ question: 'Apple or pear?', options: [{ label: 'apple', description: 'An apple' }, { label: 'pear' }] }] })
+  expect(/^q\d+-\d+$/.test(id)).toBe(true)
   // Over the app's socket, with its secret, and nowhere else.
   expect(state.posts[0].url).toBe('http://porchlight/v1/event')
   expect(state.posts[0].socketPath).toBe('/Users/u/Library/Application Support/Porchlight/companion.sock')
@@ -101,11 +133,12 @@ test('with no app the session is not held up and the app is not asked for again 
   await $.tool.call({ tool: 'AskUserQuestion', questions: [fruit] })
   await settle($)
   expect(state.posts).toEqual([])
-  // Asked again a moment later: still nothing sent, and the file is not even looked for.
-  state.descriptor = DESCRIPTOR
+  expect(state.asks).toBe(0)
+  // Asked again a moment later: still nothing is reported.
   await $.tool.call({ tool: 'AskUserQuestion', questions: [fruit] })
   await settle($)
   expect(state.posts).toEqual([])
+  state.descriptor = DESCRIPTOR
   // After the pause the app is found and told.
   state.now += 6_000
   await $.tool.call({ tool: 'AskUserQuestion', questions: [fruit] })
@@ -132,7 +165,8 @@ test('a refused secret is read again once, for an app that was restarted', async
   await settle($)
   // The first report: sent, refused, the file read again, sent once more, refused, then quiet.
   expect(state.posts.map(post => post.body.kind)).toEqual(['question', 'question'])
-  expect(state.reads).toBe(2)
+  // Once at first, once on being refused; the asking for an answer looks for the app as well.
+  expect(state.reads >= 2 && state.reads <= 3).toBe(true)
 })
 
 test('an approval being asked for is reported and its answer left to the dialog', async ($: any, on: any) => {
@@ -168,4 +202,89 @@ test('a failed turn is reported with its class', async ($: any, on: any) => {
   await $.classic.StopFailure({ error: 'rate_limit' })
   await settle($)
   expect(state.posts.map(post => post.body)).toEqual([{ v: 1, session: SESSION, kind: 'failure', error: 'rate_limit' }])
+})
+
+test('what the app may answer is one question with options of which one is picked', () => {
+  const one = questionsOf({ questions: [fruit] })
+  expect(takesAnswer(one)).toBe(true)
+  expect(takesAnswer(questionsOf({ questions: [fruit, fruit] }))).toBe(false)
+  expect(takesAnswer(questionsOf({ questions: [{ ...fruit, multiSelect: true }] }))).toBe(false)
+  expect(takesAnswer(questionsOf({ questions: [{ question: 'Say more?', options: [] }] }))).toBe(false)
+  expect(takesAnswer([])).toBe(false)
+
+  const command = (fields: object) => JSON.stringify({ v: 1, type: 'answer', id: 'q1-5', answers: { 'Apple or pear?': 'pear' }, ...fields })
+  expect(answerOf(command({}), 'q1-5', one)).toEqual({ 'Apple or pear?': 'pear' })
+  // For another asking, another question, no option of this one, or not an answer at all: nothing.
+  expect(answerOf(command({}), 'q2-9', one)).toBe(undefined)
+  expect(answerOf(command({ answers: { 'Tea or coffee?': 'pear' } }), 'q1-5', one)).toBe(undefined)
+  expect(answerOf(command({ answers: { 'Apple or pear?': 'plum' } }), 'q1-5', one)).toBe(undefined)
+  expect(answerOf(command({ answers: { 'Apple or pear?': 'apple', extra: 'x' } }), 'q1-5', one)).toBe(undefined)
+  expect(answerOf(command({ answers: { 'Apple or pear?': 7 } }), 'q1-5', one)).toBe(undefined)
+  expect(answerOf(command({ answers: ['pear'] }), 'q1-5', one)).toBe(undefined)
+  expect(answerOf(command({ type: 'submit' }), 'q1-5', one)).toBe(undefined)
+  expect(answerOf(command({ v: 2 }), 'q1-5', one)).toBe(undefined)
+  expect(answerOf('not json', 'q1-5', one)).toBe(undefined)
+  // Never for a question the app was not offered.
+  expect(answerOf(command({}), 'q1-5', questionsOf({ questions: [{ ...fruit, multiSelect: true }] }))).toBe(undefined)
+})
+
+const pick = (label: string, change: object = {}) => (question: any) => ({
+  status: 200,
+  text: JSON.stringify({ v: 1, type: 'answer', id: question.id, answers: { [question.questions[0].question]: label }, ...change }),
+})
+
+test('the pick made in the app is handed to the session as the answer', async ($: any, on: any) => {
+  const state = machine(on, { ask: [pick('pear')] })
+  // The dialog is never answered: only the app's pick can end the wait.
+  on('tool.call', () => new Promise(() => {}))
+  const result = await $.tool.call({ tool: 'AskUserQuestion', questions: [fruit] })
+  await settle($)
+  expect(result.result).toEqual({ questions: [fruit], answers: { 'Apple or pear?': 'pear' } })
+  expect(state.asks).toBe(1)
+  expect(state.posts.map(post => post.body.kind)).toEqual(['question', 'resumed'])
+})
+
+test('the dialog answered first is what counts, and the app is not asked again', async ($: any, on: any) => {
+  const state = machine(on)
+  on('tool.call', dialogAfter(20, { 'Apple or pear?': 'apple' }))
+  const result = await $.tool.call({ tool: 'AskUserQuestion', questions: [fruit] })
+  await settle($)
+  expect(result.result.answers).toEqual({ 'Apple or pear?': 'apple' })
+  expect(state.asks).toBe(1)
+  expect(state.posts.map(post => post.body.kind)).toEqual(['question', 'resumed'])
+})
+
+test('an answer that is not for this question, or names no option of it, changes nothing', async ($: any, on: any) => {
+  const state = machine(on, {
+    ask: [pick('pear', { id: 'q0-1' }), pick('plum'), () => ({ status: 200, text: 'not json' }), pick('pear', { type: 'submit' }), 'hold'],
+  })
+  on('tool.call', dialogAfter(60, { 'Apple or pear?': 'apple' }))
+  const result = await $.tool.call({ tool: 'AskUserQuestion', questions: [fruit] })
+  await settle($)
+  // Four commands refused, the mod asking again each time; then the person answered in the dialog.
+  expect(state.asks).toBe(5)
+  expect(result.result.answers).toEqual({ 'Apple or pear?': 'apple' })
+})
+
+test('several questions or a choice of several are reported and left to the dialog', async ($: any, on: any) => {
+  for (const questions of [[fruit, { ...fruit, question: 'Tea or coffee?' }], [{ ...fruit, multiSelect: true }]]) {
+    const state = machine(on, { ask: [pick('pear')] })
+    on('tool.call', dialogAfter(10, { 'Apple or pear?': 'apple' }))
+    await $.tool.call({ tool: 'AskUserQuestion', questions })
+    await settle($)
+    expect(state.asks).toBe(0)
+    expect(state.posts[0].body.can).toBe(undefined)
+    expect(state.posts.map(post => post.body.kind)).toEqual(['question', 'resumed'])
+    break
+  }
+})
+
+test('a choice of several is reported with its kind and never offered for an answer', async ($: any, on: any) => {
+  const state = machine(on, { ask: [pick('pear')] })
+  on('tool.call', dialogAfter(10, { 'Apple or pear?': 'apple, pear' }))
+  await $.tool.call({ tool: 'AskUserQuestion', questions: [{ ...fruit, multiSelect: true }] })
+  await settle($)
+  expect(state.asks).toBe(0)
+  expect(state.posts[0].body.can).toBe(undefined)
+  expect(state.posts[0].body.questions[0].multiSelect).toBe(true)
 })

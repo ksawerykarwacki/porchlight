@@ -4,8 +4,7 @@ import PorchlightCore
 import PorchlightMac
 
 /// `porchlight companion`: stands in for the app's listener and prints each report, so the mod
-/// can be checked without the app. It never answers a session; like the app in this version, it
-/// only listens.
+/// can be checked without the app. It only listens: answering is the app's, from the panel.
 func companion() async {
     let hub = CompanionHub(onEvent: { event in
         print(event.line)

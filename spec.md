@@ -326,7 +326,7 @@ The problem: sessions pile up, many stalled for weeks, and it is not clear which
 
 - **The command, and nothing else:** `claude --print --resume <conversation id> --fork-session --no-session-persistence --tools "" --model <model> -- <prompt>`, run in the session's folder. Each flag is there for a reason: the fork means the session itself gets no new turn, nothing saved means no new session appears, and the empty tool list means the summariser can only read and answer. All six are in `claude --help` on 2.1.294.
 - **If the installed CLI's help lacks any of those flags, the command is not run.** Without one of them the session could be changed, so there is no weaker fallback.
-- **This is not input into a session.** The rule in 12.1 stands: the session never receives anything. A copy of its conversation is read once and discarded.
+- **This is not input into a session.** Rule 8 in 12.1 is not involved: the session never receives anything. A copy of its conversation is read once and discarded.
 - **Only when asked.** It reads a whole conversation and spends the user's usage, so the row asks first, naming the model, and one summary runs at a time. Nothing is summarised automatically, in bulk, or on a timer.
 - **The folder matters:** Claude Code finds a conversation by the folder it ran in. A stopped session reports the repository as its folder, so the worktree named in its details comes first, then the reported folder, then the repository. If the worktree is gone and the conversation is not found, Claude Code's own words are shown.
 - **The note** (`notes/<session id>.json` in Porchlight's state folder): the summary, the session's name, repository, folder, branch and pull request, the model, the time, and the conversation id, from which the row offers the command to open it again. Removing a session does not touch its note. Wrapping up again replaces it.
@@ -425,7 +425,16 @@ What Claude Code documents for programs outside it (same date): `claude agents -
 - Only the call that was waiting ends the wait: another tool finishing beside an open approval does not.
 - A session that asked before the app started has only its state file until the mod next speaks (within a minute, for an open question). A reload of the mod forgets what was open; the state file covers that too.
 
-**Not built, and a decision for the owner:** answering a session's question or approving a tool call from the Porchlight panel through a mod. It would end "copy and open" for sessions that have the mod, on a documented interface, and it would change the rule in 12.1 that Porchlight never sends input into a session. Open before any design: a channel between mod and app that no other local program can use to answer for the user, permission approvals, and behaviour where plugins are disabled.
+**Built, layer 3 (2026-10-10): answering one question from the panel.** The owner changed rule 8 in 12.1 for this.
+
+- *What can be answered:* a session that is waiting, whose mod said it takes answers (`"can": ["answer"]` and an id for this asking, `q<n>-<time>`), with exactly one question, options, one to be picked, and only when that question is the one the row shows (`Session.answerTarget`). Several questions, a choice of several and typed text stay with the session's dialog; so does everything from a mod older than 0.2.0, whose options stay plain text.
+- *In the panel:* the options are buttons. A click chooses and sends nothing; a line under them offers "Send “…”" and Cancel. Send judges the session again as it is now, and if the question has gone says so and sends nothing. The log records which option by number, never its text.
+- *The command:* `{"v":1,"type":"answer","id":…,"answers":{<question>: <label as the session wrote it>}}`, given to the request the mod holds at `GET /v1/next`. If no request is held it is queued and dropped after 60 seconds, and the panel says "Sent to …. If it does not move on, open it and answer there."
+- *The mod* (0.2.0): for such a question it runs the dialog and, beside it, asks the app for an answer for as long as that asking is the open one. An answer is taken only if it is for this asking's id, names this question and one of its options, and nothing else; it is then returned as the question tool's result, as spike two showed a hook may. Anything else is dropped and the mod asks again. The dialog answered first ends the asking.
+- *Who can answer:* a program running as the same user could put its own `companion.json` in place and answer a question; such a program can already run `claude attach` and type. The channel adds no way in for another user or over the network.
+- Checked: unit tests for what is answerable and the command; the panel's model and the real listener over its socket, including the 60 seconds; the mod's 19 tests. Live on 2.1.296, a throwaway session with the mod and a stand-in for the app on the real protocol: an answer for another id was dropped and the session kept waiting; the right one continued it ("Apple or pear? → pear") and the session replied "pear".
+- Not checked: the installed app sending (only the stand-in, as for layers 1 and 2), the buttons under a real pointer, and an answer racing the dialog by milliseconds.
+- Not built: the palette, notifications, typed answers, several questions, approvals.
 
 ### 6.7 Roadmap after v1
 
@@ -620,6 +629,7 @@ Read on 2026-10-08: Claude Code's licence line ("Use is subject to Anthropic's C
 5. **Internal job files are optional.** `~/.claude/jobs/<id>/state.json` is the user's own local data and the docs only call it "not a stable interface", but it is the least official thing Porchlight relies on. Keep it behind the schema check and keep every feature working without it (D6).
 6. **Naming.** Do not use "Claude", "Claude Code" or "Anthropic" in the product, feature or company name or in a logo. Plain-text statements that Porchlight works with Claude Code are fine. Keep the "not affiliated" notice.
 7. **No intermediating usage.** Porchlight never pays for, resells or proxies Claude usage.
+8. **Porchlight never composes input for a session.** No typing into terminals, no messages into a session as if they were the user. *Amended 2026-10-10, the owner's decision:* one thing may be delivered, through the companion mod's documented hook on the question tool: an option the user chose and then sent in Porchlight, for a question that session asked and that is still open. Nothing is sent on a single click, nothing is sent that is not one of the question's own options, and approvals are not answered. (Until this date the rule read "never send input into a session".)
 
 ## 13. Testing
 

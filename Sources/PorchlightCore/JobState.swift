@@ -51,13 +51,16 @@ public struct JobState: Sendable, Equatable, Decodable {
 
         public let question: String
         public let options: [Option]
+        /// True when several options may be chosen at once.
+        public let multiSelect: Bool
 
-        private enum CodingKeys: String, CodingKey { case question, options }
+        private enum CodingKeys: String, CodingKey { case question, options, multiSelect }
 
         public init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
             question = try c.decode(String.self, forKey: .question)
             options = (try? c.decodeIfPresent(LossyArray<Option>.self, forKey: .options))?.elements ?? []
+            multiSelect = (try? c.decodeIfPresent(Bool.self, forKey: .multiSelect)) ?? false
         }
     }
 
