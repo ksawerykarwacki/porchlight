@@ -133,7 +133,7 @@ public struct InboxRow: Sendable, Equatable, Identifiable {
         self.tool = tool
         let shown = detail.map(Self.singleLine)
         self.detail = shown
-        said = kind == .waiting ? session.lastSaid : nil
+        said = kind == .waiting || kind == .done ? session.lastSaid : nil
         saidEnding = said.map { Self.ending(of: $0) }
         saidLine = said.flatMap { Self.lastLine(of: $0) }
         let standing = kind == .question || (kind == .waiting && said == nil) ? session.standing.map(Self.singleLine) : nil

@@ -79,9 +79,14 @@ public struct Session: Sendable, Equatable, Identifiable {
     /// The end of what a waiting session said last, from the companion mod: what it is waiting to
     /// hear about, in full. Not while it waits on a question or an approval, which say it themselves.
     public var lastSaid: String? {
-        guard needsHuman, let companion, companion.waiting == nil, !companion.isTurnRunning else { return nil }
+        guard isIdleAfterATurn, let companion, companion.waiting == nil, !companion.isTurnRunning else { return nil }
         return companion.lastSaid
     }
+
+    /// Waiting for the user, or finished. Which of the two is Claude Code's own judgement of the
+    /// last reply, and it calls a session done that ended by asking what to do next: both can be
+    /// replied to, and both have last words worth showing.
+    public var isIdleAfterATurn: Bool { needsHuman || summary.state == .done }
 
     /// Where a waiting session stands, in Claude Code's own words: what the last turn came to,
     /// or failing that its status line. What it asks for is often too short to act on alone.

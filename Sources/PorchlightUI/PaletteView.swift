@@ -780,7 +780,7 @@ struct PaletteSessionRow: View {
         switch row.kind {
         case .question, .approval, .waiting: row.saidLine ?? row.detail ?? "Waiting for you"
         case .working: "Working"
-        case .done: "Done"
+        case .done: row.saidLine.map { "Done \u{00B7} \($0)" } ?? "Done"
         case .unknown: "State unknown"
         }
     }

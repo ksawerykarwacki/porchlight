@@ -620,15 +620,24 @@ enum PaletteSessions {
         await harness.model.begin()
         let model = harness.model
         #expect(model.sessions.count == 7)
-        // Both waiting ones, three of the four working ones, and not the finished one.
-        #expect(model.sessionResults.map(\.kind.needsUser) == [true, true, false, false, false])
-        #expect(model.sessionResults.count == 2 + PaletteModel.workingSessionsShown)
-        #expect(!model.sessionResults.contains { $0.kind == .done })
+        // Both waiting ones, three of the four working ones, and the finished one last: a
+        // session Claude Code calls done is often one a follow-up is meant for.
+        #expect(model.sessionResults.map(\.kind.needsUser) == [true, true, false, false, false, false])
+        #expect(model.sessionResults.map(\.kind).suffix(4) == [.working, .working, .working, .done])
+        #expect(model.sessionResults.count == 2 + PaletteModel.workingSessionsShown + 1)
         // The list is sessions, then every repository.
-        #expect(model.items.count == 5 + 10)
+        #expect(model.items.count == 6 + 10)
         #expect(model.selectedSession?.kind.needsUser == true)
         #expect(model.selectedRepo == nil)
-        if case .repo? = model.items.dropFirst(5).first {} else { Issue.record("repositories should follow the sessions") }
+        if case .repo? = model.items.dropFirst(6).first {} else { Issue.record("repositories should follow the sessions") }
+
+        // Only the latest few finished ones: the rest are found by typing.
+        let many = (0..<6).map { index in
+            InboxRow(session: Session(summary: SessionSummary(id: "done000\(index)", name: "finished \(index)", cwd: "/Users/u/code/docs", state: .done)), now: PaletteSessions.now)
+        }
+        let listed = PaletteModel.sessions(many, matching: "")
+        #expect(listed.map(\.id) == ["done0000", "done0001", "done0002"] && PaletteModel.doneSessionsShown == 3)
+        #expect(PaletteModel.sessions(many, matching: "finished").count == 6)
     }
 
     @Test func typingFiltersSessionsAndRepositoriesTogether() async throws {
@@ -657,7 +666,7 @@ enum PaletteSessions {
         harness.probe.rows = try PaletteSessions.rows()
         await harness.model.begin()
         let model = harness.model
-        model.moveSelection(by: 4)
+        model.moveSelection(by: 5)
         #expect(model.selectedSession == model.sessionResults.last)
         model.moveSelection(by: 1)
         #expect(model.selectedSession == nil && model.selectedRepo != nil)

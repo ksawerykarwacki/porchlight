@@ -435,6 +435,9 @@ public final class PaletteModel {
     /// How many working sessions are listed before anything is typed. The ones that need the
     /// user are all listed.
     public static let workingSessionsShown = 3
+    /// How many finished sessions are listed before anything is typed: the latest ones, which
+    /// are the ones a follow-up is likely for. The rest are found by typing.
+    public static let doneSessionsShown = 3
 
     static func sessions(_ sessions: [InboxRow], matching query: String) -> [InboxRow] {
         let query = query.trimmingCharacters(in: .whitespaces)
@@ -444,7 +447,8 @@ public final class PaletteModel {
             let others = sessions.filter { !$0.isPinned }
             let waiting = others.filter { $0.kind.needsUser }
             let working = others.filter { $0.kind == .working }.prefix(workingSessionsShown)
-            return pinned + waiting + working
+            let done = others.filter { $0.kind == .done }.prefix(doneSessionsShown)
+            return pinned + waiting + working + done
         }
         // A path is a folder to start in, never a session.
         guard !query.hasPrefix("/"), !query.hasPrefix("~") else { return [] }

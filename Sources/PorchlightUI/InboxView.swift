@@ -562,6 +562,9 @@ struct InboxRowView: View {
         (waits ? 22 : 0) + 22
     }
     private var waits: Bool { row.kind == .question || row.kind == .approval || row.kind == .waiting }
+    /// A finished session's row stays small: one line of what it said, and no reply field,
+    /// until "Show more" opens it.
+    private var isFolded: Bool { row.kind == .done && !actions.expandedSaid.contains(row.id) }
     /// Whether the options are buttons that answer the session.
     private var answers: Bool { row.isAnswerable && !row.options.isEmpty }
 
@@ -618,7 +621,14 @@ struct InboxRowView: View {
                                 .fixedSize(horizontal: false, vertical: true)
                                 .padding(.top, 3)
                         }
-                        if let said = row.said, let ending = row.saidEnding {
+                        if isFolded, let line = row.saidLine {
+                            // A finished session keeps to one line of what it said, until asked.
+                            Text(line)
+                                .font(.system(size: 11.5))
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .padding(.top, 1)
+                        } else if let said = row.said, let ending = row.saidEnding {
                             // What the session said when it stopped, in place of the fragment
                             // Claude Code keeps of it.
                             SaidText(text: actions.expandedSaid.contains(row.id) ? said : ending)
@@ -716,10 +726,10 @@ struct InboxRowView: View {
                 .padding(.top, 7)
             }
 
-            if let said = row.said, said != row.saidEnding {
+            if let said = row.said, said != row.saidEnding || row.kind == .done {
                 let open = actions.expandedSaid.contains(row.id)
                 Button { actions.toggleSaid(row.id) } label: {
-                    Text(open ? "Show less" : "Show more")
+                    Text(open ? "Show less" : row.kind == .done && row.reply != nil ? "Show more, or reply" : "Show more")
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(hover.hovered == "said.\(row.id)" ? .primary : .secondary)
                         .contentShape(Rectangle())
@@ -800,7 +810,7 @@ struct InboxRowView: View {
                 }
             }
 
-            if row.reply != nil {
+            if row.reply != nil, !isFolded {
                 ReplyField(
                     text: actions.replyDrafts[row.id] ?? "", id: "reply.field.\(row.id)", hover: hover, drawsField: drawsMenus,
                     change: { actions.setReplyDraft(row.id, $0) }, send: { actions.sendReply(row.id) }

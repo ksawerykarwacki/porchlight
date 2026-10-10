@@ -479,10 +479,10 @@ public struct ReplyTarget: Sendable, Equatable {
 
 extension Session {
     /// Where a reply typed in Porchlight can go, if this session is waiting for the user after a
-    /// finished turn. Not while it waits on a question, an approval or a failure: those have
+    /// finished turn, or was called done by Claude Code after one. Not while it waits on a question, an approval or a failure: those have
     /// their own answers.
     public var replyTarget: ReplyTarget? {
-        guard needsHuman, let conversation = summary.sessionId, let companion, companion.waiting == nil, !companion.isTurnRunning,
+        guard isIdleAfterATurn, let conversation = summary.sessionId, let companion, companion.waiting == nil, !companion.isTurnRunning,
               companion.failure == nil, let id = companion.replyableTurnID else { return nil }
         return ReplyTarget(sessionID: conversation.lowercased(), turnID: id)
     }

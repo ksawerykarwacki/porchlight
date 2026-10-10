@@ -183,6 +183,31 @@ import Testing
         #expect(world.sent.map { $0["text"] as? String } == ["Yes, merge it."])
     }
 
+    @Test func aSessionClaudeCodeCallsDoneCanBeRepliedToOnceItsRowIsOpened() throws {
+        // Claude Code decides between "blocked" and "done" from the session's last words, and
+        // calls one done that ended by asking what to do next.
+        let world = try World()
+        world.finishTurn(id: "t1-5")
+        try world.show(state: .done)
+        let row = try #require(world.inbox.rows.first)
+        #expect(row.kind == .done && row.reply == ReplyTarget(sessionID: Self.conversation, turnID: "t1-5"))
+        #expect(row.said == "All done.\n\nShall I merge?" && row.saidLine == "Shall I merge?")
+
+        // Folded, the row is small: one line, no field. Opened, it has both.
+        var actions = InboxActions()
+        let folded = try height(row, actions, named: "done-folded")
+        actions.expandedSaid = ["22222222"]
+        let opened = try height(row, actions, named: "done-opened")
+        #expect(opened > folded + 40)
+
+        world.inbox.setReplyDraft(sessionID: "22222222", "Yes, merge it.")
+        world.inbox.sendReply(sessionID: "22222222")
+        #expect(world.sent.map { $0["id"] as? String } == ["t1-5"] && world.inbox.notice == "Sent your reply to asks")
+        // A finished session without the mod's report is as it was: a name and a place.
+        let bare = InboxRow(session: Session(summary: SessionSummary(id: "a", name: "n", state: .done)), now: Date())
+        #expect(bare.said == nil && bare.reply == nil)
+    }
+
     func height(_ row: InboxRow, _ actions: InboxActions, named name: String) throws -> CGFloat {
         let renderer = ImageRenderer(
             content: InboxRowView(row: row, actions: actions, hover: HoverTracker(), drawsMenus: false).frame(width: 400).background(Color.white).environment(\.colorScheme, .light))
