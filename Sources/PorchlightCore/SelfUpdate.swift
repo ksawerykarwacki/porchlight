@@ -31,6 +31,14 @@ public enum SelfUpdate {
         }.sorted()
     }
 
+    /// Whether the app has to be started again after an upgrade: what is installed now is not
+    /// what was, or what is running is not what is installed (an upgrade made earlier and never
+    /// started). With no copy running there is nothing to replace, and none is started.
+    public static func needsRestart(installedBefore: String, installedNow: String, running: [String]) -> Bool {
+        guard !running.isEmpty else { return false }
+        return installedBefore != installedNow || running.contains { !$0.hasPrefix(installedNow) }
+    }
+
     /// Builds the app from the latest source. Homebrew does nothing when it is already there.
     public static func upgrade(brew: String) -> Step {
         Step(title: "Building the latest Porchlight with Homebrew (this takes a few minutes)", arguments: [brew, "upgrade", "--fetch-HEAD", AppVersion.formula], timeout: 20 * 60)

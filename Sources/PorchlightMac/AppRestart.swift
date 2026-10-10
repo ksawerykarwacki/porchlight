@@ -16,14 +16,34 @@ public enum AppRestart {
 
     /// Whether launchd has Homebrew's service for Porchlight loaded for this user.
     public static func serviceIsLoaded() -> Bool {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/launchctl")
-        process.arguments = ["print", "gui/\(getuid())/\(AppVersion.serviceLabel)"]
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
-        guard (try? process.run()) != nil else { return false }
-        process.waitUntilExit()
-        return process.terminationStatus == 0
+        AppVersion.serviceLabels.contains { label in
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/bin/launchctl")
+            process.arguments = ["print", "gui/\(getuid())/\(label)"]
+            process.standardOutput = FileHandle.nullDevice
+            process.standardError = FileHandle.nullDevice
+            guard (try? process.run()) != nil else { return false }
+            process.waitUntilExit()
+            return process.terminationStatus == 0
+        }
+    }
+
+    /// Where each running copy of the app is, with links resolved: Homebrew keeps every build in
+    /// a folder named after its commit, so the path says which build is running.
+    public static func runningCopyPaths(bundleIdentifier: String = "io.github.ksawerykarwacki.porchlight") -> [String] {
+        NSRunningApplication.runningApplications(withBundleIdentifier: bundleIdentifier).compactMap { $0.bundleURL?.resolvingSymlinksInPath().path }
+    }
+
+    /// Asks every running copy of the app to quit and waits for them to be gone. For starting a
+    /// new copy from outside the app: two copies would share a menu bar, and the second would
+    /// not listen for the companion mod. True when none is left.
+    @discardableResult
+    public static func quitRunningCopies(bundleIdentifier: String = "io.github.ksawerykarwacki.porchlight", wait: TimeInterval = 8) -> Bool {
+        func running() -> [NSRunningApplication] { NSRunningApplication.runningApplications(withBundleIdentifier: bundleIdentifier) }
+        running().forEach { $0.terminate() }
+        let deadline = Date().addingTimeInterval(wait)
+        while !running().isEmpty, Date() < deadline { Thread.sleep(forTimeInterval: 0.2) }
+        return running().isEmpty
     }
 
     /// Runs a command in a session of its own and does not wait for it. Restarting the service

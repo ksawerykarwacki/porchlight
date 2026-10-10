@@ -34,11 +34,19 @@ func update(arguments: [String]) async {
             let before = URL(fileURLWithPath: link).resolvingSymlinksInPath().path
             if await run(SelfUpdate.upgrade(brew: brew)) {
                 let after = URL(fileURLWithPath: link).resolvingSymlinksInPath().path
-                if after == before {
-                    print("  Porchlight is already the latest.")
+                let running = AppRestart.runningCopyPaths()
+                if !SelfUpdate.needsRestart(installedBefore: before, installedNow: after, running: running) {
+                    print(after == before ? "  Porchlight is already the latest." : "  The new Porchlight is installed; it is not running, so nothing was started.")
                 } else {
-                    let restart = AppRestart.command(serviceIsLoaded: AppRestart.serviceIsLoaded(), brew: brew, prefix: prefix)
-                    _ = await run(SelfUpdate.Step(title: "Starting the new Porchlight", arguments: restart))
+                    let asService = AppRestart.serviceIsLoaded()
+                    // Homebrew's service replaces the copy it runs. Otherwise the running copy is
+                    // asked to quit first: left alone it would stay beside the new one.
+                    if !asService, !AppRestart.quitRunningCopies() {
+                        print("  The running Porchlight did not quit; quit it and open the new one yourself.")
+                        failed = true
+                    } else {
+                        _ = await run(SelfUpdate.Step(title: "Starting the new Porchlight", arguments: AppRestart.command(serviceIsLoaded: asService, brew: brew, prefix: prefix)))
+                    }
                 }
             }
         } else {
