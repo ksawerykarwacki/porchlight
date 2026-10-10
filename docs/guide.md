@@ -53,8 +53,10 @@ the session came with one. A daily summary arrives at 09:00.
   What counts as such a failure is a list of patterns under `transientErrors` in `settings.json`.
   With the companion mod, the session reports the failure itself and Retry sends `continue`
   straight to it, without opening anything.
-- **Replying from the panel.** With the companion mod, a session that has finished a turn and
-  waits for you has a reply field under what it said. Type and press Return: your text goes to the
+- **Replying from the panel or the palette.** With the companion mod, a session that has finished
+  a turn and waits for you has a reply field under what it said. In the palette, select the session
+  and press ⌘Return: what it said is shown in full with a field under it, ⌘Return again sends,
+  Escape goes back. In the panel, type and press Return: your text goes to the
   session as your message, and the session carries on. A reply Claude Code suggests can be put in
   the field with "Use as reply"; it is sent only when you send it. If the session is not listening
   (it was stopped, or has no mod), nothing is sent: your text is put on the clipboard so you can

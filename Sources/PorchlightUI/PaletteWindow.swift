@@ -127,7 +127,7 @@ public final class PaletteController {
         panel.onConfirm = { [weak self] in self?.model.confirm() }
         panel.onCommandReturn = { [weak self] in
             guard let model = self?.model else { return }
-            if model.step == .notes { model.copySelectedNote() } else { model.copyReplyAndOpenSelected() }
+            if model.step == .notes { model.copySelectedNote() } else { model.replyOrCopySelected() }
         }
         panel.onCommandR = { [weak self] in self?.model.retrySelected() }
         panel.onCommandS = { [weak self] in self?.model.askControlSelected(.stop) }

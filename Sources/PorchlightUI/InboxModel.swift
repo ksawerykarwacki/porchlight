@@ -168,6 +168,24 @@ public final class InboxModel {
         }
     }
 
+    /// Sends a reply typed somewhere other than the panel's field (the palette), for the turn it
+    /// was typed for. Says whether it went, and what to tell the user.
+    public func reply(sessionID: String, turnID: String, text: String) async -> (sent: Bool, message: String) {
+        guard let session = snapshot.sessions.first(where: { $0.id == sessionID }), let target = session.replyTarget, target.turnID == turnID else {
+            return (false, "That session has moved on; nothing was sent")
+        }
+        guard let command = target.command(text: text) else {
+            return (false, "That reply is empty or too long to send from here")
+        }
+        if let sendToCompanionIfWaiting, sendToCompanionIfWaiting(command, target.sessionID) {
+            log?.record("reply \(sessionID): \(text.count) characters, taken")
+            return (true, "Sent your reply to \(session.name)")
+        }
+        log?.record("reply \(sessionID): the session's mod was not waiting")
+        let copied = await copy(text)
+        return (false, copied ? "\(session.name) is not listening. Your reply is on the clipboard: open the session and paste it." : "\(session.name) is not listening. Open the session and send your reply there.")
+    }
+
     /// Rows whose last reply is shown whole instead of only its ending.
     public private(set) var expandedSaid: Set<String> = []
 
