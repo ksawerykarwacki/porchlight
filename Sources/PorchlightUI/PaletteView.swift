@@ -81,7 +81,7 @@ public struct PaletteView: View {
                         PaletteSessionRow(
                             row: row, isSelected: isSelected, hover: hover,
                             answers: isSelected && model.pendingControl == nil && model.canAnswer(row), chosen: model.chosenOption(for: row),
-                            choose: model.chooseAnswer
+                            choose: model.chooseAnswer, showsWholeSaid: isSelected && model.showsWholeSaid, toggleWholeSaid: model.toggleWholeSaid
                         ) { model.open(row) }
                     case .repo(let repo):
                         PaletteRepoRow(
@@ -655,6 +655,9 @@ struct PaletteSessionRow: View {
     var answers = false
     var chosen: Int?
     var choose: (Int) -> Void = { _ in }
+    /// The selected row shows all of what the session said, not only its ending.
+    var showsWholeSaid = false
+    var toggleWholeSaid: () -> Void = {}
     let open: () -> Void
 
     private var id: String { "palette.session.\(row.id)" }
@@ -702,8 +705,24 @@ struct PaletteSessionRow: View {
                 if isSelected, let ending = row.saidEnding {
                     // The selected session's last words, as the panel shows them: enough to
                     // decide whether to open it.
-                    SaidText(text: ending, size: 12)
+                    SaidText(text: showsWholeSaid ? (row.said ?? ending) : ending, size: 12)
                         .padding(.top, 1)
+                    if let said = row.said, said != ending {
+                        // The key, and what it does now: the row has no room for a button bar.
+                        Button(action: toggleWholeSaid) {
+                            HStack(spacing: 5) {
+                                Text("⌘E")
+                                    .font(.system(size: 10.5, weight: .semibold))
+                                Text(showsWholeSaid ? "Show less" : "Show more")
+                                    .font(.system(size: 11.5, weight: .medium))
+                            }
+                            .foregroundStyle(hover.hovered == "\(id).more" ? .primary : .secondary)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .onHover { hover.set("\(id).more", $0) }
+                        .padding(.top, 4)
+                    }
                 } else {
                     Text(subtitle)
                         .font(.system(size: 12))

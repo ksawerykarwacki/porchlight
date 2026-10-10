@@ -93,8 +93,28 @@ import Testing
         // The session is first in the list and so selected: its row is open. Moved off it, closed.
         #expect(model.selectedSession?.id == "22222222")
         let open = try height(named: "palette-said-selected")
+        // ⌘E shows all of it, and again only the ending; there is more here than the ending.
+        #expect(model.canShowMoreSaid && !model.showsWholeSaid)
+        model.toggleWholeSaid()
+        #expect(model.showsWholeSaid)
+        let whole = try height(named: "palette-said-whole")
+        #expect(whole > open + 40)
+        model.toggleWholeSaid()
+        #expect(!model.showsWholeSaid)
+        // It belongs to the selected row: moving on, typing or opening the palette again puts it back.
+        model.toggleWholeSaid()
+        model.setQuery("spec")
+        #expect(!model.showsWholeSaid)
+        model.setQuery("")
+        model.toggleWholeSaid()
+        await model.begin()
+        #expect(!model.showsWholeSaid && model.selectedSession?.id == "22222222")
+        model.toggleWholeSaid()
         model.moveSelection(by: 1)
-        #expect(model.selectedSession == nil)
+        #expect(model.selectedSession == nil && !model.showsWholeSaid)
+        // Nothing to show more of on a folder.
+        model.toggleWholeSaid()
+        #expect(!model.canShowMoreSaid && !model.showsWholeSaid)
         let closed = try height(named: "palette-said-unselected")
         #expect(open > closed + 60)
     }
