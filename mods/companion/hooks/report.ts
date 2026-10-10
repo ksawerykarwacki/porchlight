@@ -147,3 +147,10 @@ export const retryOf = (text: string, id: string): string | undefined => {
     return undefined
   }
 }
+
+/**
+ * Whether the app found now is one that has not been told what this session last said: there is
+ * an app, and it is not the one the last report went to (it was restarted and has a new secret).
+ */
+export const isNewApp = (known: { secret: string } | undefined, found: { secret: string } | undefined): boolean =>
+  found !== undefined && (known === undefined || known.secret !== found.secret)

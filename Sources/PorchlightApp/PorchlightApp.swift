@@ -139,8 +139,7 @@ struct PorchlightApp: App {
                 // Keeps the panel attached to the menu bar when its height changes, and brings
                 // it back to the sessions the next time it opens.
                 .background(PanelWindowObserver {
-                    model.showsSettings = false
-                    model.showsTriage = false
+                    model.panelClosed()
                 })
         } label: {
             StatusLabel(status: model.status)

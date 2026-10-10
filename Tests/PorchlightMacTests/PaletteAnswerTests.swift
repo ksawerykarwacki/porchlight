@@ -121,6 +121,12 @@ import Testing
         #expect(model.pendingControl == nil && model.pendingAnswer?.option == 0)
         model.toggleNotes()
         #expect(model.pendingAnswer == nil)
+        // Nor does it outlive the palette: opened again, nothing is chosen.
+        model.toggleNotes()
+        model.chooseAnswer(1)
+        #expect(model.pendingAnswer != nil)
+        await model.begin()
+        #expect(model.pendingAnswer == nil)
         #expect(calls.answers.isEmpty)
     }
 

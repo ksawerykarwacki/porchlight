@@ -76,7 +76,8 @@ starts. Without the app running there is nothing to send to, and the mod does no
 - **No app, or the app is slow:** the report is dropped after two seconds and the app is not tried
   again for five. The session never waits for a report.
 - **The app was restarted:** the mod reads the new secret and carries on. If a question is open, it
-  says so again within a minute.
+  says so again within a minute; for a session sitting idle, it says once more how its last turn
+  ended, so the app can show what it said.
 - **An answer arrives for a question that is no longer the open one,** or names something that is
   not one of its options: it is dropped. One the mod never came for is thrown away by the app
   after a minute.

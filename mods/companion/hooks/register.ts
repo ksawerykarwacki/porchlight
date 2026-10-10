@@ -1,6 +1,6 @@
 import type { Register } from 'claude-code'
 
-import { answerOf, bodyOf, descriptorOf, detailOf, mayClear, questionsOf, reportOf, retryOf, tailOf, takesAnswer, type Open, type Question, type Report } from './report'
+import { answerOf, bodyOf, descriptorOf, detailOf, isNewApp, mayClear, questionsOf, reportOf, retryOf, tailOf, takesAnswer, type Open, type Question, type Report } from './report'
 
 // Tells the Porchlight app what this session is doing, the moment it happens: it asked something,
 // it wants an approval, a turn started or ended, a turn failed.
@@ -36,6 +36,8 @@ let session: string | undefined
 let app: App | undefined
 let open: Open
 let quietUntil = 0
+/** How the last turn ended, with what was said, while no turn has started since. */
+let ended: Report | undefined
 
 const stateDirectory = async ($: any): Promise<string | undefined> => {
   const override = await $.env.get('PORCHLIGHT_STATE_DIR')
@@ -104,6 +106,24 @@ const sendNow = async ($: any, report: Report): Promise<void> => {
     } catch {
       // the clock, of all things: nothing more to do
     }
+  }
+}
+
+/**
+ * An app that was restarted knows nothing of a session that is sitting idle: what it said last
+ * is kept in the app's memory only. When the app's file shows a new app, the turn's end is said
+ * once more. Nothing is sent while the app is the one already told.
+ */
+const tellNewApp = async ($: any): Promise<void> => {
+  try {
+    if (ended === undefined) return
+    const found = await findApp($)
+    if (!isNewApp(app, found)) return
+    app = found
+    quietUntil = 0
+    await send($, ended)
+  } catch {
+    // told at the end of the next turn instead
   }
 }
 
@@ -177,6 +197,7 @@ export const register: Register = on => {
       $.clock.every(REPEAT_EVERY_MS, () => {
         const again = reportOf(open)
         if (again !== undefined) void send($, again)
+        else void tellNewApp($)
       })
     } catch {
       // without an id there is nothing to report under
@@ -191,6 +212,7 @@ export const register: Register = on => {
 
   on('turn.start', ($: any, e: any, next: any) => {
     open = undefined
+    ended = undefined
     void send($, { kind: 'turn.start' })
     return next(e)
   }).catch(passOn)
@@ -202,7 +224,8 @@ export const register: Register = on => {
     if (open?.kind !== 'failure') open = undefined
     // With the end of the turn's answer, which is where a session says what it is waiting for.
     const said = typeof e?.answer === 'string' ? tailOf(e.answer) : ''
-    void send($, { kind: 'turn.complete', ...(typeof e?.reason === 'string' ? { reason: e.reason } : {}), ...(said !== '' ? { said } : {}) })
+    ended = { kind: 'turn.complete', ...(typeof e?.reason === 'string' ? { reason: e.reason } : {}), ...(said !== '' ? { said } : {}) }
+    void send($, ended)
     return next(e)
   }).catch(passOn)
 

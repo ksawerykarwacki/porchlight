@@ -118,6 +118,17 @@ public final class InboxModel {
     /// Rows whose last reply is shown whole instead of only its ending.
     public private(set) var expandedSaid: Set<String> = []
 
+    /// The panel closed: the next time it opens on the sessions as they are, with nothing left
+    /// half done. A reply opened in full, an answer chosen but not sent and a question about
+    /// stopping or removing a session all belonged to that look at the panel.
+    public func panelClosed() {
+        showsSettings = false
+        showsTriage = false
+        expandedSaid = []
+        pendingAnswer = nil
+        cancelControl()
+    }
+
     public func toggleSaid(sessionID: String) {
         if expandedSaid.remove(sessionID) == nil { expandedSaid.insert(sessionID) }
     }
