@@ -1,6 +1,6 @@
 import type { Register } from 'claude-code'
 
-import { answerOf, bodyOf, descriptorOf, detailOf, isNewApp, mayClear, questionsOf, reportOf, retryOf, tailOf, takesAnswer, type Open, type Question, type Report } from './report'
+import { answerOf, bodyOf, descriptorOf, detailOf, isNewApp, mayClear, questionsOf, replyOf, reportOf, retryOf, tailOf, takesAnswer, type Open, type Question, type Report } from './report'
 
 // Tells the Porchlight app what this session is doing, the moment it happens: it asked something,
 // it wants an approval, a turn started or ended, a turn failed.
@@ -17,6 +17,9 @@ import { answerOf, bodyOf, descriptorOf, detailOf, isNewApp, mayClear, questions
 // failing API), it will submit one line, the user's "continue", when the app tells it to for that
 // failure. The app does so only where the user turned automatic retry on, or pressed Retry.
 //
+// And while the session sits idle after a turn, it will submit a reply the user typed and sent in
+// Porchlight for that turn's end, as the user's own words.
+//
 // Every other hook hands back exactly what the hooks beneath it answered, and no hook waits for
 // the app: a report is sent on the side, and a slow, absent or refusing app costs the session
 // nothing.
@@ -25,6 +28,8 @@ import { answerOf, bodyOf, descriptorOf, detailOf, isNewApp, mayClear, questions
 const SEND_TIMEOUT_MS = 2000
 /** After a failed report, how long before the app is tried again. */
 const RETRY_AFTER_MS = 5000
+/** The same, while waiting for a reply: a session may sit idle for days with no app to ask. */
+const IDLE_RETRY_AFTER_MS = 30_000
 /** How often what is open is said again, so an app that restarted learns it. */
 const REPEAT_EVERY_MS = 60_000
 /** How long one request for an answer is left open; the app holds it for less. */
@@ -133,7 +138,7 @@ let asked = 0
  * Waits for a command from the app that `accept` takes, for as long as `stillOpen` says what it
  * is for is still the open thing. Resolves with what was accepted, or never.
  */
-const commandFromApp = async <T>($: any, accept: (text: string) => T | undefined, stillOpen: () => boolean): Promise<T> => {
+const commandFromApp = async <T>($: any, accept: (text: string) => T | undefined, stillOpen: () => boolean, pauseMs = RETRY_AFTER_MS): Promise<T> => {
   for (;;) {
     if (!stillOpen()) return new Promise(() => {})
     let status = 0
@@ -158,7 +163,23 @@ const commandFromApp = async <T>($: any, accept: (text: string) => T | undefined
     if (status === 204) continue
     // No app, a refused secret, or anything else: find the app again after a pause.
     if (status === 403 || status === 0) app = undefined
-    await $.clock.sleep(RETRY_AFTER_MS)
+    await $.clock.sleep(pauseMs)
+  }
+}
+
+/**
+ * While the session sits idle after this turn: waits for a reply the user sent from Porchlight
+ * and submits it as their own words. Once only, and only while no new turn has started.
+ */
+const replyFromApp = async ($: any, mine: Report & { id: string }): Promise<void> => {
+  try {
+    const stillIdle = () => ended === mine && open === undefined
+    const reply = await commandFromApp($, text => replyOf(text, mine.id), stillIdle, IDLE_RETRY_AFTER_MS)
+    if (!stillIdle()) return
+    ended = undefined
+    await $.prompt.submit({ text: reply, asUser: true })
+  } catch {
+    // nothing was submitted; the session waits as it did
   }
 }
 
@@ -217,15 +238,29 @@ export const register: Register = on => {
     return next(e)
   }).catch(passOn)
 
-  on('turn.complete', ($: any, e: any, next: any) => {
+  on('turn.complete', async ($: any, e: any, next: any) => {
     // A subagent's turn is not the session's: its end changes nothing the app shows.
     if (e?.agentId !== undefined) return next(e)
     // A failed turn ends too: the failure stays what the session stopped on.
     if (open?.kind !== 'failure') open = undefined
     // With the end of the turn's answer, which is where a session says what it is waiting for.
     const said = typeof e?.answer === 'string' ? tailOf(e.answer) : ''
-    ended = { kind: 'turn.complete', ...(typeof e?.reason === 'string' ? { reason: e.reason } : {}), ...(said !== '' ? { said } : {}) }
-    void send($, ended)
+    const done: Report = { kind: 'turn.complete', ...(typeof e?.reason === 'string' ? { reason: e.reason } : {}), ...(said !== '' ? { said } : {}) }
+    try {
+      // A turn that failed is tried again, not replied to; any other end can take a reply.
+      if (e?.reason !== 'error') {
+        asked += 1
+        const mine = { ...done, id: `t${asked}-${Number(await $.clock.now())}`, can: ['reply'] }
+        ended = mine
+        // Beside the session, never in its way; the app is asked once it knows of the turn's end.
+        void send($, mine).then(() => replyFromApp($, mine))
+        return next(e)
+      }
+    } catch {
+      // reported below without the offer of a reply
+    }
+    ended = done
+    void send($, done)
     return next(e)
   }).catch(passOn)
 

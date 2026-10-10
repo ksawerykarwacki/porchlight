@@ -86,6 +86,11 @@ public struct InboxActions {
     public var setWrapUpEngine: (WrapUpEngine) -> Void = { _ in }
     /// Opens the palette on the kept summaries.
     public var showNotes: () -> Void = {}
+    /// Replying from the panel: what is typed for each session, and the ways to change and send it.
+    public var replyDrafts: [String: String] = [:]
+    public var setReplyDraft: (String, String) -> Void = { _, _ in }
+    public var useSuggestedReply: (String) -> Void = { _ in }
+    public var sendReply: (String) -> Void = { _ in }
     /// Rows that show what the session said last in full, and the switch for one.
     public var expandedSaid: Set<String> = []
     public var toggleSaid: (String) -> Void = { _ in }
@@ -226,6 +231,10 @@ public struct InboxView: View {
         actions.newSession = newSession
         actions.pendingAnswer = model.pendingAnswer
         actions.expandedSaid = model.expandedSaid
+        actions.replyDrafts = model.replyDrafts
+        actions.setReplyDraft = { model.setReplyDraft(sessionID: $0, $1) }
+        actions.useSuggestedReply = { model.useSuggestedReply(sessionID: $0) }
+        actions.sendReply = { model.sendReply(sessionID: $0) }
         actions.toggleSaid = { model.toggleSaid(sessionID: $0) }
         actions.chooseAnswer = { model.chooseAnswer(sessionID: $0, option: $1) }
         actions.sendAnswer = { model.sendAnswer() }
@@ -746,18 +755,36 @@ struct InboxRowView: View {
             }
 
             if row.suggestedReply != nil {
-                Button {
-                    actions.copyReply(row.id)
-                } label: {
-                    Label("Copy suggested reply", systemImage: "doc.on.doc")
-                        .font(.system(size: 11.5, weight: .medium))
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(Capsule().fill(Color.primary.opacity(hover.hovered == "reply.\(row.id)" ? 0.16 : 0.08)))
-                        .contentShape(Capsule())
+                HStack(spacing: 6) {
+                    Button {
+                        actions.copyReply(row.id)
+                    } label: {
+                        Label("Copy suggested reply", systemImage: "doc.on.doc")
+                            .font(.system(size: 11.5, weight: .medium))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(Capsule().fill(Color.primary.opacity(hover.hovered == "reply.\(row.id)" ? 0.16 : 0.08)))
+                            .contentShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .onHover { hover.set("reply.\(row.id)", $0) }
+                    if row.reply != nil {
+                        // Into the field, not to the session: it is sent, changed or not, from there.
+                        Button {
+                            actions.useSuggestedReply(row.id)
+                        } label: {
+                            Text("Use as reply")
+                                .font(.system(size: 11.5, weight: .medium))
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(Capsule().fill(Color.primary.opacity(hover.hovered == "reply.use.\(row.id)" ? 0.16 : 0.08)))
+                                .contentShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .onHover { hover.set("reply.use.\(row.id)", $0) }
+                        .help("Put it in the reply field below, to change or send")
+                    }
                 }
-                .buttonStyle(.plain)
-                .onHover { hover.set("reply.\(row.id)", $0) }
                 .padding(.leading, 30)
                 .padding(.bottom, 3)
                 if let reply = row.suggestedReply {
@@ -771,6 +798,16 @@ struct InboxRowView: View {
                         .padding(.trailing, 10)
                         .padding(.bottom, 8)
                 }
+            }
+
+            if row.reply != nil {
+                ReplyField(
+                    text: actions.replyDrafts[row.id] ?? "", id: "reply.field.\(row.id)", hover: hover, drawsField: drawsMenus,
+                    change: { actions.setReplyDraft(row.id, $0) }, send: { actions.sendReply(row.id) }
+                )
+                .padding(.leading, 30)
+                .padding(.trailing, 10)
+                .padding(.bottom, 8)
             }
 
             if row.isRetryable {
@@ -886,6 +923,52 @@ struct StatusLamp: View {
 }
 
 /// One of the choices a session offered. The one Claude recommends is lit.
+/// Where a reply to a waiting session is typed. Return sends it; nothing goes anywhere before.
+struct ReplyField: View {
+    let text: String
+    let id: String
+    let hover: HoverTracker
+    /// Off for offscreen rendering, which cannot draw a text field.
+    var drawsField = true
+    let change: (String) -> Void
+    let send: () -> Void
+
+    private var isEmpty: Bool { text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+
+    var body: some View {
+        HStack(alignment: .bottom, spacing: 6) {
+            Group {
+                if drawsField {
+                    TextField("Reply\u{2026}", text: Binding(get: { text }, set: change), axis: .vertical)
+                        .textFieldStyle(.plain)
+                        .lineLimit(1...5)
+                        .onSubmit(send)
+                } else {
+                    Text(text.isEmpty ? "Reply\u{2026}" : text)
+                        .foregroundStyle(text.isEmpty ? .tertiary : .primary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            .font(.system(size: 12.5))
+            Button(action: send) {
+                Image(systemName: "arrow.up.circle.fill")
+                    .font(.system(size: 16))
+                    .foregroundStyle(isEmpty ? AnyShapeStyle(.tertiary) : AnyShapeStyle(Lamp.light))
+                    .opacity(hover.hovered == id && !isEmpty ? 0.8 : 1)
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .disabled(isEmpty)
+            .onHover { hover.set(id, $0) }
+            .help("Send this to the session as your reply (Return; Option-Return for a new line)")
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 5)
+        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.primary.opacity(0.06)))
+        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Color.primary.opacity(0.12), lineWidth: 1))
+    }
+}
+
 /// The words beside Retry: what failed, and what will be done about it without the user.
 enum RetryNote {
     static func isScheduled(_ row: InboxRow, cancelled: Set<String>) -> Bool {

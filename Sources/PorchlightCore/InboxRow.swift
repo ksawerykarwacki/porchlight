@@ -57,6 +57,8 @@ public struct InboxRow: Sendable, Equatable, Identifiable {
     /// The failure the session's mod will retry on the app's word, when there is one: Retry then
     /// sends through the mod instead of opening the session.
     public let retry: RetryTarget?
+    /// Where a reply typed in Porchlight would go, when the session can take one.
+    public let reply: ReplyTarget?
     /// What automatic retry will do about it, when that is turned on.
     public let autoRetry: AutoRetry.Standing?
     /// When a scheduled retry will be sent, in words: "now", "in a minute", "in 4 min".
@@ -76,6 +78,7 @@ public struct InboxRow: Sendable, Equatable, Identifiable {
         isQuiet = pin?.quiet ?? false
         isRetryable = transientErrors.offersRetry(session)
         retry = session.retryTarget
+        reply = session.replyTarget
         autoRetry = session.retryTarget.flatMap { target in transientErrors.autoRetry.map { $0.standing(for: target) } }
         if case .scheduled(let at, _, _)? = autoRetry {
             let left = at.timeIntervalSince(now)

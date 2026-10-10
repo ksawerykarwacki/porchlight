@@ -115,6 +115,59 @@ public final class InboxModel {
 
     public private(set) var pendingAnswer: PendingAnswer?
 
+    /// What the user has typed as a reply and not sent yet, by session. Kept when the panel
+    /// closes: a half-written reply is theirs to lose, not the panel's.
+    public private(set) var replyDrafts: [String: String] = [:]
+    /// The turn each draft was written for: a draft does not carry over to a later turn.
+    private var replyDraftTurns: [String: String] = [:]
+
+    public func setReplyDraft(sessionID: String, _ text: String) {
+        guard let target = snapshot.sessions.first(where: { $0.id == sessionID })?.replyTarget else { return }
+        replyDrafts[sessionID] = text.isEmpty ? nil : text
+        replyDraftTurns[sessionID] = text.isEmpty ? nil : target.turnID
+    }
+
+    /// Puts the reply Claude Code suggests into the field, for the user to change or send. Only
+    /// into an empty field: what the user has typed is never replaced.
+    public func useSuggestedReply(sessionID: String) {
+        guard let suggested = snapshot.sessions.first(where: { $0.id == sessionID })?.suggestedReply else { return }
+        guard (replyDrafts[sessionID] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            show("The reply field already has text; clear it to use the suggestion")
+            return
+        }
+        setReplyDraft(sessionID: sessionID, suggested)
+    }
+
+    /// Sends what the user typed to the session, as their reply. Judged again now: if the
+    /// session has moved on, nothing is sent and the text stays in the field.
+    public func sendReply(sessionID: String) {
+        guard let text = replyDrafts[sessionID], !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        guard let session = snapshot.sessions.first(where: { $0.id == sessionID }), let target = session.replyTarget,
+              replyDraftTurns[sessionID] == target.turnID else {
+            show("That session has moved on; nothing was sent")
+            return
+        }
+        guard let command = target.command(text: text) else {
+            show("That reply is too long to send from here; open the session and paste it")
+            return
+        }
+        // Sent only if the mod is waiting for it; nothing is left queued to arrive later.
+        if let sendToCompanionIfWaiting, sendToCompanionIfWaiting(command, target.sessionID) {
+            replyDrafts[sessionID] = nil
+            replyDraftTurns[sessionID] = nil
+            // How much was sent, never what.
+            log?.record("reply \(sessionID): \(text.count) characters, taken")
+            show("Sent your reply to \(session.name)")
+            return
+        }
+        log?.record("reply \(sessionID): the session's mod was not waiting")
+        let copy = self.copy
+        Task {
+            let copied = await copy(text)
+            show(copied ? "\(session.name) is not listening. Your reply is on the clipboard: open the session and paste it." : "\(session.name) is not listening. Open the session and send your reply there.")
+        }
+    }
+
     /// Rows whose last reply is shown whole instead of only its ending.
     public private(set) var expandedSaid: Set<String> = []
 
@@ -270,6 +323,13 @@ public final class InboxModel {
             companion?.keep(only: Set(snapshot.sessions.compactMap { $0.summary.sessionId?.lowercased() }))
         }
         self.snapshot = snapshot
+        // A draft is a reply to one turn's end: gone when the session has moved on from it.
+        for (sessionID, turn) in replyDraftTurns where snapshot.problem == nil {
+            if snapshot.sessions.first(where: { $0.id == sessionID })?.replyTarget?.turnID != turn {
+                replyDrafts[sessionID] = nil
+                replyDraftTurns[sessionID] = nil
+            }
+        }
         sendDueRetries()
     }
 

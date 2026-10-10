@@ -39,6 +39,10 @@ public struct CompanionEvent: Sendable, Equatable {
     /// on the app's word. A retry must name the failure, so a late one cannot land on another.
     public var failureID: String?
     public var takesRetry = false
+    /// With a turn's end: the mod's own name for it, and whether the mod will submit a reply to
+    /// it on the app's word. A reply must name the turn, so a late one cannot start another.
+    public var turnID: String?
+    public var takesReply = false
 
     public init(sessionID: String, kind: Kind, receivedAt: Date, questionID: String? = nil, takesAnswer: Bool = false) {
         self.sessionID = sessionID
@@ -103,6 +107,11 @@ public struct CompanionEvent: Sendable, Equatable {
             // Its end is what matters: that is where a session says what it needs.
             event.said = String(said.suffix(saidLimit))
         }
+        if case .turnComplete = kind, let id = body.id, isValidQuestionID(id) {
+            event.turnID = id
+            let can = ((try? JSONSerialization.jsonObject(with: data)) as? [String: Any])?["can"] as? [Any]
+            event.takesReply = can?.contains { $0 as? String == "reply" } ?? false
+        }
         if case .failure = kind, let id = body.id, isValidQuestionID(id) {
             event.failureID = id
             let can = ((try? JSONSerialization.jsonObject(with: data)) as? [String: Any])?["can"] as? [Any]
@@ -157,6 +166,9 @@ public struct CompanionFacts: Sendable, Equatable {
     public var failuresInARow = 0
     /// The last failure counted, so that one said again (the mod repeats what is open) counts once.
     var countedFailureID: String?
+    /// The id of the last finished turn, when the mod will submit a reply to it; cleared when a
+    /// turn starts or the session stops on something else.
+    public var replyableTurnID: String?
     /// The end of what the session said in its last finished turn; cleared when a turn starts.
     /// Kept in memory only: it is the session's own words, and is never logged or written down.
     public var lastSaid: String?
@@ -185,9 +197,11 @@ public struct CompanionFacts: Sendable, Equatable {
             next.failure = nil
             next.retryableFailureID = nil
             next.failedAt = nil
+            next.replyableTurnID = nil
             next.lastSaid = nil
         case .turnComplete:
             next.lastSaid = event.said
+            next.replyableTurnID = event.takesReply ? event.turnID : nil
             // A turn that answered: whatever failed before it has passed.
             if case .turnComplete(let reason) = event.kind, reason == "answer" {
                 next.failuresInARow = 0
@@ -213,6 +227,7 @@ public struct CompanionFacts: Sendable, Equatable {
             next.answerableQuestionID = nil
         case .failure(let kind):
             next.failure = kind
+            next.replyableTurnID = nil
             next.isTurnRunning = false
             next.retryableFailureID = event.takesRetry ? event.failureID : nil
             // Without an id every report is taken for a new failure, as an older mod's would be.
@@ -433,5 +448,42 @@ extension Session {
               let id = companion.retryableFailureID, let failedAt = companion.failedAt else { return nil }
         return RetryTarget(
             sessionID: conversation.lowercased(), failureID: id, failureClass: failure, failedAt: failedAt, failuresInARow: max(companion.failuresInARow, 1))
+    }
+}
+
+/// A session Porchlight may send the user's reply to: it finished a turn, sits idle, and its mod
+/// said it will submit a reply for that turn's end.
+public struct ReplyTarget: Sendable, Equatable {
+    /// The conversation's id, which is how the mod's requests are told apart.
+    public let sessionID: String
+    public let turnID: String
+
+    /// The longest reply the mod will submit.
+    public static let textLimit = 4000
+
+    public init(sessionID: String, turnID: String) {
+        self.sessionID = sessionID
+        self.turnID = turnID
+    }
+
+    /// The command that has the mod submit `text` as the user's words, or nil when there is
+    /// nothing to send or it is too long. The text is what the user typed and sent in
+    /// Porchlight: nothing here writes one.
+    public func command(text: String) -> Data? {
+        let reply = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !reply.isEmpty, reply.count <= Self.textLimit else { return nil }
+        let body: [String: Any] = ["v": CompanionEvent.version, "type": "reply", "id": turnID, "text": reply]
+        return try? JSONSerialization.data(withJSONObject: body, options: [.sortedKeys])
+    }
+}
+
+extension Session {
+    /// Where a reply typed in Porchlight can go, if this session is waiting for the user after a
+    /// finished turn. Not while it waits on a question, an approval or a failure: those have
+    /// their own answers.
+    public var replyTarget: ReplyTarget? {
+        guard needsHuman, let conversation = summary.sessionId, let companion, companion.waiting == nil, !companion.isTurnRunning,
+              companion.failure == nil, let id = companion.replyableTurnID else { return nil }
+        return ReplyTarget(sessionID: conversation.lowercased(), turnID: id)
     }
 }

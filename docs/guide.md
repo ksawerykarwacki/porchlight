@@ -53,6 +53,14 @@ the session came with one. A daily summary arrives at 09:00.
   What counts as such a failure is a list of patterns under `transientErrors` in `settings.json`.
   With the companion mod, the session reports the failure itself and Retry sends `continue`
   straight to it, without opening anything.
+- **Replying from the panel.** With the companion mod, a session that has finished a turn and
+  waits for you has a reply field under what it said. Type and press Return: your text goes to the
+  session as your message, and the session carries on. A reply Claude Code suggests can be put in
+  the field with "Use as reply"; it is sent only when you send it. If the session is not listening
+  (it was stopped, or has no mod), nothing is sent: your text is put on the clipboard so you can
+  open the session and paste it. A reply written for one turn is not sent to a later one.
+  Option-Return starts a new line. The text arrives as plain text: an `@file` mention or a pasted
+  image is not expanded the way it is when typed in the session, so open the session for those.
 - **Trying again by itself.** Off unless you turn it on in Settings ("Try again by itself", with
   the wait before the first try). Then, for a session with the companion mod that stopped on a
   rate limit, an overloaded API or a server error, Porchlight sends your resend line after that
