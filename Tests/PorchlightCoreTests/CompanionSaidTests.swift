@@ -60,6 +60,36 @@ private func session(_ reports: [[String: Any]], state: SessionState = .blocked)
         #expect(plain.said == nil && plain.saidEnding == nil)
     }
 
+    @Test func oneLineOfItIsTheLastParagraphWithoutItsMarks() throws {
+        #expect(InboxRow.lastLine(of: "Done.\n\nShall I **merge** `main`,\nor wait?") == "Shall I merge main, or wait?")
+        #expect(InboxRow.lastLine(of: "  \n\n ") == nil)
+        let row = InboxRow(session: try session([["kind": "turn.complete", "said": said]]), now: start)
+        #expect(row.saidLine == "The next work is layers 4 to 6. I'll start when you say which one.")
+        #expect(InboxRow(session: Session(summary: SessionSummary(id: "a", name: "n", state: .blocked)), now: start).saidLine == nil)
+    }
+
+    @Test func aNotificationSaysWhatTheSessionSaidUnlessDetailsAreHidden() throws {
+        var waiting = try session([["kind": "turn.complete", "said": said]])
+        waiting.observedBlockedSince = start - 3600
+        var planner = ReminderPlanner(settings: ReminderSettings(digestMinute: nil), calendar: Calendar(identifier: .gregorian))
+        var state = ReminderState()
+        let reminder = try #require(planner.due(sessions: [waiting], state: &state, now: start).first)
+        #expect(reminder.body == "The next work is layers 4 to 6. I'll start when you say which one.")
+
+        // With details hidden, none of it: only that the session waits.
+        planner.settings.hideDetails = true
+        var fresh = ReminderState()
+        let hidden = try #require(planner.due(sessions: [waiting], state: &fresh, now: start).first)
+        #expect(hidden.body.hasPrefix("Waiting") && !hidden.body.contains("layers"))
+
+        // Without the mod's report the text is Claude Code's line, as before.
+        var plain = try session([])
+        plain.observedBlockedSince = start - 3600
+        planner.settings.hideDetails = false
+        var third = ReminderState()
+        #expect(planner.due(sessions: [plain], state: &third, now: start).first?.body == "which one.")
+    }
+
     @Test func theEndingIsTheLastParagraphsThatFit() {
         #expect(InboxRow.ending(of: "One.\n\nTwo.\n\nThree.") == "One.\n\nTwo.\n\nThree.")
         let long = String(repeating: "word ", count: 80).trimmingCharacters(in: .whitespaces)

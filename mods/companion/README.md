@@ -52,7 +52,9 @@ replies but the end of the last one.
 
 That end is sent so the panel can show what a session is waiting to hear about; what Claude Code
 keeps of it for programs outside is often a few words cut mid-sentence. The app holds it in memory
-until the session's next turn starts. It is not logged and not written to disk.
+until the session's next turn starts. It is not logged and not written to disk. Its last paragraph
+is the text of the session's notification, unless question text is turned off in Porchlight's
+Settings.
 
 The app sends the mod one thing only: the option you chose and sent for an open question, with that
 question's text and the id the mod gave that asking. While such a question is open the mod keeps

@@ -34,6 +34,9 @@ public struct InboxRow: Sendable, Equatable, Identifiable {
     /// `detail`, which is then only a fragment of it. `saidEnding` is its last paragraph or two.
     public let said: String?
     public let saidEnding: String?
+    /// The last paragraph of `said` as one plain line: what the session asks, for places with
+    /// room for a line (the palette's list, a notification).
+    public let saidLine: String?
     /// Where a waiting session stands, when that says more than `detail` does. Not for an
     /// approval, which is about one command.
     public let context: String?
@@ -114,6 +117,7 @@ public struct InboxRow: Sendable, Equatable, Identifiable {
         self.detail = shown
         said = kind == .waiting ? session.lastSaid : nil
         saidEnding = said.map { Self.ending(of: $0) }
+        saidLine = said.flatMap { Self.lastLine(of: $0) }
         let standing = kind == .question || (kind == .waiting && said == nil) ? session.standing.map(Self.singleLine) : nil
         // Said once: not when it only repeats the question.
         context = standing.flatMap { $0.caseInsensitiveCompare(shown ?? "") == .orderedSame ? nil : $0 }
@@ -133,6 +137,16 @@ public struct InboxRow: Sendable, Equatable, Identifiable {
     }
 
     /// Collapses whitespace so a multi-line question or command fits a row.
+
+    /// The last paragraph of a text on one line, without Markdown's marks. Nil when there is none.
+    public static func lastLine(of text: String) -> String? {
+        let paragraphs = text.components(separatedBy: "\n\n").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        guard let last = paragraphs.last else { return nil }
+        let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace, failurePolicy: .returnPartiallyParsedIfPossible)
+        let plain = (try? AttributedString(markdown: last, options: options)).map { String($0.characters) } ?? last
+        let line = singleLine(plain)
+        return line.isEmpty ? nil : line
+    }
 
     /// The last paragraphs of a text that fit in `limit` characters: at least the last one, cut
     /// from the front at a word if it is longer on its own.

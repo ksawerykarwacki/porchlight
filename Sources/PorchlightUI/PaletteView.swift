@@ -672,7 +672,7 @@ struct PaletteSessionRow: View {
     /// What the session wants, or what it is doing.
     var subtitle: String {
         switch row.kind {
-        case .question, .approval, .waiting: row.detail ?? "Waiting for you"
+        case .question, .approval, .waiting: row.saidLine ?? row.detail ?? "Waiting for you"
         case .working: "Working"
         case .done: "Done"
         case .unknown: "State unknown"
@@ -699,11 +699,18 @@ struct PaletteSessionRow: View {
                         .foregroundStyle(.tertiary)
                         .lineLimit(1)
                 }
-                Text(subtitle)
-                    .font(.system(size: 12))
-                    .foregroundStyle(answers ? .primary : .secondary)
-                    .lineLimit(answers ? 4 : 1)
-                    .fixedSize(horizontal: false, vertical: true)
+                if isSelected, let ending = row.saidEnding {
+                    // The selected session's last words, as the panel shows them: enough to
+                    // decide whether to open it.
+                    SaidText(text: ending, size: 12)
+                        .padding(.top, 1)
+                } else {
+                    Text(subtitle)
+                        .font(.system(size: 12))
+                        .foregroundStyle(answers ? .primary : .secondary)
+                        .lineLimit(answers ? 4 : 1)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 if answers {
                     // Side by side while they fit, one under another when the labels are long.
                     ViewThatFits(in: .horizontal) {
@@ -726,7 +733,7 @@ struct PaletteSessionRow: View {
             }
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, answers ? 9 : 0)
+        .padding(.vertical, answers || (isSelected && row.saidEnding != nil) ? 9 : 0)
         .frame(minHeight: 46)
         .background(
             RoundedRectangle(cornerRadius: PaletteSurface.radius - 12, style: .continuous)
