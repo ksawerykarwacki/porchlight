@@ -116,6 +116,35 @@ import Testing
         #expect(bare.model.step == .folder && bareCalls.copied.isEmpty && bareCalls.opened.isEmpty)
     }
 
+    @Test func anOpenPaletteFollowsTheSessions() async throws {
+        let (harness, _) = try await harness(try Self.row())
+        let model = harness.model
+        #expect(model.selectedSession?.reply != nil)
+        // The session was replied to and is working again: the list is read anew and shows it,
+        // with the selection still on that session.
+        let working = InboxRow(
+            session: Session(summary: SessionSummary(id: "22222222", sessionId: Self.conversation, name: "release", cwd: "/Users/u/code/docs", kind: "background", state: .working)),
+            now: PaletteHarness.now)
+        harness.probe.rows = [working]
+        await model.sessionsChanged()
+        #expect(model.selectedSession?.id == "22222222" && model.selectedSession?.kind == .working && model.selectedSession?.reply == nil)
+
+        // It left the list altogether: the selection falls on what is there, and nothing pends.
+        harness.probe.rows = []
+        await model.sessionsChanged()
+        #expect(model.selectedSession == nil && model.pendingControl == nil && model.pendingAnswer == nil)
+
+        // While a reply is being written the step is left alone.
+        harness.probe.rows = [try Self.row()]
+        await model.sessionsChanged()
+        if let position = model.items.firstIndex(where: { $0.id == "session:22222222" }) { model.moveSelection(by: position - model.selection) }
+        model.replyOrCopySelected()
+        model.setReplyText("Yes.")
+        harness.probe.rows = []
+        await model.sessionsChanged()
+        #expect(model.step == .reply && model.replyText == "Yes." && model.replyRow?.id == "22222222")
+    }
+
     func height(_ model: PaletteModel, named name: String) throws -> Int {
         let view = PaletteView(model: model, hover: HoverTracker(), drawsFields: false)
         let renderer = ImageRenderer(content: view.padding(12).background(Color.white).environment(\.colorScheme, .light))

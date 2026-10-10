@@ -363,6 +363,27 @@ public final class PaletteModel {
         await reload()
     }
 
+    /// The sessions were read again while the palette is open: its list follows, so a session
+    /// that was just answered or replied to stops showing as waiting. The selection stays on the
+    /// same thing when that is still listed; a choice not yet sent stays with it.
+    public func sessionsChanged() async {
+        guard step == .folder else { return }
+        let fresh = await services.sessions()
+        guard fresh != sessions else { return }
+        let selected = selectedItem?.id
+        sessions = fresh
+        rank()
+        if let selected, let position = items.firstIndex(where: { $0.id == selected }) {
+            selection = position
+        } else {
+            // What was selected is gone from the list: nothing about it is left pending.
+            pendingControl = nil
+            pendingAnswer = nil
+            showsWholeSaid = false
+        }
+        if let pending = pendingAnswer, selectedSession?.answerID != pending.questionID { pendingAnswer = nil }
+    }
+
     private func reload() async {
         // The sessions come from memory, so they are on screen before the disk has been searched.
         sessions = await services.sessions()

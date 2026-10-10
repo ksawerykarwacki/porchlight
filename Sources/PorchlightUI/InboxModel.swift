@@ -186,6 +186,10 @@ public final class InboxModel {
         return (false, copied ? "\(session.name) is not listening. Your reply is on the clipboard: open the session and paste it." : "\(session.name) is not listening. Open the session and send your reply there.")
     }
 
+    /// Called each time the sessions were read again. For what shows them elsewhere while it is
+    /// open (the palette), so that it does not keep a list from the moment it opened.
+    public var onSessionsRead: (() -> Void)?
+
     /// Rows whose last reply is shown whole instead of only its ending.
     public private(set) var expandedSaid: Set<String> = []
 
@@ -349,6 +353,7 @@ public final class InboxModel {
             }
         }
         sendDueRetries()
+        onSessionsRead?()
     }
 
     public func setPrefersAgentView(_ value: Bool) {
