@@ -127,9 +127,14 @@ public final class InboxModel {
         replyDraftTurns[sessionID] = text.isEmpty ? nil : target.turnID
     }
 
-    /// Puts the reply Claude Code suggests into the field, for the user to change or send.
+    /// Puts the reply Claude Code suggests into the field, for the user to change or send. Only
+    /// into an empty field: what the user has typed is never replaced.
     public func useSuggestedReply(sessionID: String) {
         guard let suggested = snapshot.sessions.first(where: { $0.id == sessionID })?.suggestedReply else { return }
+        guard (replyDrafts[sessionID] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            show("The reply field already has text; clear it to use the suggestion")
+            return
+        }
         setReplyDraft(sessionID: sessionID, suggested)
     }
 

@@ -172,6 +172,13 @@ import Testing
         try world.show(suggested: "Yes, merge it.")
         world.inbox.useSuggestedReply(sessionID: "22222222")
         #expect(world.inbox.replyDrafts["22222222"] == "Yes, merge it." && world.sent.isEmpty)
+        // What the user typed is never replaced by it.
+        world.inbox.setReplyDraft(sessionID: "22222222", "No, wait for review.")
+        world.inbox.useSuggestedReply(sessionID: "22222222")
+        #expect(world.inbox.replyDrafts["22222222"] == "No, wait for review.")
+        #expect(world.inbox.notice == "The reply field already has text; clear it to use the suggestion")
+        world.inbox.setReplyDraft(sessionID: "22222222", "")
+        world.inbox.useSuggestedReply(sessionID: "22222222")
         world.inbox.sendReply(sessionID: "22222222")
         #expect(world.sent.map { $0["text"] as? String } == ["Yes, merge it."])
     }

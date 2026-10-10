@@ -21,7 +21,8 @@ in a row at most. The line arrives in the session marked as sent by this mod, no
 
 And you can reply from Porchlight. When a session has finished a turn and waits for you, the panel
 has a field under what it said: type, press Return, and the mod submits your text to the session as
-your own message. Claude Code's transcript notes that it came through this mod.
+your own message. Claude Code's transcript notes that it came through this mod, and an `@file`
+mention in it is not expanded as it would be if you typed it in the session.
 
 **The mod never chooses.** It passes on only an option you clicked and sent in Porchlight, only for
 the question that is open, and only if it is one of that question's own options. It submits a retry only on

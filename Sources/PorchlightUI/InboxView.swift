@@ -960,7 +960,7 @@ struct ReplyField: View {
             .buttonStyle(.plain)
             .disabled(isEmpty)
             .onHover { hover.set(id, $0) }
-            .help("Send this to the session as your reply")
+            .help("Send this to the session as your reply (Return; Option-Return for a new line)")
         }
         .padding(.horizontal, 9)
         .padding(.vertical, 5)
