@@ -51,7 +51,7 @@ Every side effect is passed in as a closure or protocol (the `claude` runner, th
 - **Nothing that destroys work happens without the user's explicit answer.** `claude rm` is run plain; `--discard-unpushed` and `--force-remove-worktree` are passed only with the value Claude Code printed in its own refusal, after a second confirmation.
 - **The login shell's environment is passed on, never kept.** The app takes it on at launch (`ShellEnvironment`) so that what it starts has the user's `PATH`. It holds secrets: do not log it, write it to disk, or print values in a test or a pull request.
 - **The companion's secret is never logged or printed**, and nothing is named after "session token": the credentials test reads every source file for such words.
-- **What a session said is shown and then forgotten.** The companion mod sends the end of a turn's last reply (`CompanionFacts.lastSaid`). It lives in memory until the session's next turn: never in the activity log, a notification, `settings.json`, a test's output or `CompanionEvent.line`.
+- **What a session said is shown and then forgotten.** The companion mod sends the end of a turn's last reply (`CompanionFacts.lastSaid`). It lives in memory until the session's next turn: never in the activity log, `settings.json`, a test's output or `CompanionEvent.line`. Its last paragraph is a notification's text only where the question would be (`hideDetails` off); macOS then keeps it in Notification Centre.
 - **Never change a process-wide setting to get a file's mode right** (`umask`): other threads make files meanwhile. Close the folder, then set the file's mode.
 - **No attribution lines**: no `Co-Authored-By` trailers, no "Generated with" in pull requests.
 - The product's name never contains "Claude".

@@ -68,6 +68,37 @@ import Testing
         #expect(String(SaidText.styled("2 * 3 * 4 and a lone ` tick").characters).contains("lone"))
     }
 
+    @Test func thePaletteShowsOneLineAndOpensTheSelectedRow() async throws {
+        let harness = try PaletteHarness()
+        let row = InboxRow(session: try #require(try snapshot().sessions.first), now: Date())
+        harness.probe.rows = [row]
+        await harness.model.begin()
+        let model = harness.model
+        #expect(PaletteSessionRow(row: row, isSelected: false, hover: HoverTracker()) {}.subtitle == "The next work is layers 4 to 6 (automatic retry, approvals, in-session extras). I'll start when you say which one.")
+
+        func height(named name: String) throws -> Int {
+            let view = PaletteView(model: model, hover: HoverTracker(), drawsFields: false)
+            let renderer = ImageRenderer(content: view.padding(12).background(Color.white).environment(\.colorScheme, .light))
+            renderer.scale = 2
+            let image = try #require(renderer.nsImage)
+            let tiff = try #require(image.tiffRepresentation)
+            let bitmap = try #require(NSBitmapImageRep(data: tiff))
+            if let directory = ProcessInfo.processInfo.environment["PORCHLIGHT_SNAPSHOT_DIR"] {
+                let url = URL(fileURLWithPath: directory)
+                try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+                try #require(bitmap.representation(using: .png, properties: [:])).write(to: url.appendingPathComponent("\(name).png"))
+            }
+            return bitmap.pixelsHigh
+        }
+        // The session is first in the list and so selected: its row is open. Moved off it, closed.
+        #expect(model.selectedSession?.id == "22222222")
+        let open = try height(named: "palette-said-selected")
+        model.moveSelection(by: 1)
+        #expect(model.selectedSession == nil)
+        let closed = try height(named: "palette-said-unselected")
+        #expect(open > closed + 60)
+    }
+
     @Test func theModelRemembersWhichRowsAreOpen() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("porchlight-said-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

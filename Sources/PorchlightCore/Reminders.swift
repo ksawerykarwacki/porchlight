@@ -363,7 +363,9 @@ public struct ReminderPlanner: Sendable {
         default: fallback = "Waiting\(age) for your input"
         }
         var body = fallback
-        if !settings.hideDetails, let detail = row.detail {
+        if !settings.hideDetails, let detail = row.saidLine ?? row.detail {
+            // What the session said last, where the mod reported it: Claude Code's own line is
+            // only a fragment of that.
             body = row.kind == .approval ? "Approve \(row.tool ?? "tool"): \(detail)" : detail
         }
         return Reminder(

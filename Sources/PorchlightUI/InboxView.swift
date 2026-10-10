@@ -861,6 +861,7 @@ struct StatusLamp: View {
 /// What a session said, with its emphasis and code drawn as such and its lines kept.
 struct SaidText: View {
     let text: String
+    var size: CGFloat = 12.5
 
     static func styled(_ text: String) -> AttributedString {
         let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace, failurePolicy: .returnPartiallyParsedIfPossible)
@@ -872,7 +873,7 @@ struct SaidText: View {
         VStack(alignment: .leading, spacing: 5) {
             ForEach(Array(text.components(separatedBy: "\n\n").enumerated()), id: \.offset) { _, paragraph in
                 Text(Self.styled(paragraph))
-                    .font(.system(size: 12.5))
+                    .font(.system(size: size))
                     .lineSpacing(1.5)
                     .fixedSize(horizontal: false, vertical: true)
             }
