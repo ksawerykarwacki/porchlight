@@ -257,6 +257,7 @@ public final class InboxModel {
             companion?.keep(only: Set(snapshot.sessions.compactMap { $0.summary.sessionId?.lowercased() }))
         }
         self.snapshot = snapshot
+        sendDueRetries()
     }
 
     public func setPrefersAgentView(_ value: Bool) {
@@ -665,10 +666,70 @@ public final class InboxModel {
     /// Opens a session that stopped on a passing failure and puts the line to resend on the
     /// clipboard. Judged again here, from the session as it is now: a session that has moved on
     /// or is asking something is left alone, whatever the row showed.
+    /// Failures the user said not to retry by itself, by the failure's id.
+    public private(set) var cancelledRetries: Set<String> = []
+    /// When a retry was last sent for a failure, and whether the mod took it. One that was taken
+    /// is not sent again; one that was only queued is, once the queue has dropped it.
+    private var sentRetries: [String: (at: Date, taken: Bool)] = [:]
+    /// Longer than the listener keeps a command nobody came for.
+    static let resendQueuedRetryAfter: TimeInterval = 90
+
+    /// Stops the automatic retry of the failure this session is stopped on. Retry still works.
+    public func cancelRetry(sessionID: String) {
+        guard let id = snapshot.sessions.first(where: { $0.id == sessionID })?.retryTarget?.failureID else { return }
+        cancelledRetries.insert(id)
+    }
+
+    /// Turns automatic retry on, with this wait before the first one, or off with nil.
+    public func setAutoRetry(after: TimeInterval?) {
+        var settings = Settings.load(from: settingsURL)
+        var transient = settings.transientErrors ?? TransientErrors()
+        let attempts = transient.autoRetry?.attempts ?? AutoRetry.defaultAttempts
+        transient.autoRetry = after.map { AutoRetry(after: $0, attempts: attempts) }
+        settings.transientErrors = transient
+        do {
+            try settings.save(to: settingsURL)
+            transientErrors = transient
+            log?.record("automatic retry: \(after.map { "on, after \(Int($0)) s" } ?? "off")")
+            sendDueRetries()
+        } catch {
+            show("Could not save the settings")
+        }
+    }
+
+    /// Sends the retries that are due, each once. Only with automatic retry turned on, only for
+    /// a failure the session's mod reported as one that may clear, and only the user's own line.
+    func sendDueRetries() {
+        let current = Set(snapshot.sessions.compactMap { $0.retryTarget?.failureID })
+        sentRetries = sentRetries.filter { current.contains($0.key) }
+        cancelledRetries.formIntersection(current)
+        guard let auto = transientErrors.autoRetry, let sendToCompanion else { return }
+        let now = clock()
+        for session in snapshot.sessions {
+            guard let target = session.retryTarget, !cancelledRetries.contains(target.failureID),
+                  case .scheduled(let at, let attempt, let of) = auto.standing(for: target), at <= now else { continue }
+            if let sent = sentRetries[target.failureID], sent.taken || now.timeIntervalSince(sent.at) < Self.resendQueuedRetryAfter { continue }
+            guard let command = target.command(text: transientErrors.resend) else { continue }
+            let taken = sendToCompanion(command, target.sessionID)
+            sentRetries[target.failureID] = (now, taken)
+            // The count and the class, never the line that was sent.
+            log?.record("automatic retry \(session.id): attempt \(attempt) of \(of) after \(target.failureClass), \(taken ? "taken" : "queued")")
+        }
+    }
+
     public func retry(sessionID: String) {
         guard let session = snapshot.sessions.first(where: { $0.id == sessionID }),
-              transientErrors.isTransientFailure(session) else {
+              transientErrors.offersRetry(session) else {
             show("That session is not waiting on something that can be retried")
+            return
+        }
+        // Through the session's mod when it is there to take it: the user pressed Retry, and
+        // the line is theirs. Otherwise as before: the session opened, the line on the clipboard.
+        if let target = session.retryTarget, let sendToCompanion, let command = target.command(text: transientErrors.resend),
+           sendToCompanion(command, target.sessionID) {
+            sentRetries[target.failureID] = (clock(), true)
+            log?.record("retry \(sessionID): sent through the mod after \(target.failureClass)")
+            show("Sent \u{201C}\(transientErrors.resend)\u{201D} to \(session.name)")
             return
         }
         guard let claude = locator.locate() else {

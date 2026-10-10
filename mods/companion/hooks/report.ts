@@ -13,6 +13,7 @@ export type Question = { question: string; options: { label: string; description
 export type Open =
   | { kind: 'question'; questions: Question[]; id?: string; takesAnswer?: boolean }
   | { kind: 'permission'; tool: string; detail: string }
+  | { kind: 'failure'; error: string; id: string; takesRetry: boolean }
   | undefined
 
 export type Report =
@@ -20,7 +21,7 @@ export type Report =
   | { kind: 'turn.complete'; reason?: string; said?: string }
   | { kind: 'question'; questions: Question[]; id?: string; can?: string[] }
   | { kind: 'permission'; tool: string; detail: string }
-  | { kind: 'failure'; error: string }
+  | { kind: 'failure'; error: string; id?: string; can?: string[] }
 
 const cut = (text: unknown): string => String(text ?? '').slice(0, TEXT_LIMIT)
 
@@ -64,6 +65,7 @@ export const bodyOf = (session: string, report: Report): string => JSON.stringif
 export const reportOf = (open: Open): Report | undefined => {
   if (open === undefined) return undefined
   if (open.kind === 'permission') return { kind: 'permission', tool: open.tool, detail: open.detail }
+  if (open.kind === 'failure') return { kind: 'failure', error: open.error, id: open.id, ...(open.takesRetry ? { can: ['retry'] } : {}) }
   return { kind: 'question', questions: open.questions, ...(open.id ? { id: open.id } : {}), ...(open.takesAnswer ? { can: ['answer'] } : {}) }
 }
 
@@ -119,4 +121,29 @@ export const tailOf = (text: unknown, limit = SAID_LIMIT): string => {
     if (at >= 0 && at < limit / 2) return `…${tail.slice(at).trimStart()}`
   }
   return `…${tail}`
+}
+
+/** The API's classes for a failure that may clear by itself; any other needs a person. */
+export const CLEARING = ['rate_limit', 'overloaded', 'server_error']
+
+/** Whether trying again can help after a failure of this class. */
+export const mayClear = (error: unknown): boolean => typeof error === 'string' && CLEARING.includes(error)
+
+/** The longest line the app may have submitted as a retry. */
+export const RETRY_TEXT_LIMIT = 200
+
+/**
+ * The line to submit from a command of the app, or undefined when the command is not a retry of
+ * exactly this failure with one short line of text.
+ */
+export const retryOf = (text: string, id: string): string | undefined => {
+  try {
+    const command = JSON.parse(text) as { v?: unknown; type?: unknown; id?: unknown; text?: unknown }
+    if (command.v !== VERSION || command.type !== 'retry' || command.id !== id || typeof command.text !== 'string') return undefined
+    const line = command.text.trim()
+    if (line === '' || line.length > RETRY_TEXT_LIMIT || /[\r\n]/.test(line)) return undefined
+    return line
+  } catch {
+    return undefined
+  }
 }

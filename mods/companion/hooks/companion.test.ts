@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { answerOf, bodyOf, descriptorOf, detailOf, questionsOf, reportOf, SAID_LIMIT, tailOf, takesAnswer, TEXT_LIMIT } from './report'
+import { answerOf, bodyOf, descriptorOf, detailOf, mayClear, questionsOf, reportOf, retryOf, SAID_LIMIT, tailOf, takesAnswer, TEXT_LIMIT } from './report'
 
 const SESSION = '22222222-0000-4000-8000-000000000000'
 const DESCRIPTOR = JSON.stringify({ v: 1, socket: '/Users/u/Library/Application Support/Porchlight/companion.sock', secret: 'abc123' })
@@ -74,11 +74,11 @@ const machine = (on: any, start: { descriptor?: string; status?: number | 'hang'
       const ask = state.ask[Math.min(state.asks, state.ask.length - 1)]
       state.asks += 1
       if (ask === 'hold') return new Promise(() => {})
-      // The request for an answer may be made before the report of the question has landed;
-      // the app only has something to say once it knows the question.
+      // The request may be made before the report of the question or the failure has landed;
+      // the app only has something to say once it knows of it.
       return new Promise(resolve => {
         const answer = () => {
-          const question = [...state.posts].reverse().find(post => post.body.kind === 'question')?.body
+          const question = [...state.posts].reverse().find(post => post.body.kind === 'question' || post.body.kind === 'failure')?.body
           if (question === undefined) return void setTimeout(answer, 5)
           resolve({ value: { ...ask(question), ok: true, headers: {} } })
         }
@@ -196,12 +196,19 @@ test('a tool finishing beside an open approval does not end the wait; the approv
   expect(state.posts.map(post => post.body.kind)).toEqual(['permission', 'resumed'])
 })
 
-test('a failed turn is reported with its class', async ($: any, on: any) => {
+test('a failed turn is reported with its class, its own id, and whether trying again can help', async ($: any, on: any) => {
   const state = machine(on)
   on('classic.StopFailure', () => ({}))
   await $.classic.StopFailure({ error: 'rate_limit' })
   await settle($)
-  expect(state.posts.map(post => post.body)).toEqual([{ v: 1, session: SESSION, kind: 'failure', error: 'rate_limit' }])
+  await $.classic.StopFailure({ error: 'billing_error' })
+  await settle($)
+  const [first, second] = state.posts.map(post => post.body)
+  expect({ ...first, id: '' }).toEqual({ v: 1, session: SESSION, kind: 'failure', error: 'rate_limit', id: '', can: ['retry'] })
+  expect(/^f\d+-\d+$/.test(first.id)).toBe(true)
+  // A failure that needs a person takes no retry, and the app is not asked for one.
+  expect({ ...second, id: '' }).toEqual({ v: 1, session: SESSION, kind: 'failure', error: 'billing_error', id: '' })
+  expect(second.id).not.toBe(first.id)
 })
 
 test('what the app may answer is one question with options of which one is picked', () => {
@@ -319,4 +326,67 @@ test('a turn that said nothing is reported without words, and a subagent\'s turn
   await $.turn.complete(turnEnd({ answer: 'A subagent\'s report.', agentId: 'a1' }))
   await settle($)
   expect(state.posts.map(post => post.body)).toEqual([{ v: 1, session: SESSION, kind: 'turn.complete', reason: 'aborted' }])
+})
+
+test('a retry is one short line for exactly this failure', () => {
+  expect(mayClear('rate_limit') && mayClear('overloaded') && mayClear('server_error')).toBe(true)
+  for (const other of ['authentication_failed', 'billing_error', 'invalid_request', 'model_not_found', 'unknown', '', undefined]) expect(mayClear(other)).toBe(false)
+
+  const command = (fields: object) => JSON.stringify({ v: 1, type: 'retry', id: 'f1-5', text: 'continue', ...fields })
+  expect(retryOf(command({}), 'f1-5')).toBe('continue')
+  expect(retryOf(command({ text: '  please continue ' }), 'f1-5')).toBe('please continue')
+  expect(retryOf(command({}), 'f2-9')).toBe(undefined)
+  expect(retryOf(command({ type: 'answer' }), 'f1-5')).toBe(undefined)
+  expect(retryOf(command({ v: 2 }), 'f1-5')).toBe(undefined)
+  expect(retryOf(command({ text: '' }), 'f1-5')).toBe(undefined)
+  expect(retryOf(command({ text: 7 }), 'f1-5')).toBe(undefined)
+  expect(retryOf(command({ text: 'two\nlines' }), 'f1-5')).toBe(undefined)
+  expect(retryOf(command({ text: 'x'.repeat(201) }), 'f1-5')).toBe(undefined)
+  expect(retryOf('not json', 'f1-5')).toBe(undefined)
+})
+
+/** The app's retry for the failure last reported, or a changed one. */
+const again = (change: object = {}) => (failure: any) => ({
+  status: 200,
+  text: JSON.stringify({ v: 1, type: 'retry', id: failure.id, text: 'continue', ...change }),
+})
+
+/** A machine for a session that fails, with what the mod then submitted. */
+const failing = (on: any, ask: Ask[]) => {
+  const state = machine(on, { ask })
+  const submitted: any[] = []
+  on('classic.StopFailure', () => ({}))
+  on('turn.complete', (_$: any, e: any) => ({ text: e.answer }))
+  on('prompt.submit', (_$: any, e: any) => {
+    submitted.push({ text: e.text, asUser: e.asUser })
+    return { text: e.text }
+  })
+  return { state, submitted }
+}
+
+test('on the app\'s word the line is submitted once, as the mod\'s own prompt', async ($: any, on: any) => {
+  const { state, submitted } = failing(on, [again(), 'hold'])
+  await $.classic.StopFailure({ error: 'overloaded' })
+  // The failed turn ends after its failure: that does not end the wait for a retry.
+  await $.turn.complete({ answer: '', durationMs: 5, isAborted: false, turnId: 't1', reason: 'error' })
+  await settle($)
+  expect(submitted).toEqual([{ text: 'continue', asUser: undefined }])
+  expect(state.asks).toBe(1)
+})
+
+test('a retry for another failure, a malformed one, or one with more than a line submits nothing', async ($: any, on: any) => {
+  const { state, submitted } = failing(on, [again({ id: 'f0-1' }), again({ text: 'a\nb' }), () => ({ status: 200, text: 'not json' }), again({ type: 'answer' }), 'hold'])
+  await $.classic.StopFailure({ error: 'server_error' })
+  await settle($)
+  expect(state.asks).toBe(5)
+  expect(submitted).toEqual([])
+})
+
+test('a failure that needs a person is never retried, and a new turn ends the wait', async ($: any, on: any) => {
+  const { state, submitted } = failing(on, [again()])
+  on('turn.start', () => ({}))
+  await $.classic.StopFailure({ error: 'authentication_failed' })
+  await settle($)
+  expect(state.asks).toBe(0)
+  expect(submitted).toEqual([])
 })

@@ -13,7 +13,7 @@
     {
       "name": "porchlight-companion",
       "source": "./mods/companion",
-      "description": "Tells the Porchlight app the moment a session asks something, wants an approval, finishes or fails, and hands the session the answer you pick in Porchlight for a question it asked."
+      "description": "Tells the Porchlight app the moment a session asks something, wants an approval, finishes or fails; hands the session the answer you pick in Porchlight; and tries again after a passing failure when you or your settings say so."
     }
   ]
 }
