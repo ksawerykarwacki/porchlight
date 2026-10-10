@@ -19,10 +19,15 @@ resend line, `continue` unless you changed it, without opening the session. If y
 "Try again by itself" in Porchlight's Settings, the app does that for you after a wait, a few times
 in a row at most. The line arrives in the session marked as sent by this mod, not as typed by you.
 
+And you can reply from Porchlight. When a session has finished a turn and waits for you, the panel
+has a field under what it said: type, press Return, and the mod submits your text to the session as
+your own message. Claude Code's transcript notes that it came through this mod.
+
 **The mod never chooses.** It passes on only an option you clicked and sent in Porchlight, only for
 the question that is open, and only if it is one of that question's own options. It submits a retry only on
 the app's word, only for the failure the session is stopped on, and only one short line. It
-approves nothing and types nothing. Questions with several parts, a choice of several, or a typed answer are
+submits a reply only when you sent one from Porchlight, only to the turn it was written for, and
+only while the session is still idle. It approves nothing and writes nothing of its own. Questions with several parts, a choice of several, or a typed answer are
 shown in the panel and answered in the session as before. Every other hook hands back exactly what
 Claude Code would have done without it.
 
@@ -64,9 +69,10 @@ is the text of the session's notification, unless question text is turned off in
 Settings.
 
 The app sends the mod one thing only: the option you chose and sent for an open question, with that
-question's text and the id the mod gave that asking; and, for a retry, your resend line with the
-id of the failure. While a question is open, or a failure that may clear, the mod keeps one request
-to the app waiting.
+question's text and the id the mod gave that asking; for a retry, your resend line with the id of
+the failure; and a reply you typed, with the id of the turn it answers. While a question is open, a
+failure that may clear, or the session sits idle after a turn, the mod keeps one request to the app
+waiting.
 
 Every report carries a secret the app writes into a file only you can read, new each time the app
 starts. Without the app running there is nothing to send to, and the mod does nothing.

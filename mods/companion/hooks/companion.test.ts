@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { answerOf, bodyOf, descriptorOf, detailOf, isNewApp, mayClear, questionsOf, reportOf, retryOf, SAID_LIMIT, tailOf, takesAnswer, TEXT_LIMIT } from './report'
+import { answerOf, bodyOf, descriptorOf, detailOf, isNewApp, mayClear, questionsOf, replyOf, reportOf, retryOf, SAID_LIMIT, tailOf, takesAnswer, TEXT_LIMIT } from './report'
 
 const SESSION = '22222222-0000-4000-8000-000000000000'
 const DESCRIPTOR = JSON.stringify({ v: 1, socket: '/Users/u/Library/Application Support/Porchlight/companion.sock', secret: 'abc123' })
@@ -78,7 +78,7 @@ const machine = (on: any, start: { descriptor?: string; status?: number | 'hang'
       // the app only has something to say once it knows of it.
       return new Promise(resolve => {
         const answer = () => {
-          const question = [...state.posts].reverse().find(post => post.body.kind === 'question' || post.body.kind === 'failure')?.body
+          const question = [...state.posts].reverse().find(post => post.body.kind === 'question' || post.body.kind === 'failure' || (post.body.kind === 'turn.complete' && post.body.id))?.body
           if (question === undefined) return void setTimeout(answer, 5)
           resolve({ value: { ...ask(question), ok: true, headers: {} } })
         }
@@ -315,7 +315,9 @@ test('the end of a turn is reported with the end of what the session said', asyn
   on('turn.complete', (_$: any, e: any) => ({ text: e.answer }))
   await $.turn.complete(turnEnd({ answer: 'All done.\n\nShall I merge? ' }))
   await settle($)
-  expect(state.posts.map(post => post.body)).toEqual([{ v: 1, session: SESSION, kind: 'turn.complete', reason: 'answer', said: 'All done.\n\nShall I merge?' }])
+  const [{ id, ...ended }] = state.posts.map(post => post.body)
+  expect(ended).toEqual({ v: 1, session: SESSION, kind: 'turn.complete', reason: 'answer', said: 'All done.\n\nShall I merge?', can: ['reply'] })
+  expect(/^t\d+-\d+$/.test(id)).toBe(true)
 })
 
 test('a turn that said nothing is reported without words, and a subagent\'s turn not at all', async ($: any, on: any) => {
@@ -325,7 +327,7 @@ test('a turn that said nothing is reported without words, and a subagent\'s turn
   await settle($)
   await $.turn.complete(turnEnd({ answer: 'A subagent\'s report.', agentId: 'a1' }))
   await settle($)
-  expect(state.posts.map(post => post.body)).toEqual([{ v: 1, session: SESSION, kind: 'turn.complete', reason: 'aborted' }])
+  expect(state.posts.map(post => ({ ...post.body, id: '' }))).toEqual([{ v: 1, session: SESSION, kind: 'turn.complete', reason: 'aborted', id: '', can: ['reply'] }])
 })
 
 test('a retry is one short line for exactly this failure', () => {
@@ -358,7 +360,7 @@ const failing = (on: any, ask: Ask[]) => {
   on('classic.StopFailure', () => ({}))
   on('turn.complete', (_$: any, e: any) => ({ text: e.answer }))
   on('prompt.submit', (_$: any, e: any) => {
-    submitted.push({ text: e.text, asUser: e.asUser })
+    submitted.push({ text: e.text, asUser: e.origin?.asUser })
     return { text: e.text }
   })
   return { state, submitted }
@@ -399,4 +401,65 @@ test('a restarted app is one that has not been told', () => {
   // No app at all: nobody to tell.
   expect(isNewApp(told, undefined)).toBe(false)
   expect(isNewApp(undefined, undefined)).toBe(false)
+})
+
+test('a reply is the user\'s text for exactly this turn\'s end', () => {
+  const command = (fields: object) => JSON.stringify({ v: 1, type: 'reply', id: 't1-5', text: 'Yes, merge it.', ...fields })
+  expect(replyOf(command({}), 't1-5')).toBe('Yes, merge it.')
+  // Its lines are kept; only the ends are trimmed.
+  expect(replyOf(command({ text: '  Yes.\n\nAnd update the docs. ' }), 't1-5')).toBe('Yes.\n\nAnd update the docs.')
+  expect(replyOf(command({}), 't2-9')).toBe(undefined)
+  expect(replyOf(command({ type: 'retry' }), 't1-5')).toBe(undefined)
+  expect(replyOf(command({ v: 2 }), 't1-5')).toBe(undefined)
+  expect(replyOf(command({ text: '   ' }), 't1-5')).toBe(undefined)
+  expect(replyOf(command({ text: 7 }), 't1-5')).toBe(undefined)
+  expect(replyOf(command({ text: 'x'.repeat(4001) }), 't1-5')).toBe(undefined)
+  expect(replyOf('not json', 't1-5')).toBe(undefined)
+})
+
+/** The app's reply to the turn's end last reported, or a changed one. */
+const reply = (change: object = {}) => (ended: any) => ({
+  status: 200,
+  text: JSON.stringify({ v: 1, type: 'reply', id: ended.id, text: 'Yes, merge it.', ...change }),
+})
+
+/** A machine for a session that finishes turns, with what the mod then submitted. */
+const idling = (on: any, ask: Ask[]) => {
+  const state = machine(on, { ask })
+  const submitted: any[] = []
+  on('turn.complete', (_$: any, e: any) => ({ text: e.answer }))
+  on('turn.start', () => ({}))
+  on('classic.StopFailure', () => ({}))
+  on('prompt.submit', (_$: any, e: any) => {
+    submitted.push({ text: e.text, asUser: e.origin?.asUser })
+    return { text: e.text }
+  })
+  return { state, submitted }
+}
+
+test('a reply sent from the app is submitted once, as the user\'s own words', async ($: any, on: any) => {
+  const { state, submitted } = idling(on, [reply(), 'hold'])
+  await $.turn.complete(turnEnd({ answer: 'Shall I merge?' }))
+  await settle($)
+  expect(submitted).toEqual([{ text: 'Yes, merge it.', asUser: true }])
+  expect(state.asks).toBe(1)
+})
+
+test('a reply for another turn, a malformed one, or an empty one submits nothing', async ($: any, on: any) => {
+  const { state, submitted } = idling(on, [reply({ id: 't0-1' }), reply({ text: ' ' }), () => ({ status: 200, text: 'not json' }), reply({ type: 'retry' }), 'hold'])
+  await $.turn.complete(turnEnd({ answer: 'Shall I merge?' }))
+  await settle($)
+  expect(state.asks).toBe(5)
+  expect(submitted).toEqual([])
+})
+
+test('a turn that failed takes no reply, and neither does a subagent\'s', async ($: any, on: any) => {
+  const { state, submitted } = idling(on, [reply()])
+  await $.turn.complete(turnEnd({ reason: 'error' }))
+  await settle($)
+  await $.turn.complete(turnEnd({ answer: 'A report.', agentId: 'a1' }))
+  await settle($)
+  expect(state.posts.map(post => post.body)).toEqual([{ v: 1, session: SESSION, kind: 'turn.complete', reason: 'error' }])
+  expect(state.asks).toBe(0)
+  expect(submitted).toEqual([])
 })

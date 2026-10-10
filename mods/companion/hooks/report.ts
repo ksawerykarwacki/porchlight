@@ -18,7 +18,7 @@ export type Open =
 
 export type Report =
   | { kind: 'session.start' | 'session.end' | 'turn.start' | 'resumed' }
-  | { kind: 'turn.complete'; reason?: string; said?: string }
+  | { kind: 'turn.complete'; reason?: string; said?: string; id?: string; can?: string[] }
   | { kind: 'question'; questions: Question[]; id?: string; can?: string[] }
   | { kind: 'permission'; tool: string; detail: string }
   | { kind: 'failure'; error: string; id?: string; can?: string[] }
@@ -154,3 +154,23 @@ export const retryOf = (text: string, id: string): string | undefined => {
  */
 export const isNewApp = (known: { secret: string } | undefined, found: { secret: string } | undefined): boolean =>
   found !== undefined && (known === undefined || known.secret !== found.secret)
+
+/** The longest reply the app may have submitted. */
+export const REPLY_TEXT_LIMIT = 4000
+
+/**
+ * The reply to submit from a command of the app, or undefined when the command is not a reply to
+ * exactly this turn's end with some text of a sane length. The text is the user's, typed and
+ * sent in Porchlight; its lines are kept.
+ */
+export const replyOf = (text: string, id: string): string | undefined => {
+  try {
+    const command = JSON.parse(text) as { v?: unknown; type?: unknown; id?: unknown; text?: unknown }
+    if (command.v !== VERSION || command.type !== 'reply' || command.id !== id || typeof command.text !== 'string') return undefined
+    const reply = command.text.trim()
+    if (reply === '' || reply.length > REPLY_TEXT_LIMIT) return undefined
+    return reply
+  } catch {
+    return undefined
+  }
+}
