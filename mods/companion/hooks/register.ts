@@ -146,17 +146,22 @@ export const register: Register = on => {
   }).catch(passOn)
 
   // Every tool call passes here, so the app can be told when a question was answered or an
-  // approval given: the call that was waiting has come back.
+  // approval given: the call that was waiting has come back. Only that call clears what is open;
+  // another tool finishing beside it says nothing about the wait.
   on('tool.call', async ($: any, e: any, next: any) => {
-    if (String(e?.tool) === 'AskUserQuestion') {
+    const tool = String(e?.tool)
+    let asked: Open
+    if (tool === 'AskUserQuestion') {
       const questions = questionsOf(e)
       if (questions.length > 0) {
-        open = { kind: 'question', questions }
+        asked = { kind: 'question', questions }
+        open = asked
         void send($, { kind: 'question', questions })
       }
     }
     const result = await next(e)
-    if (open !== undefined) {
+    const wasMine = asked !== undefined ? open === asked : open?.kind === 'permission' && open.tool === tool
+    if (wasMine) {
       open = undefined
       void send($, { kind: 'resumed' })
     }

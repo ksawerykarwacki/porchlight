@@ -149,6 +149,19 @@ test('an approval being asked for is reported and its answer left to the dialog'
   expect(state.posts.length).toBe(1)
 })
 
+test('a tool finishing beside an open approval does not end the wait; the approved one does', async ($: any, on: any) => {
+  const state = machine(on)
+  on('classic.PermissionRequest', () => ({}))
+  on('tool.call', () => ({ result: { ok: true } }))
+  await $.classic.PermissionRequest({ tool_name: 'Bash', tool_input: { command: 'make deploy' } })
+  await $.tool.call({ tool: 'Read', file_path: 'a.md' })
+  await settle($)
+  expect(state.posts.map(post => post.body.kind)).toEqual(['permission'])
+  await $.tool.call({ tool: 'Bash', command: 'make deploy' })
+  await settle($)
+  expect(state.posts.map(post => post.body.kind)).toEqual(['permission', 'resumed'])
+})
+
 test('a failed turn is reported with its class', async ($: any, on: any) => {
   const state = machine(on)
   on('classic.StopFailure', () => ({}))
