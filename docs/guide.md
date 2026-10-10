@@ -228,6 +228,11 @@ Porchlight is local only: no account, no server, no telemetry. What it touches o
   on-device model through the `fm` tool and stays on your Mac.
 - **For a summary with Claude, it reads nothing itself:** Claude Code reads its own copy of the
   conversation, with every tool off and nothing saved.
+- **It listens on a private socket** (`companion.sock` in its own folder, or under `/tmp/porchlight-<uid>/`
+  when that path is too long) for reports from the optional companion mod. Only your user can open
+  it, every request must carry a secret from `companion.json`, which only you can read and which is
+  new each time the app starts, and nothing listens on the network. Without the mod nothing ever
+  connects.
 - **It writes only in its own folder**, `~/Library/Application Support/Porchlight/` (settings,
   reminders, pins, notes, a log), plus one Warp tab config when you open a session in Warp.
 

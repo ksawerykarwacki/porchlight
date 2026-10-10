@@ -30,11 +30,29 @@ public struct Session: Sendable, Equatable, Identifiable {
     public let job: JobState?
     /// When the store first saw this session blocked. Filled in by `SessionStore`.
     public var observedBlockedSince: Date?
+    /// What the companion mod reported about this session, when it has the mod. Filled in by
+    /// `SessionStore`.
+    public var companion: CompanionFacts?
 
-    public init(summary: SessionSummary, job: JobState? = nil, observedBlockedSince: Date? = nil) {
+    public init(summary: SessionSummary, job: JobState? = nil, observedBlockedSince: Date? = nil, companion: CompanionFacts? = nil) {
         self.summary = summary
         self.job = job
         self.observedBlockedSince = observedBlockedSince
+        self.companion = companion
+    }
+
+    /// How much later than the mod's report the job file may be written and still be about the
+    /// same wait. The mod is told as the question is asked; Claude Code writes its file a moment
+    /// after. A file later than this is about something the mod did not report.
+    static let reportLead: TimeInterval = 5
+
+    /// What the mod says the session is waiting on. Where the mod is present this is used in
+    /// place of the job file, which Claude Code calls "not a stable interface"; the file is the
+    /// fallback when the mod is absent, silent, or clearly behind.
+    private var reportedWaiting: CompanionFacts.Waiting? {
+        guard needsHuman, let companion, let waiting = companion.waiting else { return nil }
+        if let written = job?.updatedAt, let since = companion.waitingSince, written.timeIntervalSince(since) > Self.reportLead { return nil }
+        return waiting
     }
 
     public var id: String { summary.id }
@@ -44,8 +62,18 @@ public struct Session: Sendable, Equatable, Identifiable {
 
     /// What the session is waiting on. Only meaningful while blocked: the job file keeps the last
     /// `needs` around after the session moves on.
-    public var needs: Needs? { needsHuman ? job?.needs : nil }
-    public var questions: [JobState.Question] { needsHuman ? (job?.questions ?? []) : [] }
+    public var needs: Needs? {
+        switch reportedWaiting {
+        case .question(let questions)?: return questions.first.map { .question($0.question) } ?? (needsHuman ? job?.needs : nil)
+        case .permission(let tool, let detail)?: return .approval(tool: tool, detail: detail)
+        case nil: return needsHuman ? job?.needs : nil
+        }
+    }
+
+    public var questions: [JobState.Question] {
+        if case .question(let questions)? = reportedWaiting { return questions }
+        return needsHuman ? (job?.questions ?? []) : []
+    }
     public var suggestedReply: String? { needsHuman ? job?.suggestedReply : nil }
 
     /// When the session started waiting: the job file's last update if there is one, otherwise the

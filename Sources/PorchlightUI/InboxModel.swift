@@ -99,6 +99,14 @@ public final class InboxModel {
     }
     public var now: Date { clock() }
 
+    /// The companion mod's reports, when the app listens for them.
+    private let companion: CompanionHub?
+    /// Why the app is not listening for the mod, when it tried and could not.
+    public var companionProblem: String?
+    /// How many of the listed sessions have the mod, as of the last read.
+    public private(set) var companionSessions = 0
+    public var listensForCompanion: Bool { companion != nil && companionProblem == nil }
+
     public init(
         store: SessionStore = .live(),
         launcher: (any TerminalLauncher)? = nil,
@@ -107,10 +115,12 @@ public final class InboxModel {
         remindersURL: URL = ReminderState.fileURL(),
         pinsURL: URL? = nil,
         loginItem: LoginItem = .live(),
+        companion: CompanionHub? = nil,
         clock: @escaping @Sendable () -> Date = { Date() }
     ) {
         let settings = Settings.load(from: settingsURL)
         self.store = store
+        self.companion = companion
         // Next to the reminders file, so a test that passes its own folder never touches the real pins.
         let pinsURL = pinsURL ?? remindersURL.deletingLastPathComponent().appendingPathComponent("pins.json")
         self.pinsURL = pinsURL
@@ -184,6 +194,10 @@ public final class InboxModel {
 
     /// Replaces the sessions the model shows. The store calls this through `observe`.
     func apply(_ snapshot: StoreSnapshot) {
+        companionSessions = snapshot.sessions.filter { $0.companion != nil }.count
+        if snapshot.problem == nil {
+            companion?.keep(only: Set(snapshot.sessions.compactMap { $0.summary.sessionId?.lowercased() }))
+        }
         self.snapshot = snapshot
     }
 
@@ -241,7 +255,10 @@ public final class InboxModel {
     /// Starts polling and watching. Runs until the task is cancelled.
     public func run() async {
         async let observing: Void = observe()
-        async let refreshing: Void = RefreshLoop().run(store: store, triggers: [FSEventsChangeWatcher()])
+        // A report from the companion mod is a reason to read the sessions again at once.
+        var triggers: [any ChangeTrigger] = [FSEventsChangeWatcher()]
+        if let companion { triggers.append(companion) }
+        async let refreshing: Void = RefreshLoop().run(store: store, triggers: triggers)
         _ = await (observing, refreshing)
     }
 

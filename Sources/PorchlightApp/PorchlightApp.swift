@@ -13,6 +13,7 @@ struct PorchlightApp: App {
     private let updates: UpdateModel
     private let triage: TriageModel
     private let hotkey = GlobalHotkey()
+    private let companionListener: CompanionListener?
 
     init() {
         // Before anything is started: an app opened at login has almost no PATH, and Claude Code
@@ -23,7 +24,23 @@ struct PorchlightApp: App {
         updates.restart = { AppRestart.relaunch() }
         Task { await updates.run() }
         // A Homebrew install is started at login by Homebrew's service, not by the app itself.
-        let model = updates.installed == nil ? InboxModel() : InboxModel(loginItem: .unavailable)
+        // Listening before the first read, so a session that reports at once is not missed.
+        let hub = CompanionHub()
+        var listener: CompanionListener?
+        var companionProblem: String?
+        do {
+            let started = CompanionListener(hub: hub)
+            try started.start()
+            listener = started
+        } catch CompanionListener.StartFailure.alreadyRunning {
+            companionProblem = "another copy of Porchlight is already listening."
+        } catch {
+            companionProblem = "the socket could not be opened."
+        }
+        self.companionListener = listener
+        let store = SessionStore.live(companion: hub)
+        let model = updates.installed == nil ? InboxModel(store: store, companion: hub) : InboxModel(store: store, loginItem: .unavailable, companion: hub)
+        model.companionProblem = companionProblem
         self.model = model
         model.willOpenTerminal = { PanelWindowObserver.closePanelAndLetGo() }
         let settingsURL = Settings.fileURL()
@@ -108,7 +125,11 @@ struct PorchlightApp: App {
                     PanelWindowObserver.closePanel()
                     palette.show(notes: true)
                 },
-                quit: { NSApplication.shared.terminate(nil) })
+                quit: { [companionListener] in
+                    // Gone on purpose: leave nothing for a mod to find or talk to.
+                    companionListener?.stop()
+                    NSApplication.shared.terminate(nil)
+                })
                 // Keeps the panel attached to the menu bar when its height changes, and brings
                 // it back to the sessions the next time it opens.
                 .background(PanelWindowObserver {

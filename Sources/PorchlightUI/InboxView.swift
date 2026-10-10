@@ -86,6 +86,8 @@ public struct InboxActions {
     public var setWrapUpEngine: (WrapUpEngine) -> Void = { _ in }
     /// Opens the palette on the kept summaries.
     public var showNotes: () -> Void = {}
+    /// One line on the optional companion mod: listening or not, and how many sessions have it.
+    public var companionStatus: String?
     public var cancelWrapUp: () -> Void = {}
     public var dismissWrapUpProblem: () -> Void = {}
     /// Copies the command that opens a summarised conversation again.
@@ -209,6 +211,8 @@ public struct InboxView: View {
             actions.installUpdate = { Task { await updates.update() } }
         }
         actions.newSession = newSession
+        actions.companionStatus = InboxActions.companionStatus(
+            listens: model.listensForCompanion, problem: model.companionProblem, sessions: model.companionSessions)
         actions.showNotes = showNotes
         actions.pins = model.pins
         actions.togglePin = { model.togglePin(sessionID: $0) }
@@ -460,6 +464,21 @@ struct TabButton: View {
         .onHover { hover.set(id, $0) }
         .animation(.easeOut(duration: 0.12), value: hover.hovered == id)
         .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+extension InboxActions {
+    static let companionInstall = "/plugin install porchlight-companion --marketplace ksawerykarwacki/porchlight"
+
+    /// Nil when the app does not listen at all (a test, or a bare executable).
+    static func companionStatus(listens: Bool, problem: String?, sessions: Int) -> String? {
+        if let problem { return "Not listening for the companion mod: \(problem)" }
+        guard listens else { return nil }
+        if sessions > 0 {
+            return "\(sessions) \(sessions == 1 ? "session reports" : "sessions report") through the companion mod: what they ask shows here the moment they ask."
+        }
+        return "Optional. A small Claude Code mod that tells Porchlight the moment a session asks something. It only reports; it changes nothing in a session. "
+            + "To install it, type this in a Claude Code session: \(companionInstall)"
     }
 }
 
@@ -1124,6 +1143,17 @@ struct SettingsPage: View {
                         .font(.system(size: 12))
                 }
                 .padding(.vertical, 2)
+            }
+            if let status = actions.companionStatus {
+                Divider().padding(.vertical, 10)
+                Text("Companion mod")
+                    .font(.system(size: 13, weight: .semibold))
+                    .padding(.bottom, 2)
+                Text(status)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             if let summary = actions.updateSummary {
                 Divider().padding(.vertical, 10)
