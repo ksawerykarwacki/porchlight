@@ -9,8 +9,9 @@ public enum AppVersion {
     /// Fully qualified, so an upgrade cannot hit a formula of the same name from elsewhere.
     public static let formula = "ksawerykarwacki/porchlight/porchlight"
     public static let repository = "https://github.com/ksawerykarwacki/porchlight.git"
-    /// The name launchd knows the Homebrew service by.
-    public static let serviceLabel = "homebrew.mxcl.porchlight"
+    /// The names launchd may know the Homebrew service by: Homebrew's current one, and the one
+    /// it used before. Asking for the old name alone found no service on a current Homebrew.
+    public static let serviceLabels = ["sh.brew.porchlight", "homebrew.mxcl.porchlight"]
 
     /// The short commit in a Homebrew install path, or nil when the app was not installed by
     /// Homebrew. The path must have its symbolic links resolved first: `brew services` starts

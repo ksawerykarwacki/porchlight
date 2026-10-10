@@ -27,6 +27,17 @@ import Testing
             ["/bin/claude", "plugin", "marketplace", "update", "porchlight"],
             ["/bin/claude", "plugin", "update", "porchlight-companion@porchlight"],
         ])
+        // Homebrew's own name for its service comes first; the older one is still looked for.
+        #expect(AppVersion.serviceLabels == ["sh.brew.porchlight", "homebrew.mxcl.porchlight"])
+        // Started again when the build changed, or when an older build is the one running.
+        let old = "/opt/homebrew/Cellar/porchlight/HEAD-aaaaaaa"
+        let new = "/opt/homebrew/Cellar/porchlight/HEAD-bbbbbbb"
+        #expect(SelfUpdate.needsRestart(installedBefore: old, installedNow: new, running: ["\(old)/Porchlight.app"]))
+        #expect(SelfUpdate.needsRestart(installedBefore: new, installedNow: new, running: ["\(old)/Porchlight.app"]))
+        #expect(SelfUpdate.needsRestart(installedBefore: new, installedNow: new, running: ["\(new)/Porchlight.app", "\(old)/Porchlight.app"]))
+        #expect(!SelfUpdate.needsRestart(installedBefore: new, installedNow: new, running: ["\(new)/Porchlight.app"]))
+        // Nothing running: nothing to replace.
+        #expect(!SelfUpdate.needsRestart(installedBefore: old, installedNow: new, running: []))
         // With none installed nothing is asked of Claude Code at all.
         #expect(SelfUpdate.modSteps(claude: "/bin/claude", installed: []).isEmpty)
     }
