@@ -140,8 +140,8 @@ To update, use **Update and restart** on the Settings tab. To remove it:
   else the command is put on your clipboard. `porchlight tab` gives you one terminal tab that
   follows your clicks.
 - **Two optional Claude Code mods.** [`porchlight-companion`](mods/companion/README.md) tells the
-  app the moment a session asks something, and lets you answer a question that has options with
-  a click in the panel. [`porchlight-wake`](mods/wake/README.md) wakes a background session that has stopped
+  app the moment a session asks something, and lets you answer a question that has options from
+  the panel or, without leaving the keyboard, from the palette. [`porchlight-wake`](mods/wake/README.md) wakes a background session that has stopped
   before another session's message is sent to it; it works without the app.
 - **There is a command line too.** `porchlight status`, `dispatch`, `triage`, `wrap-up`, `notes`
   and more, with JSON output for scripts.

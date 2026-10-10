@@ -170,6 +170,11 @@ public final class PaletteModel {
 
     /// A stop or removal waiting for Return, and what the last one came to.
     public private(set) var pendingControl: PendingControl?
+    /// Sends a choice to its session and returns what to tell the user.
+    public var onAnswer: (InboxModel.PendingAnswer) -> String = { _ in "Not available" }
+    /// An option chosen for the selected session's question, waiting for Return.
+    public private(set) var pendingAnswer: InboxModel.PendingAnswer?
+    private var answered: Set<String> = []
     public private(set) var controlMessage: String?
     /// The last removal Claude Code refused, kept while its row stays selected.
     public private(set) var refusedRemoval: ControlProblem?
@@ -234,6 +239,7 @@ public final class PaletteModel {
         case .folder:
             step = .notes
             pendingControl = nil
+            pendingAnswer = nil
             pendingNoteDeletion = nil
             noteMessage = nil
             noteSelection = 0
@@ -367,6 +373,7 @@ public final class PaletteModel {
     public func setQuery(_ text: String) {
         guard text != query else { return }
         pendingControl = nil
+        pendingAnswer = nil
         pendingNoteDeletion = nil
         noteMessage = nil
         query = text
@@ -464,12 +471,15 @@ public final class PaletteModel {
         guard count > 0 else { return }
         // The question was about the row that was selected.
         pendingControl = nil
+        pendingAnswer = nil
         refusedRemoval = nil
         selection = max(0, min(count - 1, selection + offset))
     }
 
     public func select(_ item: Item) {
-        if let position = items.firstIndex(of: item) { selection = position }
+        guard let position = items.firstIndex(of: item) else { return }
+        if position != selection { pendingAnswer = nil }
+        selection = position
     }
 
     /// Return on the first step: open the selected session, or go on to the prompt for the
@@ -478,6 +488,10 @@ public final class PaletteModel {
         guard step == .folder else { return }
         if pendingControl != nil {
             Task { await confirmControl() }
+            return
+        }
+        if pendingAnswer != nil {
+            Task { await sendAnswer() }
             return
         }
         switch selectedItem {
@@ -523,6 +537,7 @@ public final class PaletteModel {
         }
         controlMessage = nil
         refusedRemoval = nil
+        pendingAnswer = nil
         pendingControl = PendingControl(sessionID: row.id, name: row.title, action: action)
     }
 
@@ -543,6 +558,41 @@ public final class PaletteModel {
         } else {
             refusedRemoval = nil
         }
+        sessions = await services.sessions()
+        rank()
+    }
+
+    // MARK: Answering a question
+
+    /// Whether the selected row's question can be answered from here: it takes an answer, and
+    /// one was not already sent for this asking.
+    public func canAnswer(_ row: InboxRow) -> Bool {
+        row.answerID.map { !answered.contains($0) } ?? false
+    }
+
+    /// The option chosen for this row, if the choice is for the question it shows now.
+    public func chosenOption(for row: InboxRow) -> Int? {
+        guard let pending = pendingAnswer, pending.sessionID == row.id, pending.questionID == row.answerID else { return nil }
+        return pending.option
+    }
+
+    /// ⌘1 to ⌘9, or a click: chooses an option of the selected session's question. Nothing is
+    /// sent; Return then sends it, Escape or moving on does not.
+    public func chooseAnswer(_ option: Int) {
+        guard step == .folder, let row = selectedSession, canAnswer(row), let id = row.answerID, row.options.indices.contains(option) else { return }
+        pendingControl = nil
+        controlMessage = nil
+        pendingAnswer = InboxModel.PendingAnswer(sessionID: row.id, option: option, questionID: id)
+    }
+
+    /// Sends the chosen option. The palette stays open, saying what came of it.
+    public func sendAnswer() async {
+        guard let pending = pendingAnswer else { return }
+        pendingAnswer = nil
+        controlMessage = onAnswer(pending)
+        // The list may be read again before the session is seen to move on: its options are
+        // not offered a second time for the same asking.
+        answered.insert(pending.questionID)
         sessions = await services.sessions()
         rank()
     }
@@ -697,6 +747,8 @@ public final class PaletteModel {
         case .folder:
             if pendingControl != nil {
                 pendingControl = nil
+            } else if pendingAnswer != nil {
+                pendingAnswer = nil
             } else {
                 onClose()
             }

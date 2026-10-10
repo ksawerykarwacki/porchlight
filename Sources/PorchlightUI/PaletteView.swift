@@ -112,6 +112,11 @@ public struct PaletteView: View {
             .onHover { hover.set("palette.notes", $0) }
         }
 
+        if model.pendingControl == nil, let row = model.selectedSession, model.canAnswer(row) {
+            Divider()
+            PaletteAnswerStrip(row: row, chosen: model.chosenOption(for: row), hover: hover, choose: model.chooseAnswer)
+        }
+
         if let note = model.pendingControl?.question ?? model.controlMessage {
             Divider()
             // The question before a stop or removal, or what came of the last one; a refusal is
@@ -131,6 +136,9 @@ public struct PaletteView: View {
         HStack(spacing: 2) {
             if let pending = model.pendingControl {
                 KeyHint(keys: "↩", label: pending.verb, id: "palette.hint.choose", hover: hover, prominent: true, action: model.confirmFolder)
+                KeyHint(keys: "esc", label: "Cancel", id: "palette.hint.close", hover: hover, action: model.escape)
+            } else if let row = model.selectedSession, let chosen = model.chosenOption(for: row), row.options.indices.contains(chosen) {
+                KeyHint(keys: "↩", label: AnswerBar.sendTitle(row.options[chosen]), id: "palette.hint.choose", hover: hover, prominent: true, action: model.confirmFolder)
                 KeyHint(keys: "esc", label: "Cancel", id: "palette.hint.close", hover: hover, action: model.escape)
             } else if let row = model.selectedSession {
                 KeyHint(keys: "↩", label: "Open", id: "palette.hint.choose", hover: hover, action: model.confirmFolder)
@@ -587,6 +595,47 @@ public struct PaletteView: View {
             Text(label(selected))
                 .font(.system(size: 13))
         }
+    }
+}
+
+/// The selected session's question in full, with its options to pick from: ⌘ and a number, or a
+/// click, chooses; Return then sends.
+struct PaletteAnswerStrip: View {
+    let row: InboxRow
+    let chosen: Int?
+    let hover: HoverTracker
+    let choose: (Int) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            if let question = row.detail {
+                Text(question)
+                    .font(.system(size: 12.5))
+                    .lineLimit(4)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.bottom, 2)
+            }
+            ForEach(Array(row.options.enumerated()), id: \.offset) { index, option in
+                Button { choose(index) } label: {
+                    HStack(spacing: 8) {
+                        // Only the first nine have a key.
+                        Text(index < 9 ? "⌘\(index + 1)" : "")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 24, alignment: .leading)
+                        OptionChip(
+                            text: option, recommended: index == row.recommendedOption, chosen: index == chosen,
+                            hovered: hover.hovered == "palette.answer.\(index)")
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .onHover { hover.set("palette.answer.\(index)", $0) }
+            }
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

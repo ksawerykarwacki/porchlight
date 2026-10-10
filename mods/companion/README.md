@@ -10,7 +10,7 @@ soon as it is asked.
 
 It also lets you answer from Porchlight. When a session asks one question with options to pick one
 of, the panel shows the options as buttons: click one, then **Send**, and the mod hands that option
-to the session as the question's answer. The session's own dialog stays up the whole time; whichever
+to the session as the question's answer. In the palette it is ⌘1 to ⌘9, then Return. The session's own dialog stays up the whole time; whichever
 is answered first counts.
 
 **The mod never chooses.** It passes on only an option you clicked and sent in Porchlight, only for

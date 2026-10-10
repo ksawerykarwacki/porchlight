@@ -15,6 +15,8 @@ final class PalettePanel: NSPanel {
     var onCommandD: (() -> Void)?
     /// ⌘P: pin or unpin the selected session.
     var onCommandP: (() -> Void)?
+    /// ⌘1 to ⌘9, as 0 to 8.
+    var onCommandDigit: ((Int) -> Void)?
 
     init() {
         super.init(
@@ -60,6 +62,10 @@ final class PalettePanel: NSPanel {
         }
         if modifiers == .command, let key = event.charactersIgnoringModifiers?.lowercased(), let action = ["r": onCommandR, "s": onCommandS, "d": onCommandD, "p": onCommandP][key] {
             action?()
+            return true
+        }
+        if modifiers == .command, let key = event.charactersIgnoringModifiers, let digit = Int(key), (1...9).contains(digit), let onCommandDigit {
+            onCommandDigit(digit - 1)
             return true
         }
         let action: Selector? =
@@ -129,6 +135,7 @@ public final class PaletteController {
             if model.step == .notes { model.askDeleteSelectedNote() } else { model.askControlSelected(.remove) }
         }
         panel.onCommandP = { [weak self] in Task { await self?.model.togglePinSelected() } }
+        panel.onCommandDigit = { [weak self] option in self?.model.chooseAnswer(option) }
         let content = PaletteView(
             model: model, hover: hover, browse: { [weak self] in self?.chooseFolder(asRoot: false) },
             addRoot: { [weak self] in self?.chooseFolder(asRoot: true) }
