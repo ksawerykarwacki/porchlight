@@ -43,6 +43,8 @@ let open: Open
 let quietUntil = 0
 /** How the last turn ended, with what was said, while no turn has started since. */
 let ended: Report | undefined
+/** The secret of the app that was told so, by a report that arrived. */
+let toldSecret: string | undefined
 
 const stateDirectory = async ($: any): Promise<string | undefined> => {
   const override = await $.env.get('PORCHLIGHT_STATE_DIR')
@@ -103,6 +105,8 @@ const sendNow = async ($: any, report: Report): Promise<void> => {
     if (status === 0 || status === 403) {
       app = undefined
       quietUntil = now + RETRY_AFTER_MS
+    } else if (report === ended && status >= 200 && status < 300 && app !== undefined) {
+      toldSecret = app.secret
     }
   } catch {
     app = undefined
@@ -123,7 +127,7 @@ const tellNewApp = async ($: any): Promise<void> => {
   try {
     if (ended === undefined) return
     const found = await findApp($)
-    if (!isNewApp(app, found)) return
+    if (!isNewApp(toldSecret, found)) return
     app = found
     quietUntil = 0
     await send($, ended)
@@ -234,6 +238,7 @@ export const register: Register = on => {
   on('turn.start', ($: any, e: any, next: any) => {
     open = undefined
     ended = undefined
+    toldSecret = undefined
     void send($, { kind: 'turn.start' })
     return next(e)
   }).catch(passOn)

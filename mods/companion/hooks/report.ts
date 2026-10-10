@@ -149,11 +149,12 @@ export const retryOf = (text: string, id: string): string | undefined => {
 }
 
 /**
- * Whether the app found now is one that has not been told what this session last said: there is
- * an app, and it is not the one the last report went to (it was restarted and has a new secret).
+ * Whether the app found now has not been told how this session's last turn ended: there is an
+ * app, and its secret is not the one of the app that was told (it was restarted since, or none
+ * was told). Which app the mod talks to says nothing: asking for a reply reconnects by itself.
  */
-export const isNewApp = (known: { secret: string } | undefined, found: { secret: string } | undefined): boolean =>
-  found !== undefined && (known === undefined || known.secret !== found.secret)
+export const isNewApp = (toldSecret: string | undefined, found: { secret: string } | undefined): boolean =>
+  found !== undefined && found.secret !== toldSecret
 
 /** The longest reply the app may have submitted. */
 export const REPLY_TEXT_LIMIT = 4000
