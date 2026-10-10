@@ -169,6 +169,19 @@ private let conversation = "22222222-0000-4000-8000-000000000000"
         #expect(try await rig.request("GET", "/v1/next?session=\(conversation)", timeout: 15).status == 204)
     }
 
+    @Test func thePanelShowsTheArrowExceptOverAFieldThatTakesText() {
+        let button = NSButton(title: "Send", target: nil, action: nil)
+        let row = NSView()
+        row.addSubview(button)
+        #expect(!PanelPointer.takesText(button) && !PanelPointer.takesText(row) && !PanelPointer.takesText(nil))
+        // A label is not a field; a field is, and so is anything drawn inside one.
+        #expect(!PanelPointer.takesText(NSTextField(labelWithString: "Apple or pear?")))
+        let field = NSTextField(string: "")
+        let inside = NSView()
+        field.addSubview(inside)
+        #expect(PanelPointer.takesText(field) && PanelPointer.takesText(inside) && PanelPointer.takesText(NSTextView()))
+    }
+
     func height(_ actions: InboxActions, _ snapshot: StoreSnapshot, named name: String? = nil) throws -> CGFloat {
         let view = InboxView(snapshot: snapshot, now: Date(), actions: actions, scrolls: false)
         let renderer = ImageRenderer(content: view.background(Color.white).environment(\.colorScheme, .light))

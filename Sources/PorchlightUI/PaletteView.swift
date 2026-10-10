@@ -641,10 +641,7 @@ struct PaletteOption: View {
             .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
         }
         .buttonStyle(.plain)
-        .onHover {
-            hover.set(id, $0)
-            Pointer.hand($0)
-        }
+        .onHover { hover.set(id, $0) }
     }
 }
 

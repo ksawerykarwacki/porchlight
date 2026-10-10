@@ -692,10 +692,7 @@ struct InboxRowView: View {
                             .contentShape(Capsule())
                         }
                         .buttonStyle(.plain)
-                        .onHover {
-                            hover.set("answer.\(row.id).\(index)", $0)
-                            Pointer.hand($0)
-                        }
+                        .onHover { hover.set("answer.\(row.id).\(index)", $0) }
                         .help("Choose this answer; nothing is sent until you press Send")
                     }
                     if let chosen, row.options.indices.contains(chosen) {
@@ -816,15 +813,6 @@ struct StatusLamp: View {
 }
 
 /// One of the choices a session offered. The one Claude recommends is lit.
-/// The pointer over something that answers a session. The panel and the palette open over
-/// whatever is in front, and without this the pointer keeps the shape that app gave it: a text
-/// cursor, over a terminal.
-enum Pointer {
-    static func hand(_ inside: Bool) {
-        if inside { NSCursor.pointingHand.set() } else { NSCursor.arrow.set() }
-    }
-}
-
 /// What a chosen option needs before it is an answer: Send, or Cancel.
 struct AnswerBar: View {
     let option: String
@@ -848,10 +836,7 @@ struct AnswerBar: View {
                 .contentShape(Capsule())
         }
         .buttonStyle(.plain)
-        .onHover {
-            hover.set(key, $0)
-            Pointer.hand($0)
-        }
+        .onHover { hover.set(key, $0) }
     }
 
     var body: some View {
