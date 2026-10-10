@@ -102,3 +102,11 @@ public struct AppUpdater: Sendable {
         }
     }
 }
+
+/// The end of a failed command's output, for the command line.
+public enum AppUpdaterText {
+    public static func tail(_ text: String) -> String {
+        let end = AppUpdater.tail(text)
+        return end.isEmpty ? "no output" : end
+    }
+}

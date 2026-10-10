@@ -9,6 +9,7 @@ swift build                 # everything
 swift test                  # two test targets; both must report "passed"
 ./scripts/make-app.sh       # dist/Porchlight.app, ad-hoc signed
 swift run porchlight help   # the command-line tool
+porchlight update           # the owner's install: latest app from Homebrew, restarted, and the mods
 ```
 
 Ask the owner before anything that changes their machine or accounts: restarting their running app, `brew install` or `brew services`, starting a real Claude Code session (it spends their usage), merging, tagging, releasing.
