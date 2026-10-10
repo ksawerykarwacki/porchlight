@@ -18,6 +18,23 @@ public enum PanelPinning {
     }
 }
 
+/// Which pointer the panel shows. The panel opens over whatever app is in front and that app's
+/// pointer stays: a text cursor over a terminal, sometimes replaced when a view happened to set
+/// one. So the panel says which it wants at every move: the arrow, as for any menu, except over
+/// a field that takes text.
+public enum PanelPointer {
+    @MainActor
+    public static func takesText(_ view: NSView?) -> Bool {
+        var current = view
+        while let candidate = current {
+            if candidate is NSTextView { return true }
+            if let field = candidate as? NSTextField { return field.isEditable || field.isSelectable }
+            current = candidate.superview
+        }
+        return false
+    }
+}
+
 /// Watches the panel's window: keeps its top edge fixed when it changes height, and reports when
 /// it closes. Put it in the background of the panel's content.
 public struct PanelWindowObserver: NSViewRepresentable {
@@ -73,6 +90,27 @@ public struct PanelWindowObserver: NSViewRepresentable {
         /// True while this view moves the window itself, so that move is not taken for the system's.
         private var isPinning = false
         private var observers: [NSObjectProtocol] = []
+
+        private var pointerArea: NSTrackingArea?
+
+        override func updateTrackingAreas() {
+            super.updateTrackingAreas()
+            if let pointerArea { removeTrackingArea(pointerArea) }
+            // Always active: the panel is used while another app is the active one.
+            let area = NSTrackingArea(rect: .zero, options: [.inVisibleRect, .activeAlways, .mouseEnteredAndExited, .mouseMoved, .cursorUpdate], owner: self)
+            addTrackingArea(area)
+            pointerArea = area
+        }
+
+        private func keepPointer(_ event: NSEvent) {
+            guard let content = window?.contentView else { return }
+            let under = content.hitTest(content.superview?.convert(event.locationInWindow, from: nil) ?? event.locationInWindow)
+            (PanelPointer.takesText(under) ? NSCursor.iBeam : NSCursor.arrow).set()
+        }
+
+        override func mouseEntered(with event: NSEvent) { keepPointer(event) }
+        override func mouseMoved(with event: NSEvent) { keepPointer(event) }
+        override func cursorUpdate(with event: NSEvent) { keepPointer(event) }
 
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
