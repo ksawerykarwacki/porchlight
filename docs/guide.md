@@ -50,8 +50,17 @@ the session came with one. A daily summary arrives at 09:00.
 - **Retry.** A session that stopped on a passing failure (a rate or usage limit, the laptop going
   to sleep, the API being down) is marked "Can be retried" in the inbox. Its Retry button opens the
   session in your terminal and puts `continue` on the clipboard: paste it and press Return.
-  Porchlight sends nothing by itself. What counts as such a failure is a list of patterns under
-  `transientErrors` in `settings.json`.
+  What counts as such a failure is a list of patterns under `transientErrors` in `settings.json`.
+  With the companion mod, the session reports the failure itself and Retry sends `continue`
+  straight to it, without opening anything.
+- **Trying again by itself.** Off unless you turn it on in Settings ("Try again by itself", with
+  the wait before the first try). Then, for a session with the companion mod that stopped on a
+  rate limit, an overloaded API or a server error, Porchlight sends your resend line after that
+  wait: at most three times in a row, waiting twice as long each time, and starting over once a
+  turn succeeds. The row says when the next try is and has "Don't retry" for that one failure.
+  Failures that need you (sign-in, billing, a bad request) are never retried, nor are sessions
+  without the mod. Each try uses your Claude usage. In `settings.json` it is
+  `transientErrors.autoRetry` with `after` (seconds) and `attempts`; `null` or absent is off.
 - **The menu-bar lantern** is unlit when nothing waits, amber when a session waits, and red with
   rays once one has waited as long as the second step. The number appears from two sessions up.
 

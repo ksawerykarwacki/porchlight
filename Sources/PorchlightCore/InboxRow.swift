@@ -54,6 +54,13 @@ public struct InboxRow: Sendable, Equatable, Identifiable {
     /// Waiting only because of a passing failure (a limit, a sleeping laptop, an API that was
     /// down), so trying again is likely all it needs.
     public let isRetryable: Bool
+    /// The failure the session's mod will retry on the app's word, when there is one: Retry then
+    /// sends through the mod instead of opening the session.
+    public let retry: RetryTarget?
+    /// What automatic retry will do about it, when that is turned on.
+    public let autoRetry: AutoRetry.Standing?
+    /// When a scheduled retry will be sent, in words: "now", "in a minute", "in 4 min".
+    public let autoRetryWhen: String?
     /// Whether the session can be stopped, and whether it can be removed, from here.
     public let canStop: Bool
     public let canRemove: Bool
@@ -67,7 +74,15 @@ public struct InboxRow: Sendable, Equatable, Identifiable {
     ) {
         isPinned = pin != nil
         isQuiet = pin?.quiet ?? false
-        isRetryable = transientErrors.isTransientFailure(session)
+        isRetryable = transientErrors.offersRetry(session)
+        retry = session.retryTarget
+        autoRetry = session.retryTarget.flatMap { target in transientErrors.autoRetry.map { $0.standing(for: target) } }
+        if case .scheduled(let at, _, _)? = autoRetry {
+            let left = at.timeIntervalSince(now)
+            autoRetryWhen = left <= 0 ? "now" : left < 90 ? "in a minute" : "in \(Int((left / 60).rounded())) min"
+        } else {
+            autoRetryWhen = nil
+        }
         canStop = SessionAction.stop.applies(to: session)
         // A pinned session is one the user said to keep: it has to be unpinned before it can go.
         canRemove = pin == nil && SessionAction.remove.applies(to: session)

@@ -35,6 +35,10 @@ public struct CompanionEvent: Sendable, Equatable {
     public var takesAnswer = false
     /// With a turn's end: the end of what the session said last. Never part of `line`.
     public var said: String?
+    /// For a failure: the mod's own name for it, and whether the mod will submit a retry for it
+    /// on the app's word. A retry must name the failure, so a late one cannot land on another.
+    public var failureID: String?
+    public var takesRetry = false
 
     public init(sessionID: String, kind: Kind, receivedAt: Date, questionID: String? = nil, takesAnswer: Bool = false) {
         self.sessionID = sessionID
@@ -99,6 +103,11 @@ public struct CompanionEvent: Sendable, Equatable {
             // Its end is what matters: that is where a session says what it needs.
             event.said = String(said.suffix(saidLimit))
         }
+        if case .failure = kind, let id = body.id, isValidQuestionID(id) {
+            event.failureID = id
+            let can = ((try? JSONSerialization.jsonObject(with: data)) as? [String: Any])?["can"] as? [Any]
+            event.takesRetry = can?.contains { $0 as? String == "retry" } ?? false
+        }
         if case .question = kind, let id = body.id, isValidQuestionID(id) {
             event.questionID = id
             // Read on its own, so a `can` that is not a list costs the report nothing but this.
@@ -141,6 +150,13 @@ public struct CompanionFacts: Sendable, Equatable {
     public var answerableQuestionID: String?
     /// The class of the failure the last turn ended on; cleared when a turn starts.
     public var failure: String?
+    /// That failure's id, when the mod will submit a retry for it; and when it was first reported.
+    public var retryableFailureID: String?
+    public var failedAt: Date?
+    /// How many turns in a row ended on a failure. A turn that answers starts the count again.
+    public var failuresInARow = 0
+    /// The last failure counted, so that one said again (the mod repeats what is open) counts once.
+    var countedFailureID: String?
     /// The end of what the session said in its last finished turn; cleared when a turn starts.
     /// Kept in memory only: it is the session's own words, and is never logged or written down.
     public var lastSaid: String?
@@ -167,9 +183,16 @@ public struct CompanionFacts: Sendable, Equatable {
             next.waitingSince = nil
             next.answerableQuestionID = nil
             next.failure = nil
+            next.retryableFailureID = nil
+            next.failedAt = nil
             next.lastSaid = nil
         case .turnComplete:
             next.lastSaid = event.said
+            // A turn that answered: whatever failed before it has passed.
+            if case .turnComplete(let reason) = event.kind, reason == "answer" {
+                next.failuresInARow = 0
+                next.countedFailureID = nil
+            }
             next.isTurnRunning = false
             next.waiting = nil
             next.waitingSince = nil
@@ -190,6 +213,14 @@ public struct CompanionFacts: Sendable, Equatable {
             next.answerableQuestionID = nil
         case .failure(let kind):
             next.failure = kind
+            next.isTurnRunning = false
+            next.retryableFailureID = event.takesRetry ? event.failureID : nil
+            // Without an id every report is taken for a new failure, as an older mod's would be.
+            if event.failureID == nil || event.failureID != countedFailureID {
+                next.failuresInARow += 1
+                next.countedFailureID = event.failureID
+                next.failedAt = event.receivedAt
+            }
         }
         return next
     }
@@ -353,5 +384,54 @@ extension Session {
               // What the row shows must be what would be answered.
               questions == asked else { return nil }
         return AnswerTarget(sessionID: conversation.lowercased(), questionID: id, question: only.question, options: only.options.map(\.label))
+    }
+}
+
+/// A failure Porchlight may have retried: the session stopped on it, it is of a class that may
+/// clear by itself, and the session's mod said it will submit a retry for it.
+public struct RetryTarget: Sendable, Equatable {
+    /// The conversation's id, which is how the mod's requests are told apart.
+    public let sessionID: String
+    public let failureID: String
+    /// Claude Code's class for the failure: `rate_limit`, `overloaded` or `server_error`.
+    public let failureClass: String
+    public let failedAt: Date
+    /// Which failure in a row this is, from 1.
+    public let failuresInARow: Int
+
+    /// The API's classes for a failure that may clear by itself. The mod judges the same way;
+    /// the app does not take its word alone.
+    public static let clearingClasses: Set<String> = ["rate_limit", "overloaded", "server_error"]
+    /// The longest line the mod will submit.
+    public static let textLimit = 200
+
+    /// The class in words, for a row.
+    public var failureName: String {
+        switch failureClass {
+        case "rate_limit": "a rate limit"
+        case "overloaded": "an overloaded API"
+        default: "a server error"
+        }
+    }
+
+    /// The command that has the mod submit `text`, or nil when the text is not one short line.
+    /// The text is the user's own resend line from the settings: nothing here writes one.
+    public func command(text: String) -> Data? {
+        let line = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !line.isEmpty, line.count <= Self.textLimit, !line.contains(where: \.isNewline) else { return nil }
+        let body: [String: Any] = ["v": CompanionEvent.version, "type": "retry", "id": failureID, "text": line]
+        return try? JSONSerialization.data(withJSONObject: body, options: [.sortedKeys])
+    }
+}
+
+extension Session {
+    /// The failure that can be retried through the mod, if this session stopped on one and is
+    /// still stopped on it.
+    public var retryTarget: RetryTarget? {
+        guard needsHuman, let conversation = summary.sessionId, let companion, companion.waiting == nil, !companion.isTurnRunning,
+              let failure = companion.failure, RetryTarget.clearingClasses.contains(failure),
+              let id = companion.retryableFailureID, let failedAt = companion.failedAt else { return nil }
+        return RetryTarget(
+            sessionID: conversation.lowercased(), failureID: id, failureClass: failure, failedAt: failedAt, failuresInARow: max(companion.failuresInARow, 1))
     }
 }

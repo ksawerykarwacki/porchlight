@@ -1,6 +1,6 @@
 import type { Register } from 'claude-code'
 
-import { answerOf, bodyOf, descriptorOf, detailOf, questionsOf, reportOf, tailOf, takesAnswer, type Open, type Question, type Report } from './report'
+import { answerOf, bodyOf, descriptorOf, detailOf, mayClear, questionsOf, reportOf, retryOf, tailOf, takesAnswer, type Open, type Question, type Report } from './report'
 
 // Tells the Porchlight app what this session is doing, the moment it happens: it asked something,
 // it wants an approval, a turn started or ended, a turn failed.
@@ -12,6 +12,10 @@ import { answerOf, bodyOf, descriptorOf, detailOf, questionsOf, reportOf, tailOf
 //
 // When a turn ends it also sends the end of what the session said last, so the app can show what
 // the session is waiting to hear about. That goes to the app on this machine only.
+//
+// And after a turn failed on something that may clear by itself (a rate limit, an overloaded or
+// failing API), it will submit one line, the user's "continue", when the app tells it to for that
+// failure. The app does so only where the user turned automatic retry on, or pressed Retry.
 //
 // Every other hook hands back exactly what the hooks beneath it answered, and no hook waits for
 // the app: a report is sent on the side, and a slow, absent or refusing app costs the session
@@ -106,11 +110,10 @@ const sendNow = async ($: any, report: Report): Promise<void> => {
 let asked = 0
 
 /**
- * Waits for the user's pick for this asking of this question, for as long as it is the open one.
- * Resolves with the answers, or never: when the dialog is answered first, `stillOpen` turns false
- * and the asking stops at its next turn.
+ * Waits for a command from the app that `accept` takes, for as long as `stillOpen` says what it
+ * is for is still the open thing. Resolves with what was accepted, or never.
  */
-const answerFromApp = async ($: any, id: string, questions: Question[], stillOpen: () => boolean): Promise<Record<string, string>> => {
+const commandFromApp = async <T>($: any, accept: (text: string) => T | undefined, stillOpen: () => boolean): Promise<T> => {
   for (;;) {
     if (!stillOpen()) return new Promise(() => {})
     let status = 0
@@ -128,14 +131,37 @@ const answerFromApp = async ($: any, id: string, questions: Question[], stillOpe
       status = 0
     }
     if (status === 200) {
-      const answers = answerOf(text, id, questions)
-      if (answers !== undefined && stillOpen()) return answers
+      const accepted = accept(text)
+      if (accepted !== undefined && stillOpen()) return accepted
       continue
     }
     if (status === 204) continue
     // No app, a refused secret, or anything else: find the app again after a pause.
     if (status === 403 || status === 0) app = undefined
     await $.clock.sleep(RETRY_AFTER_MS)
+  }
+}
+
+/**
+ * Waits for the user's pick for this asking of this question, for as long as it is the open one.
+ * When the dialog is answered first, `stillOpen` turns false and the asking stops at its next turn.
+ */
+const answerFromApp = ($: any, id: string, questions: Question[], stillOpen: () => boolean): Promise<Record<string, string>> =>
+  commandFromApp($, text => answerOf(text, id, questions), stillOpen)
+
+/**
+ * After a failure that may clear: waits for the app's word to try again, and then submits its
+ * line as a prompt of this mod's (the session is told it came from the mod, not typed by the
+ * user). Once only, and only while that failure is still what the session stopped on.
+ */
+const retryFromApp = async ($: any, mine: Open & { kind: 'failure' }): Promise<void> => {
+  try {
+    const line = await commandFromApp($, text => retryOf(text, mine.id), () => open === mine)
+    if (open !== mine) return
+    open = undefined
+    await $.prompt.submit({ text: line })
+  } catch {
+    // nothing was submitted; the session waits as it did
   }
 }
 
@@ -172,15 +198,27 @@ export const register: Register = on => {
   on('turn.complete', ($: any, e: any, next: any) => {
     // A subagent's turn is not the session's: its end changes nothing the app shows.
     if (e?.agentId !== undefined) return next(e)
-    open = undefined
+    // A failed turn ends too: the failure stays what the session stopped on.
+    if (open?.kind !== 'failure') open = undefined
     // With the end of the turn's answer, which is where a session says what it is waiting for.
     const said = typeof e?.answer === 'string' ? tailOf(e.answer) : ''
     void send($, { kind: 'turn.complete', ...(typeof e?.reason === 'string' ? { reason: e.reason } : {}), ...(said !== '' ? { said } : {}) })
     return next(e)
   }).catch(passOn)
 
-  on('classic.StopFailure', ($: any, e: any, next: any) => {
-    void send($, { kind: 'failure', error: String(e?.error ?? 'unknown') })
+  on('classic.StopFailure', async ($: any, e: any, next: any) => {
+    const error = String(e?.error ?? 'unknown')
+    try {
+      session ??= String(await $.session.id())
+      asked += 1
+      const mine: Open = { kind: 'failure', error, id: `f${asked}-${Number(await $.clock.now())}`, takesRetry: mayClear(error) }
+      open = mine
+      // Beside the session, never in its way: the hook does not wait for the app. The app is
+      // asked for its word only once it has been told of the failure.
+      void send($, reportOf(mine)!).then(() => (mine.takesRetry ? retryFromApp($, mine) : undefined))
+    } catch {
+      void send($, { kind: 'failure', error })
+    }
     return next(e)
   }).catch(passOn)
 

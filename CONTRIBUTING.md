@@ -97,7 +97,9 @@ advice, and a pull request that breaks one will not be merged.
    the public documentation and from what documented commands do.
    One thing reaches a running session another way: the companion mod, through Claude Code's
    documented hooks, hands a session the option the user chose and sent in Porchlight for a question
-   that session asked. Porchlight never composes input itself and never types into a terminal.
+   that session asked, and submits the user's own resend line after a failure that may clear, when
+   the user presses Retry or has turned automatic retry on. Porchlight never composes input itself
+   and never types into a terminal.
 5. **The job files are optional.** `~/.claude/jobs/<id>/state.json` is read-only input that Claude
    Code's documentation calls "not a stable interface". Every feature has to keep working without
    it.

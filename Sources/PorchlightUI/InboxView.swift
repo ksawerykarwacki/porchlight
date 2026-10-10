@@ -105,6 +105,11 @@ public struct InboxActions {
     public var updateReminders: ((inout ReminderSettings) -> Void) -> Void = { _ in }
     /// Opens a session that stopped on a passing failure, with a line to resend on the clipboard.
     public var retry: (String) -> Void = { _ in }
+    /// Failures whose automatic retry the user stopped, and the way to stop one.
+    public var cancelledRetries: Set<String> = []
+    public var cancelRetry: (String) -> Void = { _ in }
+    /// Turns automatic retry on with a wait in seconds, or off with nil.
+    public var setAutoRetry: (TimeInterval?) -> Void = { _ in }
     /// The patterns that decide which rows offer Retry.
     public var transientErrors = TransientErrors()
 
@@ -270,6 +275,9 @@ public struct InboxView: View {
         actions.reminders = model.reminderSettings
         actions.updateReminders = { model.updateReminders($0) }
         actions.retry = { model.retry(sessionID: $0) }
+        actions.cancelledRetries = model.cancelledRetries
+        actions.cancelRetry = { model.cancelRetry(sessionID: $0) }
+        actions.setAutoRetry = { model.setAutoRetry(after: $0) }
         actions.transientErrors = model.transientErrors
         self.init(
             snapshot: model.snapshot, now: model.now, notice: model.notice, notificationProblem: model.notificationProblem,
@@ -781,13 +789,33 @@ struct InboxRowView: View {
                     }
                     .buttonStyle(.plain)
                     .onHover { hover.set("retry.\(row.id)", $0) }
-                    .help("Open the session with \u{201C}\(actions.transientErrors.resend)\u{201D} on the clipboard, ready to send")
-                    Text("Can be retried")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+                    .help(
+                        row.retry != nil
+                            ? "Send \u{201C}\(actions.transientErrors.resend)\u{201D} to the session now"
+                            : "Open the session with \u{201C}\(actions.transientErrors.resend)\u{201D} on the clipboard, ready to send")
+                    if RetryNote.isScheduled(row, cancelled: actions.cancelledRetries) {
+                        Button { actions.cancelRetry(row.id) } label: {
+                            Text("Don\u{2019}t retry")
+                                .font(.system(size: 11.5))
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(Capsule().fill(Color.primary.opacity(hover.hovered == "retry.cancel.\(row.id)" ? 0.14 : 0.06)))
+                                .contentShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .onHover { hover.set("retry.cancel.\(row.id)", $0) }
+                        .help("Leave this failure to you; Retry still works")
+                    }
                 }
                 .padding(.leading, 30)
-                .padding(.bottom, 8)
+                .padding(.bottom, 3)
+                Text(RetryNote.text(for: row, cancelled: actions.cancelledRetries))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.leading, 30)
+                    .padding(.trailing, 10)
+                    .padding(.bottom, 8)
             }
 
             if let pending = actions.pendingControl, pending.sessionID == row.id {
@@ -858,6 +886,29 @@ struct StatusLamp: View {
 }
 
 /// One of the choices a session offered. The one Claude recommends is lit.
+/// The words beside Retry: what failed, and what will be done about it without the user.
+enum RetryNote {
+    static func isScheduled(_ row: InboxRow, cancelled: Set<String>) -> Bool {
+        guard case .scheduled? = row.autoRetry, let id = row.retry?.failureID else { return false }
+        return !cancelled.contains(id)
+    }
+
+    static func text(for row: InboxRow, cancelled: Set<String>) -> String {
+        guard let target = row.retry else { return "Can be retried" }
+        let stopped = "Stopped on \(target.failureName)."
+        switch row.autoRetry {
+        case .scheduled(_, let attempt, let of)? where !cancelled.contains(target.failureID):
+            return "\(stopped) Trying again \(row.autoRetryWhen ?? "soon"), attempt \(attempt) of \(of)."
+        case .scheduled?:
+            return "\(stopped) Not retried by itself, as you asked."
+        case .exhausted(let attempts)?:
+            return "\(stopped) Tried again \(attempts) \(attempts == 1 ? "time" : "times") and it failed each time; the next try is yours."
+        case nil:
+            return "\(stopped) Can be retried."
+        }
+    }
+}
+
 /// What a session said, with its emphasis and code drawn as such and its lines kept.
 struct SaidText: View {
     let text: String
@@ -1241,6 +1292,21 @@ struct SettingsPage: View {
                 .padding(.top, 2)
 
             Divider().padding(.vertical, 10)
+            Text("Retrying after a failure")
+                .font(.system(size: 13, weight: .semibold))
+                .padding(.bottom, 2)
+            Text(SettingsPage.autoRetryNote(resend: actions.transientErrors.resend, attempts: actions.transientErrors.autoRetry?.attempts ?? AutoRetry.defaultAttempts))
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.bottom, 8)
+            row("Try again by itself") {
+                choice(SettingsPage.autoRetryWaits, selected: SettingsPage.autoRetryChoice(actions.transientErrors.autoRetry), label: SettingsPage.autoRetryLabel) { seconds in
+                    actions.setAutoRetry(seconds == 0 ? nil : TimeInterval(seconds))
+                }
+            }
+
+            Divider().padding(.vertical, 10)
             Text("General")
                 .font(.system(size: 13, weight: .semibold))
                 .padding(.bottom, 6)
@@ -1345,6 +1411,24 @@ struct SettingsPage: View {
     }
 
     /// What the choice of engine means, and what stands in its way on this Mac.
+    /// The waits offered before the first retry, in seconds; 0 is off.
+    static let autoRetryWaits = [0, 60, 300, 900, 1800]
+
+    static func autoRetryLabel(_ seconds: Int) -> String {
+        seconds == 0 ? "Off" : "After \(seconds / 60) min"
+    }
+
+    /// The offered wait nearest to what is set, so a value written by hand still shows as on.
+    static func autoRetryChoice(_ setting: AutoRetry?) -> Int {
+        guard let setting else { return 0 }
+        return autoRetryWaits.dropFirst().min { abs(TimeInterval($0) - setting.after) < abs(TimeInterval($1) - setting.after) } ?? 300
+    }
+
+    static func autoRetryNote(resend: String, attempts: Int) -> String {
+        "When a session stops on a rate limit, an overloaded API or a server error, Porchlight can send \u{201C}\(resend)\u{201D} for you after a wait: "
+            + "up to \(attempts) times in a row, waiting twice as long each time. It needs the companion mod, and each try uses your Claude usage."
+    }
+
     static func wrapUpNote(_ plan: WrapUpPlan) -> String {
         switch plan.chosen {
         case .claude:
