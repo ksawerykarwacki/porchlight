@@ -87,13 +87,17 @@ public struct JobState: Sendable, Equatable, Decodable {
     public let questions: [Question]
     public let children: [Child]
     public let cliVersion: String?
+    /// Claude Code's own sentence on what the last turn came to. Where the session stands,
+    /// beside what it asks for in `needs`.
+    public let result: String?
 
     private enum CodingKeys: String, CodingKey {
         case state, name, nameSource, tempo, needs, detail, suggestedReply, cwd, worktreePath
-        case worktreeBranch, updatedAt, createdAt, block, children, cliVersion
+        case worktreeBranch, updatedAt, createdAt, block, children, cliVersion, output
     }
 
     private enum BlockKeys: String, CodingKey { case questions }
+    private enum OutputKeys: String, CodingKey { case result }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -116,6 +120,11 @@ public struct JobState: Sendable, Equatable, Decodable {
         updatedAt = string(.updatedAt).flatMap(Self.parseDate)
         createdAt = string(.createdAt).flatMap(Self.parseDate)
         cliVersion = string(.cliVersion)
+
+        // Sometimes an object, sometimes null; only its one sentence is taken.
+        let output = try? c.nestedContainer(keyedBy: OutputKeys.self, forKey: .output)
+        let sentence = (try? output?.decodeIfPresent(String.self, forKey: .result)) ?? nil
+        result = sentence.flatMap { $0.isEmpty ? nil : $0 }
 
         let block = try? c.nestedContainer(keyedBy: BlockKeys.self, forKey: .block)
         questions = (try? block?.decodeIfPresent(LossyArray<Question>.self, forKey: .questions))?.elements ?? []

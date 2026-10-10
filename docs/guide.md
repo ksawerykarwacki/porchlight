@@ -219,7 +219,8 @@ Porchlight is local only: no account, no server, no telemetry. What it touches o
 - **It asks your login shell for its environment once, at launch**, so that sessions started from
   Porchlight have the same `PATH` and variables as ones you start in a terminal. The values are
   passed on to `claude` and kept in memory only: never logged, never written to disk.
-- **It reads `~/.claude/jobs/*/state.json`**, read-only, for the question a session is waiting on.
+- **It reads `~/.claude/jobs/*/state.json`**, read-only, for the question a session is waiting on
+  and Claude Code's one-sentence summary of where it stands.
   It never reads the fields that can hold your prompt or environment values.
 - **For a summary on this Mac, it reads that one session's conversation file**
   (`~/.claude/projects/…/<id>.jsonl`), read-only, and only when you ask for the summary. It takes
