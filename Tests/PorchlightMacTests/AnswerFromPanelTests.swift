@@ -146,7 +146,8 @@ private let conversation = "22222222-0000-4000-8000-000000000000"
         // Nobody asking: queued, and said so.
         #expect(!rig.listener.send(command, to: "44444444-0000-4000-8000-000000000000"))
         async let waiting = rig.request("GET", "/v1/next?session=\(conversation)", timeout: 15)
-        try await Task.sleep(for: .milliseconds(400))
+        // Not before the request has arrived and is held, however slow the machine.
+        for _ in 0..<1000 where rig.listener.heldCount(for: conversation) == 0 { try await Task.sleep(for: .milliseconds(10)) }
         #expect(rig.listener.send(command, to: conversation))
         let got = try await waiting
         #expect(got.status == 200)
@@ -155,16 +156,17 @@ private let conversation = "22222222-0000-4000-8000-000000000000"
     }
 
     @Test func anAnswerNobodyCameForIsNotGivenToALaterAsking() async throws {
-        let rig = try CompanionRig(hold: 0.3, commandLifetime: 0.4)
         let target = AnswerTarget(sessionID: conversation, questionID: "q1-5", question: "Apple or pear?", options: ["apple", "pear"])
         let command = try #require(target.command(choosing: 1))
-        // Queued, and still fresh: the next request takes it.
+        // Queued, and still fresh: the next request takes it, however slow the machine.
+        let patient = try CompanionRig(hold: 0.3)
+        #expect(!patient.listener.send(command, to: conversation))
+        #expect(try await patient.request("GET", "/v1/next?session=\(conversation)", timeout: 15).status == 200)
+        // Queued and left past its time: by the time the mod asks, it is gone.
+        let rig = try CompanionRig(hold: 0.3, commandLifetime: 0.2)
         #expect(!rig.listener.send(command, to: conversation))
-        #expect(try await rig.request("GET", "/v1/next?session=\(conversation)", timeout: 5).status == 200)
-        // Queued and left: by the time the mod asks, it is gone.
-        #expect(!rig.listener.send(command, to: conversation))
-        try await Task.sleep(for: .milliseconds(700))
-        #expect(try await rig.request("GET", "/v1/next?session=\(conversation)", timeout: 5).status == 204)
+        try await Task.sleep(for: .milliseconds(900))
+        #expect(try await rig.request("GET", "/v1/next?session=\(conversation)", timeout: 15).status == 204)
     }
 
     func height(_ actions: InboxActions, _ snapshot: StoreSnapshot, named name: String? = nil) throws -> CGFloat {

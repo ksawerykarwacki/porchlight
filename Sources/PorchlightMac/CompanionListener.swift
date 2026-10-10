@@ -116,6 +116,11 @@ public final class CompanionListener: @unchecked Sendable {
         try? FileManager.default.removeItem(at: paths.socket)
     }
 
+    /// How many requests are being held for a session, for tests that must not send too early.
+    func heldCount(for session: String) -> Int {
+        queue.sync { held[Self.key(session)]?.count ?? 0 }
+    }
+
     /// Hands a command to a session's mod. True when the mod was waiting and has it now; false
     /// when it was queued for the mod's next request, which may never come.
     @discardableResult
