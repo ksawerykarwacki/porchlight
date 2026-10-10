@@ -145,6 +145,9 @@ import Testing
         older.finishTurn(id: "t1-5", reply: false)
         try older.show()
         #expect(older.inbox.rows.first?.reply == nil)
+        // It runs, so it is not woken; the row says what would let it take a reply.
+        #expect(older.inbox.rows.first?.canWake == false && older.inbox.rows.first?.replyNeedsReload == true)
+        #expect(InboxRow.reloadHint.contains("/reload-plugins"))
         let working = try World()
         working.finishTurn(id: "t1-5")
         try working.show(state: .working)
@@ -185,7 +188,7 @@ import Testing
         world.pid = nil
         try world.show(state: .done)
         let row = try #require(world.inbox.rows.first)
-        #expect(row.reply == nil && row.canWake)
+        #expect(row.reply == nil && row.canWake && !row.replyNeedsReload)
 
         // Waking it brings its mod up, which says the session is idle and can take a reply.
         world.listening = false
@@ -302,6 +305,7 @@ import Testing
         world.finishTurn(id: "t1-5")
         try world.show(suggested: "Yes, merge it.")
         let row = try #require(world.inbox.rows.first)
+        #expect(!row.replyNeedsReload)
         var actions = InboxActions()
         var calls: [String] = []
         actions.setReplyDraft = { calls.append("draft \($0) \($1)") }
@@ -317,7 +321,8 @@ import Testing
         older.finishTurn(id: "t1-5", reply: false)
         try older.show(suggested: "Yes, merge it.")
         let plain = try height(try #require(older.inbox.rows.first), InboxActions(), named: "reply-none")
-        #expect(empty > plain + 20)
+        // In the field's place it has the line that says what to do, which is about as tall.
+        #expect(abs(empty - plain) < 24)
 
         actions.setReplyDraft("22222222", "Yes")
         actions.useSuggestedReply("22222222")

@@ -813,6 +813,17 @@ struct InboxRowView: View {
                 }
             }
 
+            if row.replyNeedsReload, !isFolded {
+                Text(InboxRow.reloadHint)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+                    .padding(.leading, 30)
+                    .padding(.trailing, 10)
+                    .padding(.bottom, 8)
+            }
+
             if takesReply, !isFolded {
                 ReplyField(
                     text: actions.replyDrafts[row.id] ?? "", id: "reply.field.\(row.id)", hover: hover, drawsField: drawsMenus,

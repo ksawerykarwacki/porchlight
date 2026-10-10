@@ -522,3 +522,13 @@ extension Session {
         }
     }
 }
+
+extension Session {
+    /// The session is idle and its mod has spoken, but the mod is one from before replies: it
+    /// reported the turn's end without offering to take one. It runs, so it is not woken, and
+    /// nothing can be handed to it until it loads the current mod (`/reload-plugins` in it).
+    public var needsNewerModToReply: Bool {
+        guard isIdleAfterATurn, !hasNoProcess, let companion, companion.waiting == nil, !companion.isTurnRunning, companion.failure == nil else { return false }
+        return companion.replyableTurnID == nil
+    }
+}

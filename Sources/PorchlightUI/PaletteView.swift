@@ -813,6 +813,13 @@ struct PaletteSessionRow: View {
                     // decide whether to open it.
                     SaidText(text: showsWholeSaid ? (row.said ?? ending) : ending, size: 12)
                         .padding(.top, 1)
+                    if row.replyNeedsReload {
+                        Text(InboxRow.reloadHint)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.top, 4)
+                    }
                     if let said = row.said, said != ending {
                         // The key, and what it does now: the row has no room for a button bar.
                         Button(action: toggleWholeSaid) {

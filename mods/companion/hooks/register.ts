@@ -139,6 +139,26 @@ const tellNewApp = async ($: any): Promise<void> => {
 let asked = 0
 
 /**
+ * Says again, once a minute, what is open, or tells a restarted app how the last turn ended.
+ * Started by whichever hook runs first: a session's start, but also the first turn after this
+ * mod was loaded again into a running session, which is not told of any start.
+ */
+let isTelling = false
+const keepTelling = ($: any): void => {
+  if (isTelling) return
+  isTelling = true
+  try {
+    $.clock.every(REPEAT_EVERY_MS, () => {
+      const again = reportOf(open)
+      if (again !== undefined) void send($, again)
+      else void tellNewApp($)
+    })
+  } catch {
+    isTelling = false
+  }
+}
+
+/**
  * Waits for a command from the app that `accept` takes, for as long as `stillOpen` says what it
  * is for is still the open thing. Resolves with what was accepted, or never.
  */
@@ -227,11 +247,7 @@ export const register: Register = on => {
       const idle = { kind: 'idle' as const, id: `s${asked}-${Number(await $.clock.now())}`, can: ['reply'] }
       ended = idle
       void send($, idle).then(() => replyFromApp($, idle))
-      $.clock.every(REPEAT_EVERY_MS, () => {
-        const again = reportOf(open)
-        if (again !== undefined) void send($, again)
-        else void tellNewApp($)
-      })
+      keepTelling($)
     } catch {
       // without an id there is nothing to report under
     }
@@ -244,6 +260,7 @@ export const register: Register = on => {
   }).catch(passOn)
 
   on('turn.start', ($: any, e: any, next: any) => {
+    keepTelling($)
     open = undefined
     ended = undefined
     toldSecret = undefined
@@ -254,6 +271,7 @@ export const register: Register = on => {
   on('turn.complete', async ($: any, e: any, next: any) => {
     // A subagent's turn is not the session's: its end changes nothing the app shows.
     if (e?.agentId !== undefined) return next(e)
+    keepTelling($)
     // A failed turn ends too: the failure stays what the session stopped on.
     if (open?.kind !== 'failure') open = undefined
     // With the end of the turn's answer, which is where a session says what it is waiting for.
