@@ -99,6 +99,14 @@ import Testing
         #expect(open > closed + 60)
     }
 
+    @Test func thePaletteWindowTakesTheRoomTheScreenHas() {
+        // A 16-inch screen leaves about 940 points under the palette's top edge; a small one less
+        // than the card can need, a tall one more than it ever will.
+        #expect(PaletteController.windowHeight(below: 940) == 940)
+        #expect(PaletteController.windowHeight(below: 480) == 620)
+        #expect(PaletteController.windowHeight(below: 1800) == 1100)
+    }
+
     @Test func theModelRemembersWhichRowsAreOpen() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("porchlight-said-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
