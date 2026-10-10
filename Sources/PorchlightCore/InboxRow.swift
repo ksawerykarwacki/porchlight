@@ -34,8 +34,10 @@ public struct InboxRow: Sendable, Equatable, Identifiable {
     public let tool: String?
     /// Choices offered with a question, in order, without the "(Recommended)" marker.
     public let options: [String]
-    /// True when clicking an option can answer the session: see `Session.answerTarget`.
-    public let isAnswerable: Bool
+    /// The asking an option would answer, when one can: see `Session.answerTarget`. A choice is
+    /// tied to it, so that it is never sent to a later question.
+    public let answerID: String?
+    public var isAnswerable: Bool { answerID != nil }
     /// Which of `options` Claude recommends, if it marked one.
     public let recommendedOption: Int?
     public let suggestedReply: String?
@@ -109,7 +111,7 @@ public struct InboxRow: Sendable, Equatable, Identifiable {
             $0.replacingOccurrences(of: marker, with: "", options: .caseInsensitive).trimmingCharacters(in: .whitespaces)
         }
         suggestedReply = session.suggestedReply
-        isAnswerable = session.answerTarget != nil
+        answerID = session.answerTarget?.questionID
     }
 
     /// What the row's snooze menu offers: ways to pause, or the way back when already paused.

@@ -81,7 +81,7 @@ private func session(_ reports: [[String: Any]], state: SessionState = .blocked)
         let shown = session([["id": "q1-5", "can": ["answer"], "questions": [fruit]]])
         let row = InboxRow(session: shown, now: start)
         // The row cleans the label for the eye; the answer is the label as the session wrote it.
-        #expect(row.isAnswerable && row.options == ["apple", "pear"] && row.recommendedOption == 0)
+        #expect(row.answerID == "q1-5" && row.options == ["apple", "pear"] && row.recommendedOption == 0)
         #expect(shown.answerTarget?.options == ["apple (Recommended)", "pear"])
     }
 

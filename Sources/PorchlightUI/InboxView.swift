@@ -593,7 +593,7 @@ struct InboxRowView: View {
                                 .padding(.top, 3)
                         }
                         if !row.options.isEmpty {
-                            let chosen = actions.pendingAnswer?.sessionID == row.id ? actions.pendingAnswer?.option : nil
+                            let chosen = actions.pendingAnswer?.sessionID == row.id && actions.pendingAnswer?.questionID == row.answerID ? actions.pendingAnswer?.option : nil
                             VStack(alignment: .leading, spacing: 4) {
                                 ForEach(Array(row.options.enumerated()), id: \.offset) { index, option in
                                     if row.isAnswerable {

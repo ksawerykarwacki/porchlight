@@ -60,7 +60,7 @@ private let conversation = "22222222-0000-4000-8000-000000000000"
         #expect(inbox.rows.first { $0.id == "22222222" }?.isAnswerable == true)
 
         inbox.chooseAnswer(sessionID: "22222222", option: 1)
-        #expect(inbox.pendingAnswer == .init(sessionID: "22222222", option: 1) && world.sent.isEmpty)
+        #expect(inbox.pendingAnswer == .init(sessionID: "22222222", option: 1, questionID: "q1-5") && world.sent.isEmpty)
         // Another click changes the choice; Cancel drops it; neither sends.
         inbox.chooseAnswer(sessionID: "22222222", option: 0)
         #expect(inbox.pendingAnswer?.option == 0)
@@ -107,15 +107,23 @@ private let conversation = "22222222-0000-4000-8000-000000000000"
         inbox.sendAnswer()
         #expect(world.sent.isEmpty)
 
-        // A new question while a choice is up for the old one: Send goes to nobody.
+        // A new question takes the old one's place while a choice is up: the choice is dropped,
+        // and is never sent as an answer to the new one.
         world.report(["id": "q2-9", "can": ["answer"], "questions": [["question": "Apple or pear?", "options": [["label": "apple"], ["label": "pear"]]]]])
         world.show()
         inbox.chooseAnswer(sessionID: "22222222", option: 1)
         world.report(["id": "q3-1", "can": ["answer"], "questions": [["question": "Red or green?", "options": [["label": "red"], ["label": "green"]]]]])
-        // The store has not been read yet, so the row still shows the old question; the answer is
-        // built from what the store holds, the old id, which the mod will refuse.
+        world.show()
+        #expect(inbox.pendingAnswer == nil)
+        #expect(inbox.answer(.init(sessionID: "22222222", option: 1, questionID: "q2-9")) == "That question is no longer open; nothing was sent")
+        #expect(world.sent.isEmpty)
+
+        // Before the store has read the new question the row still shows the old one; what goes
+        // out then carries the old id, which the mod refuses.
+        inbox.chooseAnswer(sessionID: "22222222", option: 1)
+        world.report(["id": "q4-2", "can": ["answer"], "questions": [["question": "Up or down?", "options": [["label": "up"], ["label": "down"]]]]])
         inbox.sendAnswer()
-        #expect(world.sent.last?.command["id"] as? String == "q2-9")
+        #expect(world.sent.count == 1 && world.sent.last?.command["id"] as? String == "q3-1")
     }
 
     @Test func aCommandThatWasOnlyQueuedIsSaidToBe() throws {
@@ -182,12 +190,15 @@ private let conversation = "22222222-0000-4000-8000-000000000000"
         actions.sendAnswer = { calls.append("send") }
         actions.cancelAnswer = { calls.append("cancel") }
         let plain = try height(actions, world.inbox.snapshot, named: "answer-plain")
-        actions.pendingAnswer = .init(sessionID: "22222222", option: 1)
+        actions.pendingAnswer = .init(sessionID: "22222222", option: 1, questionID: "q1-5")
         let chosen = try height(actions, world.inbox.snapshot, named: "answer-chosen")
         // The Send and Cancel line is added under the options.
         #expect(chosen > plain + 20)
         // A choice for a row that is not showing draws nothing.
-        actions.pendingAnswer = .init(sessionID: "gone9999", option: 0)
+        actions.pendingAnswer = .init(sessionID: "gone9999", option: 0, questionID: "q1-5")
+        #expect(try height(actions, world.inbox.snapshot) == plain)
+        // Nor does a choice made for an earlier asking of this row's question.
+        actions.pendingAnswer = .init(sessionID: "22222222", option: 1, questionID: "q0-1")
         #expect(try height(actions, world.inbox.snapshot) == plain)
 
         actions.chooseAnswer("22222222", 1)
