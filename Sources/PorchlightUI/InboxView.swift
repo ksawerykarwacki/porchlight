@@ -86,6 +86,9 @@ public struct InboxActions {
     public var setWrapUpEngine: (WrapUpEngine) -> Void = { _ in }
     /// Opens the palette on the kept summaries.
     public var showNotes: () -> Void = {}
+    /// Rows that show what the session said last in full, and the switch for one.
+    public var expandedSaid: Set<String> = []
+    public var toggleSaid: (String) -> Void = { _ in }
     /// Answering a question from the panel: a click chooses, Send sends.
     public var pendingAnswer: InboxModel.PendingAnswer?
     public var chooseAnswer: (String, Int) -> Void = { _, _ in }
@@ -217,6 +220,8 @@ public struct InboxView: View {
         }
         actions.newSession = newSession
         actions.pendingAnswer = model.pendingAnswer
+        actions.expandedSaid = model.expandedSaid
+        actions.toggleSaid = { model.toggleSaid(sessionID: $0) }
         actions.chooseAnswer = { model.chooseAnswer(sessionID: $0, option: $1) }
         actions.sendAnswer = { model.sendAnswer() }
         actions.cancelAnswer = { model.cancelAnswer() }
@@ -596,7 +601,12 @@ struct InboxRowView: View {
                                 .fixedSize(horizontal: false, vertical: true)
                                 .padding(.top, 3)
                         }
-                        if let detail = row.detail {
+                        if let said = row.said, let ending = row.saidEnding {
+                            // What the session said when it stopped, in place of the fragment
+                            // Claude Code keeps of it.
+                            SaidText(text: actions.expandedSaid.contains(row.id) ? said : ending)
+                                .padding(.top, 3)
+                        } else if let detail = row.detail {
                             Text(row.kind == .approval ? "\(row.tool ?? "Tool"): \(detail)" : detail)
                                 .font(row.kind == .approval ? .system(size: 11.5, design: .monospaced) : .system(size: 12.5))
                                 .foregroundStyle(waits ? .primary : .secondary)
@@ -687,6 +697,20 @@ struct InboxRowView: View {
                 }
                 .padding(.trailing, 10)
                 .padding(.top, 7)
+            }
+
+            if let said = row.said, said != row.saidEnding {
+                let open = actions.expandedSaid.contains(row.id)
+                Button { actions.toggleSaid(row.id) } label: {
+                    Text(open ? "Show less" : "Show more")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(hover.hovered == "said.\(row.id)" ? .primary : .secondary)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .onHover { hover.set("said.\(row.id)", $0) }
+                .padding(.leading, 30)
+                .padding(.bottom, 8)
             }
 
             if answers {
@@ -834,6 +858,29 @@ struct StatusLamp: View {
 }
 
 /// One of the choices a session offered. The one Claude recommends is lit.
+/// What a session said, with its emphasis and code drawn as such and its lines kept.
+struct SaidText: View {
+    let text: String
+
+    static func styled(_ text: String) -> AttributedString {
+        let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace, failurePolicy: .returnPartiallyParsedIfPossible)
+        return (try? AttributedString(markdown: text, options: options)) ?? AttributedString(text)
+    }
+
+    var body: some View {
+        // A paragraph break is a small gap here, not an empty line: the panel is narrow.
+        VStack(alignment: .leading, spacing: 5) {
+            ForEach(Array(text.components(separatedBy: "\n\n").enumerated()), id: \.offset) { _, paragraph in
+                Text(Self.styled(paragraph))
+                    .font(.system(size: 12.5))
+                    .lineSpacing(1.5)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
 /// What a chosen option needs before it is an answer: Send, or Cancel.
 struct AnswerBar: View {
     let option: String

@@ -114,6 +114,13 @@ public final class InboxModel {
     }
 
     public private(set) var pendingAnswer: PendingAnswer?
+
+    /// Rows whose last reply is shown whole instead of only its ending.
+    public private(set) var expandedSaid: Set<String> = []
+
+    public func toggleSaid(sessionID: String) {
+        if expandedSaid.remove(sessionID) == nil { expandedSaid.insert(sessionID) }
+    }
     /// Hands a command to a session's mod; true when the mod took it at once. Set by the app.
     public var sendToCompanion: ((_ command: Data, _ conversationID: String) -> Bool)?
 

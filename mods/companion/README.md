@@ -40,13 +40,19 @@ only your user can open. Nothing goes over the network.
 | When | What is sent |
 |---|---|
 | A session starts or ends | That it did |
-| A turn starts or finishes | That it did, and Claude Code's one-word reason (answer, error, …) |
+| A turn starts | That it did |
+| A turn finishes | That it did, Claude Code's one-word reason (answer, error, …), and the end of what the session said: up to the last 1,500 characters of its final message |
 | The session asks you a question | The question's text and its options' labels and descriptions |
 | The session wants an approval | The tool's name, and one line: the command for a shell, the path for a file tool |
 | A question is answered or an approval given | That the session is working again; not what you answered |
 | A turn fails | Claude Code's class for the failure (`rate_limit`, `overloaded`, …) |
 
-Not sent: your prompts, the assistant's replies, your answers, file contents, tool output.
+Not sent: your prompts, your answers, file contents, tool output, and nothing of the session's
+replies but the end of the last one.
+
+That end is sent so the panel can show what a session is waiting to hear about; what Claude Code
+keeps of it for programs outside is often a few words cut mid-sentence. The app holds it in memory
+until the session's next turn starts. It is not logged and not written to disk.
 
 The app sends the mod one thing only: the option you chose and sent for an open question, with that
 question's text and the id the mod gave that asking. While such a question is open the mod keeps

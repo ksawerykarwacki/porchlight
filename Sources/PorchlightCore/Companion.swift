@@ -33,6 +33,8 @@ public struct CompanionEvent: Sendable, Equatable {
     public var questionID: String?
     /// For a question: whether this mod will take an answer from the app at all.
     public var takesAnswer = false
+    /// With a turn's end: the end of what the session said last. Never part of `line`.
+    public var said: String?
 
     public init(sessionID: String, kind: Kind, receivedAt: Date, questionID: String? = nil, takesAnswer: Bool = false) {
         self.sessionID = sessionID
@@ -51,6 +53,8 @@ public struct CompanionEvent: Sendable, Equatable {
     public static let version = 1
     /// The longest text kept from a report; the rest is cut.
     static let textLimit = 2000
+    /// How much is kept of what a session said last.
+    static let saidLimit = 2000
 
     private struct Body: Decodable {
         let v: Int?
@@ -62,6 +66,7 @@ public struct CompanionEvent: Sendable, Equatable {
         let detail: String?
         let error: String?
         let id: String?
+        let said: String?
     }
 
     /// The event in a report's body, or nil when it is not one this build understands: not JSON,
@@ -90,6 +95,10 @@ public struct CompanionEvent: Sendable, Equatable {
         default: return nil
         }
         var event = CompanionEvent(sessionID: session.lowercased(), kind: kind, receivedAt: receivedAt)
+        if case .turnComplete = kind, let said = body.said?.trimmingCharacters(in: .whitespacesAndNewlines), !said.isEmpty {
+            // Its end is what matters: that is where a session says what it needs.
+            event.said = String(said.suffix(saidLimit))
+        }
         if case .question = kind, let id = body.id, isValidQuestionID(id) {
             event.questionID = id
             // Read on its own, so a `can` that is not a list costs the report nothing but this.
@@ -132,6 +141,9 @@ public struct CompanionFacts: Sendable, Equatable {
     public var answerableQuestionID: String?
     /// The class of the failure the last turn ended on; cleared when a turn starts.
     public var failure: String?
+    /// The end of what the session said in its last finished turn; cleared when a turn starts.
+    /// Kept in memory only: it is the session's own words, and is never logged or written down.
+    public var lastSaid: String?
     public var isTurnRunning = false
     public var lastReportAt: Date
 
@@ -155,7 +167,9 @@ public struct CompanionFacts: Sendable, Equatable {
             next.waitingSince = nil
             next.answerableQuestionID = nil
             next.failure = nil
+            next.lastSaid = nil
         case .turnComplete:
+            next.lastSaid = event.said
             next.isTurnRunning = false
             next.waiting = nil
             next.waitingSince = nil

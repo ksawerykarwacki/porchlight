@@ -427,6 +427,14 @@ What Claude Code documents for programs outside it (same date): `claude agents -
 
 **Where a waiting session stands (2026-10-10).** Seen by the owner: a session that ended its turn with a long report and "I'll start when you say which one." showed in the panel as "which one." and nothing else, because the row drew only the state file's `needs`. The same file holds `output.result`, Claude Code's sentence on what the turn came to, and `detail`, its status line. A row that waits on a question or on free text now shows one of them (the result first) above what it asks, unless it only repeats it; an approval does not, being about one command. The suggested reply's text is drawn under its button, so the choice can be judged before opening the session. `intent` and `providerEnv` are still never read.
 
+**What a waiting session said (2026-10-10, the owner's decision).** The state file turned out to hold no summary at all for a session that had just stopped: only `needs`, which is the tail of the last reply cut mid-sentence ("which one.\", I'll switch it to the status line or drop it."), so the context line above never showed for it. Asked, the owner chose to have the mod send the end of the reply.
+
+- *The mod* (0.3.0): the `turn.complete` event carries `answer`, the assistant's final visible text of the turn. Its last 1,500 characters, begun at a paragraph, a line or a word, go in the turn's report as `said`. A subagent's turn is no longer reported at all (before, its end was taken for the session's).
+- *The app:* kept as `CompanionFacts.lastSaid` until the session's next turn starts or it ends; in memory only, never in the log or in an event's printed line. A row that waits on free text shows it in place of `needs`: its last paragraphs that fit 360 characters, with "Show more" for the rest, bold and code drawn as such. The one-line `detail` (palette, notifications) is still Claude Code's.
+- This changes what the mod's README promised ("the assistant's replies are not sent"); the README, the guide and `CLAUDE.md` say what is sent now and that it is not kept.
+- Checked: unit tests; the mod's tests; live on 2.1.296 with a stand-in app, a session that replied in two paragraphs reported both in its turn's end.
+- Not checked: the installed app showing it; a reply that ends in a table or a list, which are drawn as plain lines.
+
 **Built, layer 3 (2026-10-10): answering one question from the panel.** The owner changed rule 8 in 12.1 for this.
 
 - *What can be answered:* a session that is waiting, whose mod said it takes answers (`"can": ["answer"]` and an id for this asking, `q<n>-<time>`), with exactly one question, options, one to be picked, and only when that question is the one the row shows (`Session.answerTarget`). Several questions, a choice of several and typed text stay with the session's dialog; so does everything from a mod older than 0.2.0, whose options stay plain text.

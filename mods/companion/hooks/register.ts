@@ -1,6 +1,6 @@
 import type { Register } from 'claude-code'
 
-import { answerOf, bodyOf, descriptorOf, detailOf, questionsOf, reportOf, takesAnswer, type Open, type Question, type Report } from './report'
+import { answerOf, bodyOf, descriptorOf, detailOf, questionsOf, reportOf, tailOf, takesAnswer, type Open, type Question, type Report } from './report'
 
 // Tells the Porchlight app what this session is doing, the moment it happens: it asked something,
 // it wants an approval, a turn started or ended, a turn failed.
@@ -9,6 +9,9 @@ import { answerOf, bodyOf, descriptorOf, detailOf, questionsOf, reportOf, takesA
 // options to pick from, it will take the user's pick from the Porchlight app and hand it to the
 // session as that question's answer. The pick is made and sent by the user in the app; the mod
 // never chooses. The session's own dialog stays up meanwhile, and whichever answers first counts.
+//
+// When a turn ends it also sends the end of what the session said last, so the app can show what
+// the session is waiting to hear about. That goes to the app on this machine only.
 //
 // Every other hook hands back exactly what the hooks beneath it answered, and no hook waits for
 // the app: a report is sent on the side, and a slow, absent or refusing app costs the session
@@ -167,8 +170,12 @@ export const register: Register = on => {
   }).catch(passOn)
 
   on('turn.complete', ($: any, e: any, next: any) => {
+    // A subagent's turn is not the session's: its end changes nothing the app shows.
+    if (e?.agentId !== undefined) return next(e)
     open = undefined
-    void send($, { kind: 'turn.complete', ...(typeof e?.reason === 'string' ? { reason: e.reason } : {}) })
+    // With the end of the turn's answer, which is where a session says what it is waiting for.
+    const said = typeof e?.answer === 'string' ? tailOf(e.answer) : ''
+    void send($, { kind: 'turn.complete', ...(typeof e?.reason === 'string' ? { reason: e.reason } : {}), ...(said !== '' ? { said } : {}) })
     return next(e)
   }).catch(passOn)
 

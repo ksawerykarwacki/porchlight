@@ -17,7 +17,7 @@ export type Open =
 
 export type Report =
   | { kind: 'session.start' | 'session.end' | 'turn.start' | 'resumed' }
-  | { kind: 'turn.complete'; reason?: string }
+  | { kind: 'turn.complete'; reason?: string; said?: string }
   | { kind: 'question'; questions: Question[]; id?: string; can?: string[] }
   | { kind: 'permission'; tool: string; detail: string }
   | { kind: 'failure'; error: string }
@@ -104,4 +104,19 @@ export const descriptorOf = (text: string): { socket: string; secret: string } |
   } catch {
     return undefined
   }
+}
+
+/** How much of a session's last reply is sent: its end, which is where it says what it needs. */
+export const SAID_LIMIT = 1500
+
+/** The end of a text, begun at a paragraph, a line or a word when one is near. */
+export const tailOf = (text: unknown, limit = SAID_LIMIT): string => {
+  const whole = String(text ?? '').trim()
+  if (whole.length <= limit) return whole
+  const tail = whole.slice(whole.length - limit)
+  for (const mark of ['\n\n', '\n', ' ']) {
+    const at = tail.indexOf(mark)
+    if (at >= 0 && at < limit / 2) return `…${tail.slice(at).trimStart()}`
+  }
+  return `…${tail}`
 }

@@ -30,6 +30,10 @@ public struct InboxRow: Sendable, Equatable, Identifiable {
     public let kind: Kind
     /// The question, the command awaiting approval, or the raw need. Nil when nothing is known.
     public let detail: String?
+    /// The end of what a waiting session said last, its paragraphs kept; shown in place of
+    /// `detail`, which is then only a fragment of it. `saidEnding` is its last paragraph or two.
+    public let said: String?
+    public let saidEnding: String?
     /// Where a waiting session stands, when that says more than `detail` does. Not for an
     /// approval, which is about one command.
     public let context: String?
@@ -108,7 +112,9 @@ public struct InboxRow: Sendable, Equatable, Identifiable {
         self.tool = tool
         let shown = detail.map(Self.singleLine)
         self.detail = shown
-        let standing = kind == .question || kind == .waiting ? session.standing.map(Self.singleLine) : nil
+        said = kind == .waiting ? session.lastSaid : nil
+        saidEnding = said.map { Self.ending(of: $0) }
+        let standing = kind == .question || (kind == .waiting && said == nil) ? session.standing.map(Self.singleLine) : nil
         // Said once: not when it only repeats the question.
         context = standing.flatMap { $0.caseInsensitiveCompare(shown ?? "") == .orderedSame ? nil : $0 }
         let labels = session.questions.first?.options.map(\.label) ?? []
@@ -127,6 +133,27 @@ public struct InboxRow: Sendable, Equatable, Identifiable {
     }
 
     /// Collapses whitespace so a multi-line question or command fits a row.
+
+    /// The last paragraphs of a text that fit in `limit` characters: at least the last one, cut
+    /// from the front at a word if it is longer on its own.
+    public static func ending(of text: String, limit: Int = 360) -> String {
+        let paragraphs = text.components(separatedBy: "\n\n").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        guard let last = paragraphs.last else { return "" }
+        if last.count > limit {
+            let tail = last.suffix(limit)
+            let start = tail.firstIndex(of: " ").map { tail.index(after: $0) } ?? tail.startIndex
+            return "…" + tail[start...]
+        }
+        var kept = [last]
+        var length = last.count
+        for paragraph in paragraphs.dropLast().reversed() {
+            guard length + paragraph.count + 2 <= limit else { break }
+            kept.insert(paragraph, at: 0)
+            length += paragraph.count + 2
+        }
+        return (kept.count < paragraphs.count ? "… " : "") + kept.joined(separator: "\n\n")
+    }
+
     static func singleLine(_ text: String) -> String {
         text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
     }

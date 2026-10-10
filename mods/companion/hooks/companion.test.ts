@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { answerOf, bodyOf, descriptorOf, detailOf, questionsOf, reportOf, takesAnswer, TEXT_LIMIT } from './report'
+import { answerOf, bodyOf, descriptorOf, detailOf, questionsOf, reportOf, SAID_LIMIT, tailOf, takesAnswer, TEXT_LIMIT } from './report'
 
 const SESSION = '22222222-0000-4000-8000-000000000000'
 const DESCRIPTOR = JSON.stringify({ v: 1, socket: '/Users/u/Library/Application Support/Porchlight/companion.sock', secret: 'abc123' })
@@ -287,4 +287,36 @@ test('a choice of several is reported with its kind and never offered for an ans
   expect(state.asks).toBe(0)
   expect(state.posts[0].body.can).toBe(undefined)
   expect(state.posts[0].body.questions[0].multiSelect).toBe(true)
+})
+
+test('only the end of a long reply is kept, begun at a paragraph when one is near', () => {
+  expect(tailOf('short')).toBe('short')
+  expect(tailOf('  padded \n')).toBe('padded')
+  expect(tailOf(undefined)).toBe('')
+  const long = `${'a'.repeat(3000)}\n\nThe last paragraph.\n\n${'b '.repeat(600)}Which one?`
+  const tail = tailOf(long)
+  expect(tail.length <= SAID_LIMIT + 1).toBe(true)
+  expect(tail.endsWith('Which one?')).toBe(true)
+  expect(tail.startsWith('…')).toBe(true)
+  expect(tailOf(`${'x'.repeat(100)}\n\nSecond paragraph here.`, 40)).toBe('…Second paragraph here.')
+})
+
+const turnEnd = (fields: object) => ({ answer: '', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer', ...fields })
+
+test('the end of a turn is reported with the end of what the session said', async ($: any, on: any) => {
+  const state = machine(on)
+  on('turn.complete', (_$: any, e: any) => ({ text: e.answer }))
+  await $.turn.complete(turnEnd({ answer: 'All done.\n\nShall I merge? ' }))
+  await settle($)
+  expect(state.posts.map(post => post.body)).toEqual([{ v: 1, session: SESSION, kind: 'turn.complete', reason: 'answer', said: 'All done.\n\nShall I merge?' }])
+})
+
+test('a turn that said nothing is reported without words, and a subagent\'s turn not at all', async ($: any, on: any) => {
+  const state = machine(on)
+  on('turn.complete', (_$: any, e: any) => ({ text: e.answer }))
+  await $.turn.complete(turnEnd({ reason: 'aborted', isAborted: true }))
+  await settle($)
+  await $.turn.complete(turnEnd({ answer: 'A subagent\'s report.', agentId: 'a1' }))
+  await settle($)
+  expect(state.posts.map(post => post.body)).toEqual([{ v: 1, session: SESSION, kind: 'turn.complete', reason: 'aborted' }])
 })
