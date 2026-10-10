@@ -30,7 +30,7 @@ Ask the owner before anything that changes their machine or accounts: restarting
 | `porchlight` | The command-line tool, JSON for other frontends | |
 | `PorchlightApp` | The `MenuBarExtra` app: wiring only | |
 | `PorchlightIconTool` | Draws the app icon for `make-app.sh` | |
-| `mods/` | Claude Code mods (TypeScript), not part of the Swift package | Each is optional and works without the app. Checked with `claude plugin validate` and `claude plugin test`, which CI cannot run. |
+| `mods/` | Claude Code mods (TypeScript), not part of the Swift package | Each is optional; the app works without them. Checked with `claude plugin validate` and `claude plugin test`, which CI cannot run. A mod never changes what a session does unless that is its stated purpose: every hook the validator calls "gating" has a `.catch` that passes on, and no hook waits for the app. |
 
 Every side effect is passed in as a closure or protocol (the `claude` runner, the terminal launcher, the login item, git, Homebrew, the clock), so tests never touch the real CLI, the network or the user's state.
 

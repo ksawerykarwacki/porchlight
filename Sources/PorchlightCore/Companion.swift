@@ -80,6 +80,24 @@ public struct CompanionEvent: Sendable, Equatable {
     }
 }
 
+extension CompanionEvent {
+    /// One line for a person: which session, and what it said.
+    public var line: String {
+        let what: String
+        switch kind {
+        case .sessionStart: what = "started"
+        case .sessionEnd: what = "ended"
+        case .turnStart: what = "turn started"
+        case .turnComplete(let reason): what = "turn finished" + (reason.map { " (\($0))" } ?? "")
+        case .question(let questions): what = "asks: " + questions.map(\.question).joined(separator: " / ")
+        case .permission(let tool, let detail): what = "wants approval for \(tool): \(detail)"
+        case .resumed: what = "is working again"
+        case .failure(let kind): what = "failed: \(kind)"
+        }
+        return "\(sessionID.prefix(8))  \(what)"
+    }
+}
+
 /// What the mod's reports say about one session right now.
 public struct CompanionFacts: Sendable, Equatable {
     public enum Waiting: Sendable, Equatable {
@@ -119,11 +137,13 @@ public struct CompanionFacts: Sendable, Equatable {
             next.waiting = nil
             next.waitingSince = nil
         case .question(let questions):
+            // The mod says again what is open every so often, in case the app was restarted
+            // meanwhile: the same thing reported twice has been waiting since the first time.
+            if waiting != .question(questions) { next.waitingSince = event.receivedAt }
             next.waiting = .question(questions)
-            next.waitingSince = event.receivedAt
         case .permission(let tool, let detail):
+            if waiting != .permission(tool: tool, detail: detail) { next.waitingSince = event.receivedAt }
             next.waiting = .permission(tool: tool, detail: detail)
-            next.waitingSince = event.receivedAt
         case .resumed:
             next.waiting = nil
             next.waitingSince = nil
@@ -144,9 +164,12 @@ public final class CompanionHub: ChangeTrigger, @unchecked Sendable {
     private var listeners: [UUID: AsyncStream<Void>.Continuation] = [:]
     private var received = 0
     private let now: @Sendable () -> Date
+    /// Told of every report as it is taken; for the command-line tool, which prints them.
+    private let onEvent: (@Sendable (CompanionEvent) -> Void)?
 
-    public init(now: @escaping @Sendable () -> Date = { Date() }) {
+    public init(now: @escaping @Sendable () -> Date = { Date() }, onEvent: (@Sendable (CompanionEvent) -> Void)? = nil) {
         self.now = now
+        self.onEvent = onEvent
     }
 
     /// Takes one report. Returns the event it held, or nil when it was dropped.
@@ -165,6 +188,7 @@ public final class CompanionHub: ChangeTrigger, @unchecked Sendable {
             return Array(listeners.values)
         }
         waiting.forEach { $0.yield() }
+        onEvent?(event)
     }
 
     /// The facts for every session that has reported, by conversation id.
