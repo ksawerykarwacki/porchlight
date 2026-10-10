@@ -108,6 +108,11 @@ struct PorchlightApp: App {
         paletteModel.onCopy = { command in model.copy(command, saying: "Command copied") }
         let palette = PaletteController(model: paletteModel)
         self.palette = palette
+        // An open palette follows the sessions as they change, as the panel does.
+        model.onSessionsRead = { [weak palette] in
+            guard palette?.isVisible == true else { return }
+            Task { await paletteModel.sessionsChanged() }
+        }
         // `porchlight new` asks the running app for the palette; so can any launcher or shortcut tool.
         AppSignal.observe(.newSession) { palette.show() }
         // A click on the daily summary: the palette lists what is waiting.
