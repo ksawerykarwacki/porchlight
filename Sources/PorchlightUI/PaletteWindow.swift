@@ -159,9 +159,17 @@ public final class PaletteController {
         let pointer = NSEvent.mouseLocation
         let screen = NSScreen.screens.first { $0.frame.contains(pointer) } ?? NSScreen.main
         guard let visible = screen?.visibleFrame else { return }
-        let size = panel.frame.size
         let top = visible.maxY - visible.height * 0.16 + Self.margin
-        panel.setFrameOrigin(NSPoint(x: visible.midX - size.width / 2, y: top - size.height))
+        // The card grows downwards inside a clear window. A window shorter than the card squeezes
+        // it, so the window takes the room the screen has under its top edge.
+        let size = NSSize(width: panel.frame.width, height: Self.windowHeight(below: top - visible.minY))
+        panel.setFrame(NSRect(x: visible.midX - size.width / 2, y: top - size.height, width: size.width, height: size.height), display: false)
+    }
+
+    /// How tall the clear window is, given the room between its top edge and the bottom of the
+    /// screen: all of it up to a limit, and never less than the card's usual needs.
+    static func windowHeight(below room: CGFloat) -> CGFloat {
+        min(max(room, 620), 1100)
     }
 
     private func chooseFolder(asRoot: Bool) {
