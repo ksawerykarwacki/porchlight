@@ -31,12 +31,15 @@ public final class CompanionListener: @unchecked Sendable {
     private var listener: NWListener?
     /// Requests being held, and commands waiting for one, by short session id.
     private var held: [String: [(id: UUID, connection: NWConnection)]] = [:]
-    private var commands: [String: [Data]] = [:]
+    private var commands: [String: [(data: Data, queuedAt: Date)]] = [:]
+    /// A command nobody asked for within this time is dropped: the question it answered is gone.
+    private let commandLifetime: TimeInterval
 
     static let bodyLimit = 256 * 1024
     static let headerLimit = 16 * 1024
 
-    public init(paths: CompanionPaths = CompanionPaths(), hub: CompanionHub, hold: TimeInterval = 25) {
+    public init(paths: CompanionPaths = CompanionPaths(), hub: CompanionHub, hold: TimeInterval = 25, commandLifetime: TimeInterval = 60) {
+        self.commandLifetime = commandLifetime
         self.paths = paths
         self.hub = hub
         self.hold = hold
@@ -113,18 +116,25 @@ public final class CompanionListener: @unchecked Sendable {
         try? FileManager.default.removeItem(at: paths.socket)
     }
 
-    /// Queues a command for a session's mod, delivered at once if its request is being held.
-    /// Unused until the app has something to say; the tests exercise it.
-    public func send(_ command: Data, to session: String) {
-        queue.async {
+    /// How many requests are being held for a session, for tests that must not send too early.
+    func heldCount(for session: String) -> Int {
+        queue.sync { held[Self.key(session)]?.count ?? 0 }
+    }
+
+    /// Hands a command to a session's mod. True when the mod was waiting and has it now; false
+    /// when it was queued for the mod's next request, which may never come.
+    @discardableResult
+    public func send(_ command: Data, to session: String) -> Bool {
+        queue.sync {
             let key = Self.key(session)
             if var waiting = self.held[key], !waiting.isEmpty {
                 let first = waiting.removeFirst()
                 self.held[key] = waiting
                 self.respond(first.connection, status: 200, body: command)
-            } else {
-                self.commands[key, default: []].append(command)
+                return true
             }
+            self.commands[key, default: []].append((command, Date()))
+            return false
         }
     }
 
@@ -238,10 +248,11 @@ public final class CompanionListener: @unchecked Sendable {
     }
 
     private func hold(_ connection: NWConnection, for key: String) {
+        commands[key]?.removeAll { Date().timeIntervalSince($0.queuedAt) > commandLifetime }
         if var waiting = commands[key], !waiting.isEmpty {
             let command = waiting.removeFirst()
             commands[key] = waiting
-            respond(connection, status: 200, body: command)
+            respond(connection, status: 200, body: command.data)
             return
         }
         let id = UUID()

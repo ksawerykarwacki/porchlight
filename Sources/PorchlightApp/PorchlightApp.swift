@@ -41,6 +41,8 @@ struct PorchlightApp: App {
         let store = SessionStore.live(companion: hub)
         let model = updates.installed == nil ? InboxModel(store: store, companion: hub) : InboxModel(store: store, loginItem: .unavailable, companion: hub)
         model.companionProblem = companionProblem
+        // Only ever called with a choice the user made and sent in the panel.
+        if let listener { model.sendToCompanion = { command, conversation in listener.send(command, to: conversation) } }
         self.model = model
         model.willOpenTerminal = { PanelWindowObserver.closePanelAndLetGo() }
         let settingsURL = Settings.fileURL()

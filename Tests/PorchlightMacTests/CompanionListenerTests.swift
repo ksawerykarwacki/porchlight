@@ -15,11 +15,11 @@ final class CompanionRig: @unchecked Sendable {
     let listener: CompanionListener
     var secret: String { listener.secret }
 
-    init(hold: TimeInterval = 25) throws {
+    init(hold: TimeInterval = 25, commandLifetime: TimeInterval = 60) throws {
         // Short on purpose: a socket's path may only be 103 bytes long.
         directory = URL(fileURLWithPath: "/tmp/pl-\(UUID().uuidString.prefix(8))")
         paths = CompanionPaths(directory: directory)
-        listener = CompanionListener(paths: paths, hub: hub, hold: hold)
+        listener = CompanionListener(paths: paths, hub: hub, hold: hold, commandLifetime: commandLifetime)
         try listener.start()
     }
 
@@ -211,7 +211,7 @@ final class CompanionRig: @unchecked Sendable {
         #expect(InboxActions.companionStatus(listens: false, problem: "another copy of Porchlight is already listening.", sessions: 0)
             == "Not listening for the companion mod: another copy of Porchlight is already listening.")
         let none = InboxActions.companionStatus(listens: true, problem: nil, sessions: 0)
-        #expect(none?.contains("It only reports") == true && none?.hasSuffix("/plugin install porchlight-companion --marketplace ksawerykarwacki/porchlight") == true)
+        #expect(none?.contains("answer a question") == true && none?.hasSuffix("/plugin install porchlight-companion --marketplace ksawerykarwacki/porchlight") == true)
         #expect(InboxActions.companionStatus(listens: true, problem: nil, sessions: 1)?.hasPrefix("1 session reports through") == true)
         #expect(InboxActions.companionStatus(listens: true, problem: nil, sessions: 3)?.hasPrefix("3 sessions report through") == true)
         // A model made without a hub, as in every other test, does not claim to listen.

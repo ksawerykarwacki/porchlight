@@ -86,6 +86,11 @@ public struct InboxActions {
     public var setWrapUpEngine: (WrapUpEngine) -> Void = { _ in }
     /// Opens the palette on the kept summaries.
     public var showNotes: () -> Void = {}
+    /// Answering a question from the panel: a click chooses, Send sends.
+    public var pendingAnswer: InboxModel.PendingAnswer?
+    public var chooseAnswer: (String, Int) -> Void = { _, _ in }
+    public var sendAnswer: () -> Void = {}
+    public var cancelAnswer: () -> Void = {}
     /// One line on the optional companion mod: listening or not, and how many sessions have it.
     public var companionStatus: String?
     public var cancelWrapUp: () -> Void = {}
@@ -211,6 +216,10 @@ public struct InboxView: View {
             actions.installUpdate = { Task { await updates.update() } }
         }
         actions.newSession = newSession
+        actions.pendingAnswer = model.pendingAnswer
+        actions.chooseAnswer = { model.chooseAnswer(sessionID: $0, option: $1) }
+        actions.sendAnswer = { model.sendAnswer() }
+        actions.cancelAnswer = { model.cancelAnswer() }
         actions.companionStatus = InboxActions.companionStatus(
             listens: model.listensForCompanion, problem: model.companionProblem, sessions: model.companionSessions)
         actions.showNotes = showNotes
@@ -477,7 +486,7 @@ extension InboxActions {
         if sessions > 0 {
             return "\(sessions) \(sessions == 1 ? "session reports" : "sessions report") through the companion mod: what they ask shows here the moment they ask."
         }
-        return "Optional. A small Claude Code mod that tells Porchlight the moment a session asks something. It only reports; it changes nothing in a session. "
+        return "Optional. A small Claude Code mod that tells Porchlight the moment a session asks something, and lets you answer a question with options from here. "
             + "To install it, type this in a Claude Code session: \(companionInstall)"
     }
 }
@@ -584,9 +593,25 @@ struct InboxRowView: View {
                                 .padding(.top, 3)
                         }
                         if !row.options.isEmpty {
+                            let chosen = actions.pendingAnswer?.sessionID == row.id && actions.pendingAnswer?.questionID == row.answerID ? actions.pendingAnswer?.option : nil
                             VStack(alignment: .leading, spacing: 4) {
                                 ForEach(Array(row.options.enumerated()), id: \.offset) { index, option in
-                                    OptionChip(text: option, recommended: index == row.recommendedOption)
+                                    if row.isAnswerable {
+                                        // A click chooses and sends nothing; Send, below, is the answer.
+                                        Button { actions.chooseAnswer(row.id, index) } label: {
+                                            OptionChip(
+                                                text: option, recommended: index == row.recommendedOption, chosen: index == chosen,
+                                                hovered: hover.hovered == "answer.\(row.id).\(index)")
+                                        }
+                                        .buttonStyle(.plain)
+                                        .onHover { hover.set("answer.\(row.id).\(index)", $0) }
+                                        .help("Choose this answer")
+                                    } else {
+                                        OptionChip(text: option, recommended: index == row.recommendedOption)
+                                    }
+                                }
+                                if let chosen, row.options.indices.contains(chosen) {
+                                    AnswerBar(option: row.options[chosen], id: "answer.\(row.id)", hover: hover, send: actions.sendAnswer, cancel: actions.cancelAnswer)
                                 }
                             }
                             .padding(.top, 4)
@@ -775,9 +800,48 @@ struct StatusLamp: View {
 }
 
 /// One of the choices a session offered. The one Claude recommends is lit.
+/// What a chosen option needs before it is an answer: Send, or Cancel.
+struct AnswerBar: View {
+    let option: String
+    let id: String
+    let hover: HoverTracker
+    let send: () -> Void
+    let cancel: () -> Void
+
+    static func sendTitle(_ option: String) -> String {
+        "Send “\(option.count > 28 ? String(option.prefix(27)) + "…" : option)”"
+    }
+
+    private func button(_ title: String, _ key: String, strong: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 11.5, weight: strong ? .semibold : .regular))
+                .lineLimit(1)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .background(Capsule().fill(strong ? Lamp.light.opacity(hover.hovered == key ? 0.55 : 0.40) : Color.primary.opacity(hover.hovered == key ? 0.14 : 0.07)))
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .onHover { hover.set(key, $0) }
+    }
+
+    var body: some View {
+        HStack(spacing: 6) {
+            button(Self.sendTitle(option), "\(id).send", strong: true, action: send)
+                .help("Answer the session's question with this option")
+            button("Cancel", "\(id).cancel", strong: false, action: cancel)
+        }
+        .padding(.top, 3)
+    }
+}
+
 struct OptionChip: View {
     let text: String
     let recommended: Bool
+    /// Clicked, and waiting for Send.
+    var chosen = false
+    var hovered = false
 
     var body: some View {
         HStack(spacing: 5) {
@@ -792,8 +856,8 @@ struct OptionChip: View {
         .font(.system(size: 11.5))
         .padding(.horizontal, 8)
         .padding(.vertical, 3)
-        .background(Capsule().fill(recommended ? Lamp.light.opacity(0.22) : Color.primary.opacity(0.06)))
-        .overlay(Capsule().strokeBorder(recommended ? Lamp.light.opacity(0.55) : Color.primary.opacity(0.10), lineWidth: 1))
+        .background(Capsule().fill(chosen ? Lamp.light.opacity(0.45) : recommended ? Lamp.light.opacity(0.22) : Color.primary.opacity(hovered ? 0.12 : 0.06)))
+        .overlay(Capsule().strokeBorder(chosen ? Lamp.light : recommended ? Lamp.light.opacity(0.55) : Color.primary.opacity(hovered ? 0.22 : 0.10), lineWidth: chosen ? 1.5 : 1))
     }
 }
 

@@ -28,11 +28,23 @@ public struct CompanionEvent: Sendable, Equatable {
     public let kind: Kind
     /// When the app received it. The mod's own clock is not asked.
     public let receivedAt: Date
+    /// For a question: the mod's own name for this asking of it. An answer must name it, so one
+    /// meant for an earlier question can never land on a later one.
+    public var questionID: String?
+    /// For a question: whether this mod will take an answer from the app at all.
+    public var takesAnswer = false
 
-    public init(sessionID: String, kind: Kind, receivedAt: Date) {
+    public init(sessionID: String, kind: Kind, receivedAt: Date, questionID: String? = nil, takesAnswer: Bool = false) {
         self.sessionID = sessionID
         self.kind = kind
         self.receivedAt = receivedAt
+        self.questionID = questionID
+        self.takesAnswer = takesAnswer
+    }
+
+    /// A question's id as the mod makes it: short, and nothing but letters, digits and dashes.
+    public static func isValidQuestionID(_ id: String) -> Bool {
+        !id.isEmpty && id.count <= 64 && id.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-") }
     }
 
     /// The version of the reports this build understands.
@@ -49,6 +61,7 @@ public struct CompanionEvent: Sendable, Equatable {
         let tool: String?
         let detail: String?
         let error: String?
+        let id: String?
     }
 
     /// The event in a report's body, or nil when it is not one this build understands: not JSON,
@@ -76,7 +89,14 @@ public struct CompanionEvent: Sendable, Equatable {
             kind = .failure(kind: cut(error))
         default: return nil
         }
-        return CompanionEvent(sessionID: session.lowercased(), kind: kind, receivedAt: receivedAt)
+        var event = CompanionEvent(sessionID: session.lowercased(), kind: kind, receivedAt: receivedAt)
+        if case .question = kind, let id = body.id, isValidQuestionID(id) {
+            event.questionID = id
+            // Read on its own, so a `can` that is not a list costs the report nothing but this.
+            let can = ((try? JSONSerialization.jsonObject(with: data)) as? [String: Any])?["can"] as? [Any]
+            event.takesAnswer = can?.contains { $0 as? String == "answer" } ?? false
+        }
+        return event
     }
 }
 
@@ -108,6 +128,8 @@ public struct CompanionFacts: Sendable, Equatable {
     /// What the session is waiting on, if the last report says it is waiting.
     public var waiting: Waiting?
     public var waitingSince: Date?
+    /// For a question the mod will take an answer to: its id. Nil for anything else.
+    public var answerableQuestionID: String?
     /// The class of the failure the last turn ended on; cleared when a turn starts.
     public var failure: String?
     public var isTurnRunning = false
@@ -131,22 +153,27 @@ public struct CompanionFacts: Sendable, Equatable {
             next.isTurnRunning = true
             next.waiting = nil
             next.waitingSince = nil
+            next.answerableQuestionID = nil
             next.failure = nil
         case .turnComplete:
             next.isTurnRunning = false
             next.waiting = nil
             next.waitingSince = nil
+            next.answerableQuestionID = nil
         case .question(let questions):
             // The mod says again what is open every so often, in case the app was restarted
             // meanwhile: the same thing reported twice has been waiting since the first time.
             if waiting != .question(questions) { next.waitingSince = event.receivedAt }
             next.waiting = .question(questions)
+            next.answerableQuestionID = event.takesAnswer ? event.questionID : nil
         case .permission(let tool, let detail):
             if waiting != .permission(tool: tool, detail: detail) { next.waitingSince = event.receivedAt }
             next.waiting = .permission(tool: tool, detail: detail)
+            next.answerableQuestionID = nil
         case .resumed:
             next.waiting = nil
             next.waitingSince = nil
+            next.answerableQuestionID = nil
         case .failure(let kind):
             next.failure = kind
         }
@@ -271,5 +298,46 @@ public struct CompanionPaths: Sendable, Equatable {
     /// Removes the file, so a mod finds nothing to talk to once the app is gone.
     public func removeDescriptor() {
         try? FileManager.default.removeItem(at: descriptor)
+    }
+}
+
+/// A question Porchlight may answer for the user: one question, with options of which one is
+/// chosen, asked in a session whose mod said it takes answers.
+public struct AnswerTarget: Sendable, Equatable {
+    /// The conversation's id, which is how the mod's requests are told apart.
+    public let sessionID: String
+    public let questionID: String
+    public let question: String
+    /// The options' labels exactly as the session wrote them.
+    public let options: [String]
+
+    public init(sessionID: String, questionID: String, question: String, options: [String]) {
+        self.sessionID = sessionID
+        self.questionID = questionID
+        self.question = question
+        self.options = options
+    }
+
+    /// The command that answers with one of the options, or nil when there is no such option.
+    /// Only ever built from a choice the user made in Porchlight: nothing here picks for them.
+    public func command(choosing index: Int) -> Data? {
+        guard options.indices.contains(index) else { return nil }
+        let body: [String: Any] = ["v": CompanionEvent.version, "type": "answer", "id": questionID, "answers": [question: options[index]]]
+        return try? JSONSerialization.data(withJSONObject: body, options: [.sortedKeys])
+    }
+}
+
+extension Session {
+    /// The question that can be answered from Porchlight, if this session is waiting on one.
+    ///
+    /// Several questions at once, a choice of several options, typed text and a session without
+    /// the mod are all left to the session's own dialog.
+    public var answerTarget: AnswerTarget? {
+        guard needsHuman, let conversation = summary.sessionId, let companion, let id = companion.answerableQuestionID,
+              case .question(let asked)? = companion.waiting, asked.count == 1, let only = asked.first,
+              !only.multiSelect, !only.options.isEmpty,
+              // What the row shows must be what would be answered.
+              questions == asked else { return nil }
+        return AnswerTarget(sessionID: conversation.lowercased(), questionID: id, question: only.question, options: only.options.map(\.label))
     }
 }
