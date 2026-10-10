@@ -394,12 +394,12 @@ test('a failure that needs a person is never retried, and a new turn ends the wa
 })
 
 test('a restarted app is one that has not been told', () => {
-  const told = { secret: 'abc' }
-  expect(isNewApp(told, { secret: 'abc' })).toBe(false)
-  expect(isNewApp(told, { secret: 'xyz' })).toBe(true)
+  expect(isNewApp('abc', { secret: 'abc' })).toBe(false)
+  expect(isNewApp('abc', { secret: 'xyz' })).toBe(true)
+  // Nobody was told yet (the report did not arrive): whoever is there now is told.
   expect(isNewApp(undefined, { secret: 'abc' })).toBe(true)
   // No app at all: nobody to tell.
-  expect(isNewApp(told, undefined)).toBe(false)
+  expect(isNewApp('abc', undefined)).toBe(false)
   expect(isNewApp(undefined, undefined)).toBe(false)
 })
 

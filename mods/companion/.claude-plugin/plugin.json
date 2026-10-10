@@ -1,6 +1,6 @@
 {
   "name": "porchlight-companion",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Tells the Porchlight app the moment a session asks something, wants an approval, finishes or fails; hands the session the answer you pick or the reply you type in Porchlight; and tries again after a passing failure when you or your settings say so.",
   "author": { "name": "Ksawery Karwacki" },
   "license": "GPL-3.0-or-later",
