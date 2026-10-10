@@ -99,6 +99,7 @@ struct PorchlightApp: App {
         paletteModel.onRetry = { id in model.retry(sessionID: id) }
         paletteModel.onTogglePin = { id in model.togglePin(sessionID: id) }
         paletteModel.onControl = { pending in await model.control(pending) }
+        paletteModel.onAnswer = { choice in model.answer(choice) }
         paletteModel.onTrust = { folder in model.openToTrust(folder: folder) }
         paletteModel.onCopy = { command in model.copy(command, saying: "Command copied") }
         let palette = PaletteController(model: paletteModel)

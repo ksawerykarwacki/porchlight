@@ -237,9 +237,11 @@ Porchlight is local only: no account, no server, no telemetry. What it touches o
   asks for (the tool and one line), and when turns start, finish or fail. It does not send your
   prompts, the replies, your answers or any tool output; the full list is in
   [its README](../mods/companion/README.md).
-- **Answering from the panel.** With the mod, a question that has options to pick one of shows them
-  as buttons. Click one, then **Send**: the app gives the mod that option and the mod hands it to
-  the session as the answer. Nothing is sent on the first click, Porchlight never picks or writes
+- **Answering from the panel or the palette.** With the mod, a question that has options to pick
+  one of shows them as buttons. In the panel, click one, then **Send**. In the palette, select the
+  session and press ⌘1 to ⌘9 for an option (or click it), then Return; Escape drops the choice. The
+  app gives the mod that option and the mod hands it to the session as the answer. Nothing is sent
+  on the first click or key, Porchlight never picks or writes
   an answer itself, and the session's own dialog still works. Questions with several parts or a
   typed answer are answered in the session.
 - **It writes only in its own folder**, `~/Library/Application Support/Porchlight/` (settings,

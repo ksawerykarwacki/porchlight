@@ -434,7 +434,8 @@ What Claude Code documents for programs outside it (same date): `claude agents -
 - *Who can answer:* a program running as the same user could put its own `companion.json` in place and answer a question; such a program can already run `claude attach` and type. The channel adds no way in for another user or over the network.
 - Checked: unit tests for what is answerable and the command; the panel's model and the real listener over its socket, including the 60 seconds; the mod's 19 tests. Live on 2.1.296, a throwaway session with the mod and a stand-in for the app on the real protocol: an answer for another id was dropped and the session kept waiting; the right one continued it ("Apple or pear? → pear") and the session replied "pear".
 - Not checked: the installed app sending (only the stand-in, as for layers 1 and 2), the buttons under a real pointer, and an answer racing the dialog by milliseconds.
-- Not built: the palette, notifications, typed answers, several questions, approvals.
+- *In the palette* (the next change): the selected session's question is shown in full under the list with its options, each with ⌘ and a number for the first nine. The number, or a click, chooses; the footer then reads "↩ Send “…”" and "esc Cancel". Return sends through the same `InboxModel.answer` as the panel and the palette stays open, saying what came of it. Moving the selection, typing, Tab or asking to stop the session drops the choice. A choice carries the id of the asking it was made for, so it is refused if the session has asked something else since; after an answer the options of that asking are not offered again while the list still shows it. Checked by `PaletteAnswerTests`; the keys themselves under a real keyboard are not.
+- Not built: notifications, typed answers, several questions, approvals.
 
 ### 6.7 Roadmap after v1
 
