@@ -71,7 +71,7 @@ final class CompanionRig: @unchecked Sendable {
         let report = rig.event(["kind": "turn.start"])
         #expect(try await rig.request("POST", "/v1/event", body: report, secret: .some(nil)).status == 403)
         #expect(try await rig.request("POST", "/v1/event", body: report, secret: .some("wrong")).status == 403)
-        #expect(try await rig.request("POST", "/v1/event", body: report, secret: .some(String(rig.secret.dropLast()) + "0")).status == 403)
+        #expect(try await rig.request("POST", "/v1/event", body: report, secret: .some(String(rig.secret.dropLast()) + (rig.secret.hasSuffix("0") ? "1" : "0"))).status == 403)
         #expect(try await rig.request("GET", "/v1/next?session=\(conversation)", secret: .some("")).status == 403)
         #expect(rig.hub.reportCount == 0 && rig.hub.snapshot().isEmpty)
         #expect(!CompanionListener.matches("", "") && !CompanionListener.matches("ab", "abc") && CompanionListener.matches("abc", "abc"))

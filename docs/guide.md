@@ -235,9 +235,11 @@ Porchlight is local only: no account, no server, no telemetry. What it touches o
   new each time the app starts, and nothing listens on the network. Without the mod nothing ever
   connects.
 - **The companion mod, if you install it,** sends the app a session's question, the approval it
-  asks for (the tool and one line), and when turns start, finish or fail. It does not send your
-  prompts, the replies, your answers or any tool output; the full list is in
-  [its README](../mods/companion/README.md).
+  asks for (the tool and one line), when turns start, finish or fail, and, when a turn finishes,
+  the end of what the session said (up to 1,500 characters), which the panel shows for a session
+  that is waiting. The app keeps that in memory until the session's next turn and never logs or
+  saves it. The mod does not send your prompts, your answers, any tool output, or the rest of the
+  replies; the full list is in [its README](../mods/companion/README.md).
 - **Answering from the panel or the palette.** With the mod, a question that has options to pick
   one of shows them as buttons. In the panel, click one, then **Send**. In the palette, select the
   session and press ⌘1 to ⌘9 for an option (or click it), then Return; Escape drops the choice. The
